@@ -397,8 +397,45 @@ def _machine_actions(machine):
 
 
 def _doc_actions(entry):
-    return [("Ver documento", "bi-file-earmark-text",
-             reverse("new_ui:document_file", args=[entry.pk]))]
+    """
+    Row actions of a document (Acciones › Esta fila, right click).
+
+    ---
+
+    Acciones de la fila de un documento: verlo, descargarlo con su
+    nombre, ver el historial de su tipo (el propio listado, filtrado),
+    subir su versión nueva y, en un PDF de una persona, separarlo
+    (S163). Los "#nui-..." los resuelve new_ui.js.
+    """
+    from urllib.parse import quote
+
+    view = reverse("new_ui:document_file", args=[entry.pk])
+    actions = [
+        ("Ver documento", "bi-file-earmark-text", view),
+        ("Descargar", "bi-download", view + "?descargar=1"),
+    ]
+    subject = entry.domain_object
+    if subject is None:
+        return actions
+    is_person = getattr(subject, "dni", None) is not None
+    label = quote(person_name(subject) if is_person
+                  else machine_label(subject), safe="")
+    domain = "personal" if is_person else "machine"
+    if entry.document_type_id:
+        actions.append((
+            "Historial de su tipo", "bi-clock-history",
+            "#nui-doc-history:%d:%d:%s" % (
+                subject.pk, entry.document_type_id, label)))
+        actions.append((
+            "Actualizar (versión nueva)", "bi-arrow-repeat",
+            "#nui-doc-update:%s:%d:%s:%s:%s" % (
+                domain, subject.pk, entry.document_type.code,
+                quote(entry.document_type.label, safe=""), label)))
+    if (is_person and not entry.is_confidential
+            and (entry.name or "").lower().endswith(".pdf")):
+        actions.append(("Separar páginas", "bi-scissors",
+                        "#nui-doc-split:%d" % entry.pk))
+    return actions
 
 
 # ------------------------------------------------------------ horarios

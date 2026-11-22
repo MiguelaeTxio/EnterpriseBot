@@ -1,0 +1,12 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_type_picker.html -- S163: elegir un tipo documental sin desplegable: escribe para filtrar y marca. #}
+<input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el tipo…" aria-label="Buscar tipo" data-nui-filter-list>
+<div class="border rounded px-2 py-1 mb-1 small" style="max-height: 11rem; overflow-y: auto;" data-nui-filter-target>
+    {% for family, types in nui_doc_types %}
+    <div data-nui-filter-group>
+        <div class="fw-semibold text-muted mt-1">{{ family }}</div>
+        {% for code, label in types %}
+        <label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="document_type_code" value="{{ code }}" required> <span class="form-check-label">{{ label }}</span></label>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>

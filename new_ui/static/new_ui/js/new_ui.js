@@ -378,6 +378,12 @@
                     // Lo guardado sigue en el formulario: guardar otra vez lo modifica.
                     const pkInput = f.querySelector("[data-nui-pk]");
                     if (pkInput && data.id) pkInput.value = data.id;
+                    // Formularios de un solo uso (subir): vuelven a empezar.
+                    if (f.hasAttribute("data-nui-reset-after")) {
+                        f.reset();
+                        f.querySelectorAll("[data-nui-clear]").forEach(i => { i.value = ""; });
+                        f.querySelectorAll("[data-default]").forEach(el => { el.textContent = el.dataset.default; });
+                    }
                     load();
                 })
                 .catch(function (err) { result(err.message, true); });
@@ -488,6 +494,81 @@
                     result("Cargado: cambia lo que haga falta y guarda.", false);
                 })
                 .catch(function (err) { result(err.message, true); });
+        });
+        // Documentos (S163): historial de un tipo (el propio listado,
+        // filtrado), actualizar (subir la versión nueva) y separar.
+        function goToActions(el) {
+            showTab(panelOf("acciones"), "vista", true);
+            if (el) el.scrollIntoView({block: "start", behavior: "smooth"});
+        }
+        function ownFilter(name, value, text) {
+            const el = document.querySelector('[name="' + name + '"]');
+            if (!el) return;
+            if (value && !Array.from(el.options).some(o => o.value === value)) {
+                const o = document.createElement("option");
+                o.value = value; o.textContent = text || value;
+                el.appendChild(o);
+            }
+            el.value = value;
+        }
+        const uploadForm = document.getElementById("nui-upload-form");
+        document.addEventListener("click", function (ev) {
+            const link = ev.target.closest('a[href^="#nui-doc-"]');
+            if (!link) return;
+            ev.preventDefault();
+            const parts = link.getAttribute("href").slice(1).split(":");
+            const kind = parts[0];
+            if (kind === "nui-doc-history") {
+                ownFilter("x_documentos_tipo", parts[2], "Este tipo");
+                ownFilter("x_documentos_estado", "", "");
+                result("Historial del tipo: todos sus documentos, vigentes y sustituidos.", false);
+                setScope({pk: parts[1], label: decodeURIComponent(parts[3] || "")}, "documentos");
+                return;
+            }
+            if (kind === "nui-doc-update" && uploadForm) {
+                uploadForm.querySelector('[name="domain"]').value = parts[1];
+                uploadForm.querySelector('[name="subject_pk"]').value = parts[2];
+                uploadForm.querySelectorAll('[name="document_type_code"]').forEach(r => { r.checked = r.value === parts[3]; });
+                const typeLabel = decodeURIComponent(parts[4] || "");
+                const who = decodeURIComponent(parts[5] || "");
+                uploadForm.querySelector("[data-nui-upload-title]").textContent = "Actualizar " + typeLabel;
+                uploadForm.querySelector("[data-nui-upload-who]").textContent = "De: " + who + " (la versión nueva sustituye a la anterior).";
+                goToActions(uploadForm);
+                return;
+            }
+            if (kind === "nui-doc-split") {
+                const box = document.getElementById("nui-split-box");
+                if (!box) return;
+                box.innerHTML = '<p class="small text-muted mb-0">Cargando las páginas…</p>';
+                goToActions(box);
+                fetch(box.dataset.url.replace("/0/", "/" + parts[1] + "/"), {credentials: "same-origin"})
+                    .then(r => r.ok ? r.text() : Promise.reject(new Error("No se ha podido abrir el documento.")))
+                    .then(function (html) { box.innerHTML = html; })
+                    .catch(function (err) { box.innerHTML = ""; result(err.message, true); });
+            }
+        });
+        // Subir sin «Actualizar»: es de la persona o máquina abierta.
+        root.addEventListener("submit", function (ev) {
+            if (ev.target !== uploadForm) return;
+            const subject = uploadForm.querySelector('[name="subject_pk"]');
+            if (!subject.value && scope && scope.pk) subject.value = scope.pk;
+        }, true);
+        // Elegir un tipo sin desplegable: escribir filtra la lista.
+        root.addEventListener("input", function (ev) {
+            const input = ev.target.closest("[data-nui-filter-list]");
+            if (!input) return;
+            const words = input.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/).filter(Boolean);
+            const target = input.nextElementSibling;
+            target.querySelectorAll("[data-nui-filter-group]").forEach(function (group) {
+                let any = false;
+                group.querySelectorAll("[data-nui-filter-item]").forEach(function (item) {
+                    const text = item.textContent.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    const on = words.every(w => text.indexOf(w) !== -1);
+                    item.classList.toggle("d-none", !on);
+                    any = any || on;
+                });
+                group.classList.toggle("d-none", !any);
+            });
         });
         // Horario: qué partes del formulario se ven según las casillas.
         const scheduleForm = document.getElementById("nui-schedule-form");

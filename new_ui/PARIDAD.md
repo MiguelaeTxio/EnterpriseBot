@@ -24,10 +24,10 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ Botón derecho propio sobre persona/máquina/fila.
 
 ## Documentos de una persona o máquina
-- ✅ Ver documento · ⬜ descargar con su nombre desde la fila
-- ⬜ Actualizar (subir nueva versión) · ⬜ Historial de un tipo
-- ⬜ Cambiar tipo · ⬜ Separar páginas · ⬜ Eliminar (a la papelera)
-- ✅ Subir documentos (ruta copiada) · ⬜ su formulario en Acciones
+- ✅ Ver documento · ✅ descargar con su nombre desde la fila (S163)
+- ✅ Actualizar (subir nueva versión) · ✅ Historial de un tipo (S163)
+- ✅ Cambiar tipo · ✅ Separar páginas · ✅ Eliminar (a la papelera) (S163)
+- ✅ Subir documentos y su formulario en Acciones (S163)
 - ⬜ Crear un tipo documental al vuelo
 - ⬜ Descargar varios (elegir) y papelera de descargas
 - ⬜ Selección de documentos: vista previa, PDF único, ZIP, enviar por correo

@@ -1,0 +1,34 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_documents.html #}
+{% comment %}
+S163. Documentos de una persona o máquina (Acciones › De Documentos):
+subir o actualizar, cambiar el tipo y mandar a la papelera los marcados,
+y Separar (desde «Esta fila»). Descargar e Historial van en «Esta fila».
+{% endcomment %}
+<div class="d-none" data-nui-actions-for="documentos">
+    <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" id="nui-upload-form" class="mb-3" data-nui-reset-after>
+        {% csrf_token %}
+        <input type="hidden" name="domain" value="{{ nui_doc_domain }}">
+        <input type="hidden" name="subject_pk" value="" data-nui-clear>
+        <div class="small fw-semibold mb-1"><i class="bi bi-upload me-1"></i><span data-nui-upload-title data-default="Subir documentos">Subir documentos</span></div>
+        <div class="small text-muted mb-1" data-nui-upload-who data-default="De: la ficha abierta (elige una persona o máquina, o usa «Actualizar» en una fila).">De: la ficha abierta (elige una persona o máquina, o usa «Actualizar» en una fila).</div>
+        {% include "new_ui/actions/_type_picker.html" %}
+        <input type="file" name="file" multiple required class="form-control form-control-sm mb-1" aria-label="Archivos">
+        <div class="row g-1 small mb-1">
+            <div class="col-6"><label class="text-muted d-block">Caducidad (si caduca)</label><input type="date" name="expiry_date" class="form-control form-control-sm"></div>
+            <div class="col-6"><label class="text-muted d-block">Fecha del documento (si no caduca)</label><input type="date" name="issue_date" class="form-control form-control-sm"></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-upload me-1"></i>Subir</button>
+        <span class="small text-muted ms-1">Sin fecha, se lee del propio documento. La versión nueva sustituye a la anterior del mismo tipo.</span>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:document_change_type' %}" class="mb-2">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-arrow-left-right me-1"></i>Cambiar el tipo de los marcados</div>
+        {% include "new_ui/actions/_type_picker.html" %}
+        <button type="submit" class="btn btn-sm btn-primary">Cambiar tipo</button>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:document_trash' %}" class="mb-3">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Mandar a la papelera los documentos marcados? Se pueden recuperar desde la papelera."><i class="bi bi-trash me-1"></i>Mandar los marcados a la papelera</button>
+    </form>
+    <div id="nui-split-box" data-url="{% url 'new_ui:document_split' 0 %}"></div>
+</div>

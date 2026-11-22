@@ -13,7 +13,7 @@ from django.urls import path
 
 from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
-    views_schedules,
+    views_doc_actions, views_schedules,
 )
 
 app_name = "new_ui"
@@ -34,6 +34,18 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Acciones sobre documentos (S163).
+    path("documentos/subir/", views_doc_actions.DocumentUploadView.as_view(),
+         name="document_upload"),
+    path("documentos/cambiar-tipo/",
+         views_doc_actions.DocumentChangeTypeView.as_view(),
+         name="document_change_type"),
+    path("documentos/papelera/",
+         views_doc_actions.DocumentTrashView.as_view(),
+         name="document_trash"),
+    path("documentos/<int:pk>/separar/",
+         views_doc_actions.DocumentSplitView.as_view(),
+         name="document_split"),
     # Horarios y tipos de fichaje (S163).
     path("horarios/<int:pk>/", views_schedules.ScheduleDataView.as_view(),
          name="schedule_data"),

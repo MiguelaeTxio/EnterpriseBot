@@ -1,0 +1,38 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_document_split.html #}
+{% comment %}
+S163. «Separar» en Acciones (copia de la ventana antigua): cada página
+con el tipo que sugiere su texto ya leído; las páginas con el mismo tipo
+salen juntas como un documento nuevo. Vista: new_ui/views_doc_actions.py.
+{% endcomment %}
+{% if error %}
+<div class="alert alert-warning small mb-0">{{ error }}</div>
+{% else %}
+<form data-nui-action-form action="{% url 'new_ui:document_split' entry.pk %}">
+    {% csrf_token %}
+    <div class="small fw-semibold mb-1"><i class="bi bi-scissors me-1"></i>Separar {{ entry.name }} ({{ page_count }} página{{ page_count|pluralize }})</div>
+    <p class="small text-muted mb-2">Elige el tipo de cada página: las del mismo tipo salen juntas como un documento nuevo de {{ person.given_name }}. Este archivo pasa a ser un Dossier y sigue ahí para volver a separar. La fecha es opcional (sin ella se lee del documento). Pulsa una miniatura para verla en grande.</p>
+    {% if too_many %}<div class="alert alert-warning py-1 small">Solo se muestran las primeras 30 páginas.</div>{% endif %}
+    <div class="row g-2">
+        {% for page in pages %}
+        <div class="col-6 col-xl-4">
+            <div class="border rounded p-1 h-100 small">
+                <div class="fw-semibold">Página {{ page.number }}</div>
+                <a href="{% url 'new_ui:document_split' entry.pk %}?page={{ page.number }}" target="_blank" rel="noopener" title="Ver en grande"><img src="data:image/png;base64,{{ page.image }}" class="img-fluid border mb-1" alt="Página {{ page.number }}"></a>
+                <select name="page_type_{{ page.number }}" class="form-select form-select-sm mb-1" aria-label="Tipo de la página {{ page.number }}">
+                    <option value="">No sacar</option>
+                    {% regroup all_document_types by get_person_family_display as type_families %}
+                    {% for group in type_families %}
+                    <optgroup label="{{ group.grouper }}">
+                        {% for dt in group.list %}<option value="{{ dt.code }}" {% if dt.code == page.suggested %}selected{% endif %}>{{ dt.label }}</option>{% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+                {% if page.hint %}<div class="text-muted" title="Señales encontradas en el texto">Parece: {{ page.hint }}</div>{% endif %}
+                <input type="date" name="page_date_{{ page.number }}" class="form-control form-control-sm" title="Caducidad (o fecha del documento si no caduca)" aria-label="Fecha de la página {{ page.number }}">
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-sm btn-success mt-2"><i class="bi bi-scissors me-1"></i>Sacar los documentos</button>
+</form>
+{% endif %}
