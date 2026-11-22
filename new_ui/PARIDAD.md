@@ -43,7 +43,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ (S163) Foto para plataformas (entera o recuadro) · sacar la foto de
   un documento · girar · modo automático · cola de fotos (General) ·
   elegir una imagen como foto («Esta fila» en Documentos)
-- ⬜ Alta de trabajador (con extracción del DNI) · ⬜ baja · ⬜ reactivar
+- ✅ (S163) Alta de trabajador (guiada por documentos o a mano; reactiva si está de baja) · baja · deshacer baja · recontratar
 - ⬜ Exportar Personal con plantillas (guardar/borrar plantillas)
 - ✅ (S163) Requisitos de documentación: añadir/quitar a los marcados
   (Personal y Centros de gasto); crear, modificar, activar, borrar y

@@ -1,0 +1,57 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_personnel.html #}
+{% comment %}
+S163. Alta (guiada por documentos), baja y reactivar (Personal ›
+General › Acciones), copiado del alta y las acciones antiguas. Vista:
+new_ui/views_personnel.py.
+{% endcomment %}
+<div class="d-none" data-nui-actions-for="general">
+    <form data-nui-action-form action="{% url 'new_ui:person_create' %}" id="nui-intake-form" data-read-url="{% url 'new_ui:person_intake_extract' %}" data-nui-reset-after>
+        {% csrf_token %}
+        <input type="hidden" name="reactivate_person_id" value="" data-nui-clear>
+        <div class="small fw-semibold mb-1"><i class="bi bi-person-plus me-1"></i>Alta de un trabajador</div>
+        <div class="small text-muted mb-1">1. Sube sus documentos (DNI, contrato, alta de la Seguridad Social, reconocimiento…; hasta 20) y pulsa «Leer»: se rellenan los datos. Sin documentos, escríbelos a mano.</div>
+        <div class="d-flex flex-wrap gap-1 mb-1">
+            <input type="file" name="documents" multiple class="form-control form-control-sm" style="max-width: 22rem;" aria-label="Documentos del alta">
+            <button type="button" class="btn btn-sm btn-outline-primary" data-nui-intake-read><i class="bi bi-magic me-1"></i>Leer los documentos</button>
+        </div>
+        <div class="small mb-1" data-nui-intake-files></div>
+        <div class="small text-muted mb-1">2. Revisa, corrige y confirma.</div>
+        <div class="row g-1 small mb-1">
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">DNI / NIE *</label><input name="dni" class="form-control form-control-sm" required></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Nombre *</label><input name="given_name" class="form-control form-control-sm" required></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Primer apellido *</label><input name="first_surname" class="form-control form-control-sm" required></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Segundo apellido</label><input name="second_surname" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Nacimiento</label><input type="date" name="birth_date" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Fecha de alta (vacía: hoy)</label><input type="date" name="hire_date" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Teléfono</label><input name="phone" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Teléfono 2</label><input name="phone_secondary" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Correo</label><input type="email" name="email" class="form-control form-control-sm"></div>
+            <div class="col-12 col-xl-8"><label class="text-muted d-block">Dirección</label><input name="address_street" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">C.P. (vacío: se busca)</label><input name="postal_code" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Población</label><input name="city" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Provincia</label><input name="province" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">N.º afiliación S.S.</label><input name="ss_affiliation_number" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-4"><label class="text-muted d-block">Categoría profesional</label><input name="professional_category" class="form-control form-control-sm"></div>
+        </div>
+        <div class="small text-muted">Empresa *:</div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Empresa">
+            {% for code, label in alta_companies %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="employer_company" value="{{ code }}" required> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+        </div>
+        <div class="small text-muted">Sección *:</div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Sección">
+            {% for sec in nui_sections %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="section_id" value="{{ sec.pk }}" required> <span class="form-check-label">{{ sec.name }}</span></label>{% endfor %}
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-person-check me-1"></i><span data-nui-intake-submit data-default="Dar de alta">Dar de alta</span></button>
+        <span class="small text-muted ms-1">Sus documentos se guardan en su carpeta y se descargan a la carpeta local.</span>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:person_terminate' %}" class="mt-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-person-dash me-1"></i>Baja y reactivar (los marcados)</div>
+        <div class="d-flex flex-wrap gap-1">
+            <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Dar de baja (rescisión de contrato, con fecha de hoy) a los marcados? Su documentación pasa a inactivos y su acceso al panel se desactiva.">Dar de baja hoy</button>
+            <button type="submit" formaction="{% url 'new_ui:person_reactivate' %}" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Deshacer la baja de los marcados (conservan su fecha de alta)?">Deshacer la baja</button>
+            <button type="submit" formaction="{% url 'new_ui:person_reactivate' %}" name="rehire" value="1" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Recontratar a los marcados con fecha de alta de hoy?">Recontratar hoy</button>
+        </div>
+        <p class="small text-muted mt-1 mb-0">Baja = rescisión de contrato (no es una baja médica). Para ver a los de baja, en el filtro «Estado» elige inactivos.</p>
+    </form>
+</div>

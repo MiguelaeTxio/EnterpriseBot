@@ -13,8 +13,8 @@ from django.urls import path
 
 from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
-    views_doc_actions, views_notify, views_photos, views_requirements,
-    views_schedules,
+    views_doc_actions, views_notify, views_personnel, views_photos,
+    views_requirements, views_schedules,
 )
 
 app_name = "new_ui"
@@ -35,6 +35,18 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Alta, baja y reactivar (S163).
+    path("personas/alta/leer/", views_personnel.NuiIntakeExtractView.as_view(),
+         name="person_intake_extract"),
+    path("personas/alta/", views_personnel.NuiCreateView.as_view(),
+         name="person_create"),
+    path("personas/baja/", views_personnel.NuiTerminateView.as_view(),
+         name="person_terminate"),
+    path("personas/reactivar/", views_personnel.NuiReactivateView.as_view(),
+         name="person_reactivate"),
+    path("personas/descarga-local/<int:pk>/",
+         views_personnel.PersonLocalDownloadStatusView.as_view(),
+         name="person_local_download"),
     # Pedir documentos y avisar (S163).
     path("pedir/", views_notify.DocRequestSendView.as_view(),
          name="doc_request_send"),

@@ -380,8 +380,12 @@
                     if (pkInput && data.id) pkInput.value = data.id;
                     // Lo de la persona vista (su foto) se repinta.
                     if (f.closest("#nui-entity-actions")) loadEntityActions();
+                    // Alta: la vista se queda con la persona nueva.
+                    if (data.scope && section === "per") setScope(data.scope);
                     // Formularios de un solo uso (subir): vuelven a empezar.
                     if (f.hasAttribute("data-nui-reset-after")) {
+                        f.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
+                        f.querySelectorAll("[data-nui-intake-files]").forEach(el => { el.innerHTML = ""; });
                         f.reset();
                         f.querySelectorAll("[data-nui-clear]").forEach(i => { i.value = ""; });
                         f.querySelectorAll("[data-default]").forEach(el => { el.textContent = el.dataset.default; });
@@ -594,6 +598,64 @@
         if (reqForm) {
             reqForm.addEventListener("change", reqView);
             reqView();
+        }
+        // Alta (S163): «Leer los documentos» rellena el formulario con
+        // lo leído; cada archivo lleva su tipo detectado al confirmar.
+        const intake = document.getElementById("nui-intake-form");
+        if (intake) {
+            const filesInput = intake.querySelector('[name="documents"]');
+            const filesBox = intake.querySelector("[data-nui-intake-files]");
+            function clearIntake() {
+                intake.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
+                filesBox.innerHTML = "";
+                intake.querySelector('[name="reactivate_person_id"]').value = "";
+                const label = intake.querySelector("[data-nui-intake-submit]");
+                label.textContent = label.dataset.default;
+            }
+            filesInput.addEventListener("change", clearIntake);
+            intake.querySelector("[data-nui-intake-read]").addEventListener("click", function () {
+                if (!filesInput.files.length) { result("Elige primero los documentos.", true); return; }
+                clearIntake();
+                const body = new FormData();
+                Array.from(filesInput.files).forEach(file => body.append("documents", file));
+                result("Leyendo los documentos… (puede tardar un poco)", false);
+                post(intake.dataset.readUrl, body).then(function (data) {
+                    Object.entries(data.draft || {}).forEach(function ([name, value]) {
+                        const el = intake.querySelector('[name="' + name + '"]');
+                        if (!el || !value) return;
+                        if (el.type === "radio") {
+                            intake.querySelectorAll('[name="' + name + '"]').forEach(r => { r.checked = r.value === value; });
+                        } else {
+                            el.value = value;
+                        }
+                    });
+                    const list = document.createElement("ul");
+                    list.className = "mb-1 ps-3";
+                    (data.per_file || []).forEach(function (item) {
+                        [["document_type_codes", item.document_type_code], ["document_expiry_hints", item.expiry_hint || ""], ["document_issue_hints", item.issue_hint || ""]].forEach(function ([name, value]) {
+                            const input = document.createElement("input");
+                            input.type = "hidden"; input.name = name; input.value = value;
+                            input.setAttribute("data-nui-temp", "");
+                            intake.appendChild(input);
+                        });
+                        const li = document.createElement("li");
+                        li.textContent = item.filename + ": " + (item.document_type_code === "DESCONOCIDO" ? "no reconocido (no se guarda)" : item.document_type_code) + (item.error ? " — " + item.error : "");
+                        list.appendChild(li);
+                    });
+                    (data.warnings || []).forEach(function (w) {
+                        const li = document.createElement("li");
+                        li.className = "text-warning-emphasis";
+                        li.textContent = w;
+                        list.appendChild(li);
+                    });
+                    filesBox.appendChild(list);
+                    if (data.reactivate) {
+                        intake.querySelector('[name="reactivate_person_id"]').value = data.reactivate.id;
+                        intake.querySelector("[data-nui-intake-submit]").textContent = "Reactivar y guardar sus documentos";
+                    }
+                    result(data.message || "Datos leídos.", !!data.duplicate);
+                }).catch(function (err) { result(err.message, true); });
+            });
         }
         // Horario: qué partes del formulario se ven según las casillas.
         const scheduleForm = document.getElementById("nui-schedule-form");
