@@ -28,12 +28,18 @@ desde/hasta) · Estado · Empresa · Grupo · Familia/Sección.
         <button type="button" class="btn btn-sm btn-outline-secondary py-0{% if which.on %} active{% endif %}" data-period-which="{{ which.key }}">{{ which.label }}</button>
         {% endfor %}
     </div>
-    <div class="d-flex gap-1 align-items-center mb-2 small">
-        <input type="date" class="form-control form-control-sm" name="desde" value="{{ period.desde }}" aria-label="Desde">
-        <span>–</span>
-        <input type="date" class="form-control form-control-sm" name="hasta" value="{{ period.hasta }}" aria-label="Hasta">
-        <span class="text-muted text-nowrap ms-1">{{ period.summary }}</span>
+    <div class="row g-1 mb-1 small">
+        {# S163: las fechas a mano, siempre visibles y con su ancho: los botones son un atajo, no las sustituyen. #}
+        <div class="col-6" style="min-width: 150px;">
+            <label class="form-label small mb-0" for="nui-desde">Desde</label>
+            <input type="date" class="form-control form-control-sm" id="nui-desde" name="desde" value="{{ period.desde }}">
+        </div>
+        <div class="col-6" style="min-width: 150px;">
+            <label class="form-label small mb-0" for="nui-hasta">Hasta</label>
+            <input type="date" class="form-control form-control-sm" id="nui-hasta" name="hasta" value="{{ period.hasta }}">
+        </div>
     </div>
+    <div class="small text-muted mb-2">{{ period.summary }}</div>
     <div class="row g-1 small">
         <div class="col-3">
             <label class="fw-semibold" for="nui-estado">Estado</label>
