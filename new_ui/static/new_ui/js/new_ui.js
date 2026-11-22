@@ -116,6 +116,49 @@
     window.addEventListener("load", fitHeight);
     fitHeight();
 
+    // ---- Pantalla completa de cada panel (S163, Miguel Ángel) ----
+    // Un botón en la cabecera de cada panel lo abre ocupando toda la
+    // pantalla; el mismo botón (o Escape) lo devuelve a su sitio.
+    function setMax(panel, on) {
+        root.querySelectorAll(".nui-panel.nui-max").forEach(function (p) {
+            if (p !== panel || !on) {
+                p.classList.remove("nui-max");
+                const b = p.querySelector(".nui-max-btn");
+                if (b) { b.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>'; b.title = "Pantalla completa"; }
+            }
+        });
+        if (on) {
+            panel.classList.add("nui-max");
+            const b = panel.querySelector(".nui-max-btn");
+            if (b) { b.innerHTML = '<i class="bi bi-fullscreen-exit"></i>'; b.title = "Salir de pantalla completa (Esc)"; }
+        }
+        document.body.classList.toggle("nui-has-max", !!root.querySelector(".nui-panel.nui-max"));
+    }
+    root.querySelectorAll(".nui-panel").forEach(function (panel) {
+        let bar = null;
+        for (const child of panel.children) {
+            if ((child.classList.contains("nui-head") || child.classList.contains("nui-tabs")) && !child.classList.contains("d-none")) { bar = child; break; }
+        }
+        if (!bar) {
+            bar = document.createElement("div");
+            bar.className = "nui-head";
+            panel.insertBefore(bar, panel.firstChild);
+        }
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "nui-max-btn";
+        button.title = "Pantalla completa";
+        button.setAttribute("aria-label", "Pantalla completa");
+        button.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
+        button.addEventListener("click", function () {
+            setMax(panel, !panel.classList.contains("nui-max"));
+        });
+        bar.appendChild(button);
+    });
+    document.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape" && root.querySelector(".nui-panel.nui-max")) setMax(null, false);
+    });
+
     // ---- Pestañas de cada panel ----
     function panelOf(name) { return root.querySelector('[data-nui-panel="' + name + '"]'); }
     function activeTab(panelName) {

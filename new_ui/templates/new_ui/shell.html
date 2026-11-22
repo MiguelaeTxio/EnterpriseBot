@@ -62,6 +62,12 @@ new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
 .nui-viewbar { display: flex; flex-wrap: wrap; gap: 3px; }
 .nui-viewbar .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .8rem; border: 1px solid #0d6efd; color: #0d6efd; background: #fff; }
 .nui-viewbar .btn.active { background: #0d6efd; color: #fff; font-weight: 600; }
+/* S163: botón de pantalla completa de cada panel. */
+.nui-max-btn { margin-left: auto; align-self: center; border: 0; background: none; color: #6c757d; padding: 0 4px; line-height: 1; font-size: .95rem; }
+.nui-head .ms-auto ~ .nui-max-btn { margin-left: 6px; }
+.nui-max-btn:hover, .nui-max-btn:focus-visible { color: #0d6efd; outline: none; }
+.nui-panel.nui-max { position: fixed !important; inset: 0; z-index: 1045; height: auto !important; width: auto !important; border-radius: 0; box-shadow: 0 0 0 100vmax rgba(0,0,0,.2); }
+body.nui-has-max { overflow: hidden; }
 .nui-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 5px 10px; border-bottom: 1px solid #dee2e6; font-size: .85rem; flex: none; }
 .nui-body { padding: 8px 10px; overflow: auto; flex: 1 1 auto; min-height: 0; font-size: .85rem; }
 .nui-body.flush { padding: 0; }
