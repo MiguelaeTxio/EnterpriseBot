@@ -410,7 +410,7 @@ _SCHEDULE_COMPANY = contextvars.ContextVar("nui_schedule_company",
 
 def _schedule_people(company):
     _SCHEDULE_COMPANY.set(company)
-    return persons_base()
+    return persons_base().select_related("company_user__workday_schedule")
 
 
 def _prepare_schedules(people):
@@ -435,11 +435,17 @@ def _prepare_schedules(people):
         "section": "De la sección", "default": "Por defecto de la empresa",
         "none": "Sin horario",
     }
+    hours = {}
     with bulk_schedule_cache(people, company):
         for person in people:
             schedule, (origin, section) = resolve_person_schedule(
                 person, company)
             person.nui_schedule = schedule
+            # Las horas de cada horario, una vez (no una por persona).
+            key = schedule.pk if schedule else None
+            if key not in hours:
+                hours[key] = _schedule_summary(schedule)
+            person.nui_hours = hours[key]
             person.nui_state = states[person.pk]
             label = origins.get(origin, "")
             if origin == "section" and section is not None:
@@ -1212,8 +1218,7 @@ def _per_lists():
                 Col("horario", "Horario", lambda p: p.nui_schedule.label
                     if p.nui_schedule else "Sin horario"),
                 Col("origen", "De dónde le viene", lambda p: p.nui_origin),
-                Col("horas", "Horas", lambda p: _schedule_summary(
-                    p.nui_schedule)),
+                Col("horas", "Horas", lambda p: p.nui_hours),
                 Col("ficha", "Ficha", lambda p: _clock_label(p.nui_state)),
                 Col("tipo", "Tipo de fichaje", lambda p: _clock_mode_label(
                     p.nui_state)),
