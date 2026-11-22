@@ -82,7 +82,20 @@ def notify_context(section):
         "nui_circulars": list(DocumentTypeCatalog.objects.filter(
             is_active=True, is_notification_template=True,
         ).order_by("label").values_list("code", "label")),
+        # Preparar Docuten: circulares con firma certificada y obras.
+        "nui_signed_circulars": list(DocumentTypeCatalog.objects.filter(
+            is_active=True, is_notification_template=True,
+            requires_signature=True,
+        ).order_by("label").values_list("code", "label")),
+        "nui_worksites": _worksites(),
     }
+
+
+def _worksites():
+    from worksites.models import Worksite
+
+    return list(Worksite.objects.filter(is_active=True).order_by(
+        "name").values_list("pk", "name"))
 
 
 # -------------------------------------------------------- pedir documentos
@@ -326,3 +339,36 @@ class NotifyWhatsAppView(SuperuserRequiredMixin, View):
         if not sent:
             return _error(message)
         return _ok(message)
+
+
+class DocutenFileView(SuperuserRequiredMixin, View):
+    """
+    POST: one Docuten file (pdf, csv or pasos) for the marked persons.
+
+    ---
+
+    POST: uno de los tres archivos para Docuten (la circular con campos,
+    el CSV de envío masivo y la hoja de pasos) de los marcados; es la
+    vista copiada (views_circulars.PersonalDocutenExportView) con los
+    marcados de la nueva interfaz y el aviso de quién queda fuera.
+    """
+
+    def post(self, request):
+        from urllib.parse import unquote
+
+        from new_ui.views_circulars import PersonalDocutenExportView
+
+        request.POST = request.POST.copy()
+        request.POST.setlist("person_ids", request.POST.getlist("selected"))
+        response = PersonalDocutenExportView().post(request)
+        if response.get("X-Docuten-Included"):
+            excluded = json.loads(response.get("X-Docuten-Excluded") or "[]")
+            message = "%s: %s incluidos." % (
+                unquote(response.get("X-Docuten-Filename", "")),
+                response["X-Docuten-Included"])
+            if excluded:
+                message += " Fuera: %s." % ", ".join(excluded)
+            response["X-Nui-Message"] = json.dumps(message)
+            return response
+        data = json.loads(response.content or b"{}")
+        return _error(data.get("error") or "No se ha podido preparar.")

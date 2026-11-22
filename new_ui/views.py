@@ -39,6 +39,7 @@ from new_ui.views_requirements import requirements_context
 from new_ui.views_notify import notify_context
 from new_ui.views_personnel import personnel_context
 from new_ui.views_access import access_context
+from new_ui.views_medical import medical_context
 from new_ui.mixins import SuperuserRequiredMixin
 from new_ui.models import UiUserGroup, UiViewGrant
 from new_ui.state import apply_list_navigation
@@ -301,7 +302,12 @@ def _section_context(company_user, section):
         **notify_context(section),
         **personnel_context(section),
         **access_context(section, company_user.company),
+        **medical_context(section),
         "selections": selections,
+        # S163: plantillas de columnas de cada vista (como las plantillas
+        # de exportación antiguas de Personal).
+        "col_templates": get_saved_state_key(
+            company_user, SCREEN_KEY, "coltpl_" + section, {}) or {},
         "scope": scope if isinstance(scope, dict) and scope.get("pk")
         else None,
         "group_nodes": group_tree(company_user, kind),
@@ -711,25 +717,58 @@ class NewUiExportView(SuperuserRequiredMixin, View):
         objects, _total = materialize(definition, qs, post, 20000)
         rows = rows_for(definition, objects, columns)
         workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = definition.label[:31].upper()
-        sheet.append([c.label for c in columns])
-        for cell in sheet[1]:
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor="0D6EFD")
-        band = PatternFill("solid", fgColor="EEF4FF")
-        for index, row in enumerate(rows):
-            sheet.append([c["value"] for c in row["cells"]])
-            if index % 2:
-                for cell in sheet[sheet.max_row]:
-                    cell.fill = band
-        for column_cells in sheet.columns:
-            width = max(len(str(c.value or "")) for c in column_cells)
-            sheet.column_dimensions[column_cells[0].column_letter].width = (
-                min(max(width + 2, 8), 60))
+        # S163 (como la exportación antigua de Personal, «Separar por»):
+        # una hoja por cada valor de la columna elegida (empresa,
+        # sección...); sin elegir, una sola hoja.
+        split_key = request.GET.get("split_col", "")
+        keys = [c.key for c in columns]
+        groups = [(definition.label, rows)]
+        if split_key in keys:
+            position = keys.index(split_key)
+            buckets = {}
+            for row in rows:
+                value = str(row["cells"][position]["value"] or "").strip()
+                buckets.setdefault(value, []).append(row)
+            groups = [(value or "Sin %s" % columns[position].label.lower(),
+                       buckets[value])
+                      for value in sorted(buckets, key=lambda v: (not v, v))]
+        used = set()
+        for number, (title, group_rows) in enumerate(groups):
+            sheet = workbook.active if number == 0 else workbook.create_sheet()
+            name = "".join(ch for ch in str(title).upper()
+                           if ch not in '[]:*?/\\')[:28] or "HOJA"
+            while name in used:
+                name = name[:25] + "_%d" % number
+            used.add(name)
+            sheet.title = name
+            _fill_sheet(sheet, columns, group_rows, Font, PatternFill)
         return workbook_response(
             request, workbook,
             "%s_%s" % (SECTIONS[section][0], definition.label))
+
+
+def _fill_sheet(sheet, columns, rows, Font, PatternFill):
+    """
+    Header, banded rows and widths of one exported sheet.
+
+    ---
+
+    Cabecera, filas en bandas y anchos de una hoja exportada.
+    """
+    sheet.append([c.label for c in columns])
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="0D6EFD")
+    band = PatternFill("solid", fgColor="EEF4FF")
+    for index, row in enumerate(rows):
+        sheet.append([c["value"] for c in row["cells"]])
+        if index % 2:
+            for cell in sheet[sheet.max_row]:
+                cell.fill = band
+    for column_cells in sheet.columns:
+        width = max(len(str(c.value or "")) for c in column_cells)
+        sheet.column_dimensions[column_cells[0].column_letter].width = (
+            min(max(width + 2, 8), 60))
 
 
 def _ficha_item(label, display, name="", value="", kind="text"):

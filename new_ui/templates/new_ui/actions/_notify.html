@@ -41,4 +41,25 @@ new_ui/views_notify.py.
         <p class="small text-muted mb-0">No hay circulares. Se crean en Documentos › Plantillas de circular.</p>
         {% endif %}
     </form>
+    <form data-nui-action-form data-nui-needs-selection data-nui-docuten action="{% url 'new_ui:docuten_file' %}" class="mt-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-pen me-1"></i>Preparar Docuten (firma certificada de los marcados)</div>
+        {% if nui_signed_circulars %}
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Circular con firma">
+            {% for code, label in nui_signed_circulars %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tipo" value="{{ code }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+        </div>
+        <div class="small text-muted">Obra (si la circular lleva sus datos):</div>
+        <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar la obra…" aria-label="Buscar obra" data-nui-filter-list>
+        <div class="border rounded px-2 py-1 mb-1 small" style="max-height: 8rem; overflow-y: auto;" data-nui-filter-target>
+            <div data-nui-filter-group>
+                <label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="worksite_id" value="" checked> <span class="form-check-label">Sin obra</span></label>
+                {% for pk, name in nui_worksites %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="worksite_id" value="{{ pk }}"> <span class="form-check-label">{{ name }}</span></label>{% endfor %}
+            </div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-download me-1"></i>Descargar los tres archivos</button>
+        <p class="small text-muted mt-1 mb-0">La circular con los campos, el CSV de envío masivo y la hoja de pasos, sueltos. No crea documentos ni acuses.</p>
+        {% else %}
+        <p class="small text-muted mb-0">No hay circulares con firma certificada (se marcan en Documentos › Plantillas de circular).</p>
+        {% endif %}
+    </form>
 </div>

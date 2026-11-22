@@ -44,7 +44,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
   un documento · girar · modo automático · cola de fotos (General) ·
   elegir una imagen como foto («Esta fila» en Documentos)
 - ✅ (S163) Alta de trabajador (guiada por documentos o a mano; reactiva si está de baja) · baja · deshacer baja · recontratar
-- ⬜ Exportar Personal con plantillas (guardar/borrar plantillas)
+- ✅ (S163) Exportar con plantillas de columnas (guardar, aplicar, borrar; en todas las vistas) y separar en hojas por una columna (empresa, sección...) · ⬜ separar por grupos de selección
 - ✅ (S163) Requisitos de documentación: añadir/quitar a los marcados
   (Personal y Centros de gasto); crear, modificar, activar, borrar y
   categoría de un tipo (Documentos › Requisitos)
@@ -52,8 +52,8 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ (S163) Avisar de una circular a los marcados: WhatsApp o correos (.eml)
 - ✅ (S163) Acceso al panel (preparar, crear o enlazar, reenviar el alta)
 - ✅ (S163) Empresa, horario, sección y base en masa (sección de uno: marcarlo en Horarios)
-- ⬜ Bajas médicas
-- ⬜ Preparar Docuten (ruta copiada; falta su sitio en Acciones)
+- ✅ (S163) Bajas médicas: añadir a la persona abierta, dar el alta y borrar (Personal › Salud)
+- ✅ (S163) Preparar Docuten (General › Acciones: circular con firma, obra, los tres archivos)
 - ⬜ EPIs: entrega por lotes, plantillas de lote, historial, ficha técnica
 - ⬜ Parte del día (detalle de jornada)
 

@@ -14,7 +14,7 @@ from django.urls import path
 from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
-    views_photos,
+    views_medical, views_photos,
     views_requirements, views_schedules,
 )
 
@@ -36,6 +36,11 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Bajas médicas (S163).
+    path("bajas/nueva/", views_medical.MedicalLeaveAddView.as_view(),
+         name="medical_add"),
+    path("bajas/marcadas/", views_medical.MedicalLeaveRowsView.as_view(),
+         name="medical_rows"),
     # Acceso al panel, base, empresa y contrato revisado (S163).
     path("acceso/", views_access.AccessPreviewView.as_view(),
          name="access_preview"),
@@ -73,6 +78,8 @@ urlpatterns = [
          name="notify_email"),
     path("avisar/whatsapp/", views_notify.NotifyWhatsAppView.as_view(),
          name="notify_whatsapp"),
+    path("avisar/docuten/", views_notify.DocutenFileView.as_view(),
+         name="docuten_file"),
     # Requisitos de documentación (S163).
     path("requisitos/<int:pk>/",
          views_requirements.RequirementDataView.as_view(),

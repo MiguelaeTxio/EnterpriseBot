@@ -371,6 +371,18 @@
                 ids.forEach(id => body.append("selected", id));
             }
             const url = (submitter && submitter.getAttribute("formaction")) || f.getAttribute("action");
+            if (f.hasAttribute("data-nui-docuten")) {
+                // Docuten: los tres archivos seguidos, sueltos (nunca un ZIP).
+                ["pdf", "csv", "pasos"].reduce(function (chain, kind) {
+                    return chain.then(function () {
+                        const part = new FormData();
+                        body.forEach((v, k) => part.append(k, v));
+                        part.append("archivo", kind);
+                        return download(url, part);
+                    });
+                }, Promise.resolve());
+                return;
+            }
             if (f.hasAttribute("data-nui-download") || (submitter && submitter.hasAttribute("data-nui-download-button"))) { download(url, body); return; }
             post(url, body)
                 .then(function (data) {
@@ -405,7 +417,7 @@
         // comprobar una plantilla, las filas a resaltar.
         function download(url, body) {
             result("Preparando…", false);
-            fetch(url, {method: "POST", credentials: "same-origin", body: body, headers: {"X-CSRFToken": csrf()}})
+            return fetch(url, {method: "POST", credentials: "same-origin", body: body, headers: {"X-CSRFToken": csrf()}})
                 .then(function (r) {
                     const type = r.headers.get("Content-Type") || "";
                     if (type.indexOf("application/json") !== -1) {
@@ -417,7 +429,9 @@
                     }
                     if (!r.ok) return r.text().then(function (t) { throw new Error(t || ("Error " + r.status)); });
                     const disposition = r.headers.get("Content-Disposition") || "";
-                    const match = /filename="?([^";]+)"?/.exec(disposition);
+                    const named = r.headers.get("X-Docuten-Filename");
+                    const match = named ? [null, decodeURIComponent(named)] : /filename="([^"]+)"|filename=([^;]+)/.exec(disposition);
+                    if (match && !match[1] && match[2]) match[1] = match[2].trim();
                     let note = "Descargado.";
                     try { note = JSON.parse(r.headers.get("X-Nui-Message") || '"Descargado."'); } catch (e) { /* aviso por defecto */ }
                     return r.blob().then(function (blob) {
@@ -559,6 +573,12 @@
                     .catch(function (err) { box.innerHTML = ""; result(err.message, true); });
             }
         });
+        // Formularios de la persona o máquina abierta (S163): el campo
+        // marcado con data-nui-scope-input toma su id al enviar.
+        root.addEventListener("submit", function (ev) {
+            const input = ev.target.querySelector && ev.target.querySelector("[data-nui-scope-input]");
+            if (input && scope && scope.pk) input.value = scope.pk;
+        }, true);
         // Subir sin «Actualizar»: es de la persona o máquina abierta.
         root.addEventListener("submit", function (ev) {
             if (ev.target !== uploadForm) return;
@@ -1183,6 +1203,81 @@
             return true;
         };
 
+        // Exportar › «Separar en hojas por» una de las columnas visibles
+        // de la vista (empresa, sección...), sin desplegable.
+        function paintSplit() {
+            const box = root.querySelector("[data-nui-split-options]");
+            if (!box) return;
+            const block = root.querySelector('[data-nui-cols-for="' + tab() + '"]');
+            const cols = block ? Array.from(block.querySelectorAll("[data-nui-col]")).filter(c => c.checked) : [];
+            box.innerHTML = "";
+            [["", "nada"]].concat(cols.map(c => [c.value, c.nextElementSibling ? c.nextElementSibling.textContent.trim() : c.value])).forEach(function ([value, label], i) {
+                const l = document.createElement("label");
+                l.className = "form-check form-check-inline mb-0 ms-1";
+                l.innerHTML = '<input class="form-check-input" type="radio" name="nui_split"> <span class="form-check-label"></span>';
+                l.querySelector("input").value = value;
+                l.querySelector("input").checked = i === 0;
+                l.querySelector("span").textContent = label;
+                box.appendChild(l);
+            });
+            root.querySelector("[data-nui-split]").classList.toggle("d-none", !cols.length);
+        }
+        // Columnas › plantillas: guardar las columnas marcadas con un
+        // nombre, aplicarlas o borrarlas (por vista, de cada usuario).
+        const colTemplates = json("nui-coltpl", {});
+        function paintColTemplates() {
+            const box = root.querySelector("[data-nui-coltpl]");
+            if (!box) return;
+            const t = tab();
+            const block = root.querySelector('[data-nui-cols-for="' + t + '"]');
+            box.innerHTML = "";
+            if (!block || !block.querySelector("[data-nui-col]")) return;
+            const mine = colTemplates[t] || {};
+            const title = document.createElement("div");
+            title.className = "fw-semibold mb-1";
+            title.textContent = "Plantillas de columnas";
+            box.appendChild(title);
+            Object.keys(mine).sort().forEach(function (name) {
+                const row = document.createElement("div");
+                row.className = "d-flex align-items-center gap-1 mb-1";
+                row.innerHTML = '<span class="me-auto"></span><button type="button" class="btn btn-sm btn-outline-primary py-0">Aplicar</button><button type="button" class="btn btn-sm btn-outline-danger py-0">Borrar</button>';
+                row.querySelector("span").textContent = name;
+                const [apply, remove] = row.querySelectorAll("button");
+                apply.addEventListener("click", function () {
+                    block.querySelectorAll("[data-nui-col]").forEach(function (c) {
+                        if (!c.disabled) c.checked = mine[name].indexOf(c.value) !== -1;
+                    });
+                    block.querySelector("[data-nui-col]").dispatchEvent(new Event("change", {bubbles: true}));
+                    result("Columnas de la plantilla «" + name + "» puestas.", false);
+                });
+                remove.addEventListener("click", function () {
+                    if (!window.confirm("¿Borrar la plantilla «" + name + "»?")) return;
+                    delete mine[name];
+                    colTemplates[t] = mine;
+                    const values = {}; values["coltpl_" + section] = colTemplates; save(values);
+                    paintColTemplates();
+                });
+                box.appendChild(row);
+            });
+            const add = document.createElement("div");
+            add.className = "d-flex gap-1";
+            add.innerHTML = '<input type="text" class="form-control form-control-sm" placeholder="Nombre para guardar las columnas marcadas" aria-label="Nombre de la plantilla"><button type="button" class="btn btn-sm btn-success">Guardar</button>';
+            add.querySelector("button").addEventListener("click", function () {
+                const name = add.querySelector("input").value.trim();
+                if (!name) { result("Escribe un nombre para la plantilla.", true); return; }
+                mine[name] = Array.from(block.querySelectorAll("[data-nui-col]")).filter(c => c.checked).map(c => c.value);
+                colTemplates[t] = mine;
+                const values = {}; values["coltpl_" + section] = colTemplates; save(values);
+                result("Plantilla «" + name + "» guardada.", false);
+                paintColTemplates();
+            });
+            box.appendChild(add);
+        }
+        listPanel.addEventListener("nui:tab", function () { paintSplit(); paintColTemplates(); });
+        root.addEventListener("change", function (ev) { if (ev.target.matches("[data-nui-col]")) paintSplit(); });
+        paintSplit();
+        paintColTemplates();
+
         // Exportar.
         root.querySelectorAll("[data-nui-export]").forEach(function (button) {
             button.addEventListener("click", function () {
@@ -1190,7 +1285,8 @@
                     result(section === "cdg" ? "La ficha se exporta con su botón «Exportar» (PDF, Word, HTML, PNG o JPG)." : "La ficha no es un listado: elige otra pestaña para exportar.", false);
                     return;
                 }
-                const p = params({export_format: button.dataset.nuiExport});
+                const split = root.querySelector('[name="nui_split"]:checked');
+                const p = params({export_format: button.dataset.nuiExport, split_col: split ? split.value : ""});
                 Array.from(sel().keys()).forEach(pk => p.append("selected", pk));
                 const url = urls.export + "?" + p.toString();
                 if (button.dataset.nuiExport === "print" || button.dataset.nuiExport === "html") window.open(url, "_blank");

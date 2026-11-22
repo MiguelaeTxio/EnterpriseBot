@@ -1,0 +1,26 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_medical.html -- S163: bajas médicas (Personal › Salud). Vista: new_ui/views_medical.py. #}
+<div class="d-none" data-nui-actions-for="salud">
+    <form data-nui-action-form action="{% url 'new_ui:medical_add' %}" class="mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="person_pk" value="" data-nui-scope-input>
+        <div class="small fw-semibold mb-1"><i class="bi bi-bandaid me-1"></i>Nueva baja de la persona abierta</div>
+        <div class="row g-1 small mb-1">
+            <div class="col-6"><label class="text-muted d-block">Inicio *</label><input type="date" name="date_start" class="form-control form-control-sm" required></div>
+            <div class="col-6"><label class="text-muted d-block">Alta (si ya la tiene)</label><input type="date" name="date_end" class="form-control form-control-sm"></div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Contingencia">
+            {% for code, label in contingency_choices %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="contingency_type" value="{{ code }}" required> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+        </div>
+        <button type="submit" class="btn btn-sm btn-success">Añadir la baja</button>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:medical_rows' %}">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1">Las bajas marcadas</div>
+        <div class="d-flex flex-wrap align-items-center gap-1">
+            <input type="date" name="date_end" class="form-control form-control-sm" style="width: 10rem;" aria-label="Fecha de alta">
+            <button type="submit" name="action" value="close" class="btn btn-sm btn-outline-success">Darles el alta ese día</button>
+            <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las bajas marcadas (registradas por error)?">Borrar</button>
+        </div>
+        <p class="small text-muted mt-1 mb-0">Una baja abierta deja al trabajador de baja: no le llegan los recordatorios de fichaje.</p>
+    </form>
+</div>
