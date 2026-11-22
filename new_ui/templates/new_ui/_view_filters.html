@@ -1,0 +1,26 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_view_filters.html #}
+{# S163: los filtros propios de la vista elegida en «Qué ver», después de los comunes. #}
+    {% if section == "permisos" %}
+    <p class="small text-muted mt-2 mb-0">Permisos no tiene filtros propios: los de arriba filtran los usuarios (el periodo, por su último acceso; «Sección», por su rol).</p>
+    {% else %}
+    {% for tab in tabs_cols %}
+    <div class="d-none mt-2" data-nui-note-for="{{ tab.key }}">
+        {% if tab.extras %}
+        <div class="small fw-semibold mb-1">Filtros de {{ tab.label }}</div>
+        <div class="row g-2 mb-1">
+            {% for extra in tab.extras %}
+            <div class="col-6">
+                <label class="form-label small mb-0" for="{{ extra.name }}">{{ extra.label }}</label>
+                <select class="form-select form-select-sm" id="{{ extra.name }}" name="{{ extra.name }}" form="nui-filters" data-nui-own-filter>
+                    <option value="">Todos</option>
+                    {% for value, text in extra.options %}<option value="{{ value }}"{% if value == extra.value %} selected{% endif %}>{{ text }}</option>{% endfor %}
+                </select>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if tab.note %}<p class="small text-muted mb-0">{{ tab.note }}</p>{% endif %}
+    </div>
+    {% endfor %}
+    {% for key in entity_tabs %}<p class="small text-muted mt-2 mb-0 d-none" data-nui-note-for="{{ key }}">Los filtros no se aplican aquí; sí a los listados.</p>{% endfor %}
+    {% endif %}

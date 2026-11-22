@@ -1,0 +1,13 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_view_picker.html #}
+{% comment %}
+S163. Dentro del panel de filtro, después de Buscar y del Periodo:
+«Qué ver» (botones, sin desplegables; los de la sección elegida arriba)
+y los filtros (comunes y los propios de la vista). Miguel Ángel: "Pulso
+un botón y me sale ya lo que quiero ver. Y ahora, sus filtros."
+{% endcomment %}
+    <div class="small fw-semibold mt-2 mb-1">Qué ver</div>
+    <div class="nui-viewbar" role="tablist" aria-label="Qué ver">
+        {% for key, label in list_tabs %}
+        <button type="button" class="btn btn-sm{% if key in entity_tabs and not scope %} d-none{% elif key == 'general' and scope and entity_tabs %} d-none{% endif %}" data-nui-view="{{ key }}" role="tab">{{ label }}</button>
+        {% endfor %}
+    </div>
