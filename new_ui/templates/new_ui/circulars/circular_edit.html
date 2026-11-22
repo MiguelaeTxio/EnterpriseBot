@@ -1,0 +1,254 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/circulars/circular_edit.html #}
+{% extends "panel/base.html" %}
+
+{% comment %}
+H31 (S75) punto 2, simplificado en S114: Miguel Ángel eliminó del
+todo la sección de "plantilla vigente (archivo)" -- mecanismo legacy
+en paralelo al contenido enriquecido que solo añadía confusión ("es
+una cosa que no interesa y complica"). El campo current_template
+sigue existiendo en el modelo (lo usan otros tipos documentales fuera
+de circulares) pero ya no se gestiona desde esta pantalla.
+
+H31 (S114). Pantalla de altura fija -- Miguel Ángel, como directriz
+general de aquí en adelante: "la pantalla tiene que ser fija [...] el
+scroll [...] sería en el input text, donde se ve la carta, ahí su
+scroll vertical, su scroll horizontal si es necesario, pero la
+pantalla fija". Un solo panel (#circular-edit-panel) con altura
+calculada por JS (mismo mecanismo ya probado en la pestaña Personal,
+H31 S114: 'auto', medir cuánto se pasa el documento del viewport,
+restar ese exceso) -- dentro, el editor (#circular-editor) es el
+único que hace scroll, con el patrón h-100 + flex ya usado y
+probado, nunca flex-grow encadenado a través de varios niveles.
+
+Ver CircularEditView/CircularSaveContentView/
+CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
+{% endcomment %}
+
+{% block title %}Editar circular -- {{ document_type.label }}{% endblock %}
+{% block page_title %}Editar circular{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3 d-flex flex-column" id="circular-edit-page">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h5 class="mb-0">{{ document_type.label }}</h5>
+            <span class="text-muted small font-monospace">{{ document_type.code }}</span>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" href="{% if panel_back_url %}{{ panel_back_url }}{% else %}{% url 'new_ui:home' %}?s=doc{% endif %}">
+            <i class="bi bi-arrow-left"></i> Volver al listado
+        </a>
+    </div>
+
+    <div id="circular-edit-panel">
+    <div class="row g-3 h-100">
+        <div class="col-12 col-lg-8 h-100 d-flex flex-column">
+            <div class="card h-100">
+                <div class="card-header d-flex align-items-center gap-1 flex-wrap py-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="bold" title="Negrita"><i class="bi bi-type-bold"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="italic" title="Cursiva"><i class="bi bi-type-italic"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="underline" title="Subrayado"><i class="bi bi-type-underline"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cmd="insertUnorderedList" title="Lista"><i class="bi bi-list-ul"></i></button>
+                    <span class="vr mx-1"></span>
+                    <select id="circular-font-select" class="form-select form-select-sm w-auto" title="Fuente">
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', monospace">Courier New</option>
+                    </select>
+                    <span class="vr mx-1"></span>
+                    {# Paleta de color deliberadamente reducida -- alcance del editor básico. #}
+                    <div id="circular-color-swatches" class="d-flex gap-1">
+                        <button type="button" class="circular-swatch circular-swatch-negro" data-color="#212529" title="Negro"></button>
+                        <button type="button" class="circular-swatch circular-swatch-rojo" data-color="#dc3545" title="Rojo"></button>
+                        <button type="button" class="circular-swatch circular-swatch-azul" data-color="#0d6efd" title="Azul"></button>
+                        <button type="button" class="circular-swatch circular-swatch-verde" data-color="#198754" title="Verde"></button>
+                        <button type="button" class="circular-swatch circular-swatch-naranja" data-color="#fd7e14" title="Naranja"></button>
+                    </div>
+                    <span class="vr mx-1"></span>
+                    <select id="circular-insert-variable" class="form-select form-select-sm w-auto" title="Insertar variable">
+                        <option value="">Insertar variable...</option>
+                        <optgroup label="Trabajador">
+                            <option value="{% templatetag openvariable %}trabajador.nombre_completo{% templatetag closevariable %}">Nombre completo</option>
+                            <option value="{% templatetag openvariable %}trabajador.dni{% templatetag closevariable %}">DNI</option>
+                            <option value="{% templatetag openvariable %}trabajador.num_seguridad_social{% templatetag closevariable %}">Nº afiliación S.S.</option>
+                            <option value="{% templatetag openvariable %}trabajador.puesto{% templatetag closevariable %}">Puesto</option>
+                            <option value="{% templatetag openvariable %}trabajador.usuario{% templatetag closevariable %}">Usuario del panel</option>
+                        </optgroup>
+                        <optgroup label="Empresa">
+                            <option value="{% templatetag openvariable %}empresa.razon_social{% templatetag closevariable %}">Razón social</option>
+                            <option value="{% templatetag openvariable %}empresa.cif{% templatetag closevariable %}">CIF</option>
+                            <option value="{% templatetag openvariable %}empresa.direccion_fiscal{% templatetag closevariable %}">Dirección fiscal</option>
+                        </optgroup>
+                        <optgroup label="Administrador">
+                            <option value="{% templatetag openvariable %}administrador.nombre_completo{% templatetag closevariable %}">Nombre completo</option>
+                            <option value="{% templatetag openvariable %}administrador.dni{% templatetag closevariable %}">DNI</option>
+                        </optgroup>
+                        <optgroup label="Obra">
+                            <option value="{% templatetag openvariable %}obra.nombre{% templatetag closevariable %}">Nombre</option>
+                            <option value="{% templatetag openvariable %}obra.direccion{% templatetag closevariable %}">Dirección</option>
+                            <option value="{% templatetag openvariable %}obra.cliente{% templatetag closevariable %}">Cliente</option>
+                        </optgroup>
+                        <optgroup label="Otros">
+                            <option value="{% templatetag openvariable %}fecha{% templatetag closevariable %}">Fecha de generación</option>
+                            <option value="{% templatetag openvariable %}enlace.fichaje{% templatetag closevariable %}">Enlace de fichaje</option>
+                            <option value="{% templatetag openvariable %}enlace.panel{% templatetag closevariable %}">Enlace del panel</option>
+                        </optgroup>
+                    </select>
+                    <span class="vr mx-1"></span>
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="circular-clear-format" title="Limpiar formato">
+                        <i class="bi bi-eraser"></i>
+                    </button>
+                </div>
+                <div class="card-body d-flex flex-column circular-editor-body">
+                    <div id="circular-editor" class="form-control" contenteditable="true">{{ document_type.content_html|safe }}</div>
+                </div>
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <span class="text-muted small">Se guarda tal cual se ve aquí -- esto es lo que recibirá la persona por email.</span>
+                    <div class="d-flex gap-2">
+                        <a class="btn btn-sm btn-success" href="{% url 'new_ui:circulars_generate' pk=document_type.pk %}">
+                            <i class="bi bi-magic"></i> Generar documento
+                        </a>
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'new_ui:circulars_export_pdf' pk=document_type.pk %}">
+                            <i class="bi bi-file-earmark-pdf"></i> Descargar PDF
+                        </a>
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'new_ui:circulars_export_word' pk=document_type.pk %}">
+                            <i class="bi bi-file-earmark-word"></i> Descargar Word
+                        </a>
+                        <form method="post" action="{% url 'new_ui:circulars_save_content' pk=document_type.pk %}" id="circular-save-form" class="d-flex align-items-center">
+                            {% csrf_token %}
+                            <input type="hidden" name="content_html" id="circular-content-hidden">
+                            {# H30 (S124): solo las marcadas pasan por Docuten. #}
+                            <div class="form-check form-check-inline small mb-0 me-2">
+                                <input class="form-check-input" type="checkbox" name="requires_signature" id="circular-requires-signature" value="1"{% if document_type.requires_signature %} checked{% endif %}>
+                                <label class="form-check-label" for="circular-requires-signature">Requiere firma (Docuten)</label>
+                            </div>
+                            <button type="submit" class="btn btn-sm btn-primary">Guardar contenido</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-4">
+            <div class="card">
+                <div class="card-header py-2"><strong>Importar desde Word/PDF</strong></div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Extrae el texto del archivo y sustituye el contenido
+                        actual del editor. Solo .docx o .pdf con texto real,
+                        no escaneos de imagen sin OCR.
+                    </p>
+                    <form method="post" action="{% url 'new_ui:circulars_import' pk=document_type.pk %}"
+                          enctype="multipart/form-data" class="d-flex gap-2">
+                        {% csrf_token %}
+                        <input type="file" name="file" accept=".docx,.pdf" class="form-control form-control-sm" required>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary flex-shrink-0">Importar</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+</div>
+
+<style>
+    .circular-swatch {
+        width: 22px; height: 22px; border-radius: 4px; border: 1px solid #dee2e6;
+        padding: 0; cursor: pointer;
+    }
+    .circular-swatch-negro { background: #212529; }
+    .circular-swatch-rojo { background: #dc3545; }
+    .circular-swatch-azul { background: #0d6efd; }
+    .circular-swatch-verde { background: #198754; }
+    .circular-swatch-naranja { background: #fd7e14; }
+    .circular-editor-body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    #circular-editor {
+        flex: 1 1 auto; min-height: 0; overflow: auto;
+        font-family: Arial, sans-serif;
+    }
+    #circular-editor:focus { outline: 2px solid #0d6efd33; }
+    #circular-edit-panel { overflow: hidden; }
+</style>
+
+<script>
+(function () {
+    const editor = document.getElementById('circular-editor');
+
+    // Alcance deliberadamente reducido (H31 S75): pegar contenido
+    // externo se limpia a texto plano -- el editor solo produce
+    // negrita/cursiva/subrayado/lista/color/fuente vía los propios
+    // botones, nunca HTML arbitrario pegado desde Word/otra web.
+    editor.addEventListener('paste', function (ev) {
+        ev.preventDefault();
+        const text = (ev.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
+    });
+
+    document.querySelectorAll('[data-cmd]').forEach((btn) => {
+        btn.addEventListener('click', function () {
+            editor.focus();
+            document.execCommand(btn.dataset.cmd, false, null);
+        });
+    });
+
+    document.querySelectorAll('.circular-swatch').forEach((btn) => {
+        btn.addEventListener('click', function () {
+            editor.focus();
+            document.execCommand('foreColor', false, btn.dataset.color);
+        });
+    });
+
+    document.getElementById('circular-font-select').addEventListener('change', function () {
+        editor.focus();
+        document.execCommand('fontName', false, this.value);
+    });
+
+    // H31 (S114). "Insertar variable" -- nunca se teclea el token a
+    // mano: se elige de la lista y se inserta como texto plano en el
+    // cursor (mismo mecanismo que el resto de la barra,
+    // document.execCommand). El propio texto {{...}} queda visible en
+    // el editor tal cual -- es lo que CircularGenerateView busca y
+    // sustituye al generar un documento real para un trabajador.
+    document.getElementById('circular-insert-variable').addEventListener('change', function () {
+        if (!this.value) return;
+        editor.focus();
+        document.execCommand('insertText', false, this.value);
+        this.value = '';
+    });
+
+    document.getElementById('circular-clear-format').addEventListener('click', function () {
+        editor.focus();
+        document.execCommand('removeFormat', false, null);
+    });
+
+    document.getElementById('circular-save-form').addEventListener('submit', function () {
+        document.getElementById('circular-content-hidden').value = editor.innerHTML;
+    });
+
+    // H31 (S114). Pantalla fija -- mismo mecanismo probado en la
+    // pestaña Personal: se pone el panel en 'auto', se mide cuánto se
+    // pasa el documento del alto del viewport, y se resta ese exceso
+    // -- álgebra que da el hueco real disponible sea cual sea la
+    // altura natural del panel. El editor (#circular-editor), con
+    // flex:1;min-height:0;overflow-y/x:auto, es el único que
+    // scrollea de verdad.
+    const PANEL_GUTTER = 8;
+    const PANEL_MIN_HEIGHT = 240;
+    const panelEl = document.getElementById('circular-edit-panel');
+
+    function recomputePanelHeight() {
+        if (!panelEl) return;
+        panelEl.style.height = 'auto';
+        const naturalHeight = panelEl.getBoundingClientRect().height;
+        const overflow = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+        const target = Math.max(naturalHeight - overflow - PANEL_GUTTER, PANEL_MIN_HEIGHT);
+        panelEl.style.height = target + 'px';
+    }
+
+    window.addEventListener('resize', recomputePanelHeight);
+    requestAnimationFrame(recomputePanelHeight);
+    setTimeout(recomputePanelHeight, 300);
+})();
+</script>
+{% endblock content %}

@@ -1,0 +1,26 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/circulars/_circular_generate_person_options.html #}
+{% comment %}
+H31 (S114). Lista de sugerencias del buscador de trabajador en
+"Generar documento" -- mismo patrón que el antiguo
+autocompletado de Vacaciones (H31 S94, retirado en S129): cada <li> es clicable y
+rellena el campo de texto visible y el input oculto person_id, sin
+ninguna librería de combobox.
+{% endcomment %}
+{% if results %}
+<ul class="list-group position-absolute w-100 shadow-sm" style="z-index: 1050; max-height: 220px; overflow-y: auto;">
+    {% for person in results %}
+    <li class="list-group-item list-group-item-action py-1"
+        style="cursor: pointer;"
+        onclick="document.getElementById('circular-generate-person-input').value='{{ person.given_name|escapejs }} {{ person.first_surname|escapejs }} {{ person.second_surname|escapejs }}'.trim();
+                 document.getElementById('circular-generate-person-id').value='{{ person.pk }}';
+                 document.getElementById('circular-generate-person-options').innerHTML='';">
+        {{ person.given_name }} {{ person.first_surname }} {{ person.second_surname }}
+        <span class="text-muted small">— {{ person.dni }}</span>
+    </li>
+    {% endfor %}
+</ul>
+{% elif search_performed %}
+<ul class="list-group position-absolute w-100 shadow-sm" style="z-index: 1050;">
+    <li class="list-group-item text-muted small py-1">Sin coincidencias.</li>
+</ul>
+{% endif %}

@@ -1267,6 +1267,36 @@ def _doc_lists():
             search=("document_type__label",),
             default_order=("-delivery_date",),
             note="Periodo: fecha de entrega."),
+        # S163: las plantillas de circular (lo que se crea y se edita en
+        # Acciones › Circulares), además de las circulares entregadas.
+        "plantillas_circular": ListDef(
+            "Plantillas de circular",
+            lambda company: model("document_explorer.DocumentTypeCatalog")
+            .objects.filter(is_active=True, is_notification_template=True),
+            [
+                Col("nombre", "Circular", lambda r: r.label, "label"),
+                Col("familia", "Familia", lambda r: model(
+                    "document_explorer.DocumentTypeCatalog").family_label(
+                    r.family, for_person=True), "family"),
+                Col("dirigida", "Dirigida a", lambda r: disp(r, "domain"),
+                    "domain"),
+                Col("contenido", "Con contenido", lambda r: "Sí"
+                    if (r.content_html or "").strip() else "No"),
+                Col("firma", "Firma certificada", lambda r: "Sí"
+                    if r.requires_signature else "No", "requires_signature"),
+            ],
+            search=("label", "code"), default_order=("label",),
+            actions=lambda r: [
+                ("Editar contenido", "bi-pencil-square",
+                 reverse("new_ui:circulars_edit", args=[r.pk])),
+                ("Generar para una persona", "bi-file-earmark-person",
+                 reverse("new_ui:circulars_generate", args=[r.pk])),
+                ("Descargar PDF", "bi-filetype-pdf",
+                 reverse("new_ui:circulars_export_pdf", args=[r.pk])),
+                ("Descargar Word", "bi-filetype-docx",
+                 reverse("new_ui:circulars_export_word", args=[r.pk])),
+            ],
+            note="El periodo no se aplica a este listado."),
         "dosieres": fk(
             "Dosieres", "document_explorer.PersonalDossierTemplate",
             ("created_by__user",), [

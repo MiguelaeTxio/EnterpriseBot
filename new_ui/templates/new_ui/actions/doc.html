@@ -1,0 +1,43 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/doc.html #}
+{% comment %}
+S163. Acciones › «De la vista» en Documentos: lo que se hace en cada
+vista (no solo se lista). Un bloque por vista (data-nui-actions-for);
+new_ui.js enseña el de la vista abierta. Formularios:
+- data-nui-action-form: se envían sin salir de la vista; con
+  data-nui-needs-selection llevan los marcados (selected=...) y el
+  listado se repinta con el resultado.
+- sin esa marca: envío normal (p. ej. crear y pasar a editar).
+{% endcomment %}
+<div class="d-none" data-nui-actions-for="circulares plantillas_circular">
+    <form method="post" action="{% url 'new_ui:circulars_create' %}" class="mb-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-plus-circle me-1"></i>Nueva circular</div>
+        <input type="text" name="label" class="form-control form-control-sm mb-1" placeholder="Nombre visible (p. ej. Normas de seguridad en obra)" aria-label="Nombre visible" required>
+        <div class="row g-1">
+            <div class="col-7">
+                <select name="family" class="form-select form-select-sm" aria-label="Familia documental" required>
+                    <option value="">Familia documental…</option>
+                    {% for code, label in circular_families %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-5">
+                <select name="domain" class="form-select form-select-sm" aria-label="Dirigida a">
+                    {% for code, label in circular_domains %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success mt-1"><i class="bi bi-pencil-square me-1"></i>Crear y escribir su contenido</button>
+    </form>
+    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Las plantillas marcadas <span class="fw-normal text-muted">(vista «Plantillas de circular»)</span></div>
+    <div class="d-flex flex-wrap gap-1">
+        <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:circulars_bulk_signature' %}">
+            {% csrf_token %}<input type="hidden" name="action" value="sign">
+            <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-pen me-1"></i>Con firma certificada</button>
+        </form>
+        <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:circulars_bulk_signature' %}">
+            {% csrf_token %}<input type="hidden" name="action" value="unsign">
+            <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Sin firma</button>
+        </form>
+    </div>
+    <p class="small text-muted mt-2 mb-0">Editar, generar para una persona y descargar en PDF o Word: marca una sola plantilla y usa «Esta fila».</p>
+</div>

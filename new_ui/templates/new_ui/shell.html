@@ -182,12 +182,17 @@ body.nui-dragging { user-select: none; }
             {% include "new_ui/permisos/_actions_panel.html" %}
             {% else %}
             <div class="nui-tabs nav" role="tablist">
-                <button type="button" class="nav-link" data-nui-tab="exportar" role="tab">Exportar</button>
+                <button type="button" class="nav-link" data-nui-tab="vista" role="tab" id="nui-view-actions-tab">De la vista</button>
                 <button type="button" class="nav-link" data-nui-tab="fila" role="tab">Esta fila</button>
+                <button type="button" class="nav-link" data-nui-tab="exportar" role="tab">Exportar</button>
                 {% if section != "doc" %}<button type="button" class="nav-link" data-nui-tab="uno" role="tab">{% if section == "cdg" %}Del centro de gasto{% else %}Del trabajador{% endif %}</button>{% endif %}
             </div>
             <div class="nui-body">
-                <div data-nui-pane="exportar">
+                <div data-nui-pane="vista">
+                    {% with "new_ui/actions/"|add:section|add:".html" as actions_template %}{% include actions_template %}{% endwith %}
+                    <p class="small text-muted mb-0 d-none" data-nui-actions-none>Esta vista todavía no tiene acciones propias aquí.</p>
+                </div>
+                <div data-nui-pane="exportar" class="d-none">
                     <div class="small text-muted mb-1">Exportar el listado abierto (los marcados o, si no hay ninguno, todo lo filtrado):</div>
                     <div class="d-flex flex-wrap gap-1">
                         <button type="button" class="btn btn-sm btn-success" data-nui-export="xlsx"><i class="bi bi-file-earmark-excel me-1"></i>Excel</button>

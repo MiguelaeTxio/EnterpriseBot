@@ -278,6 +278,37 @@
         }
         function pane(t) { return listPanel.querySelector('.nui-list-pane[data-tab="' + (t || tab()) + '"]'); }
         let groups = null;
+        // Acciones › De la vista: el bloque de la vista abierta.
+        function paintViewActions(t) {
+            const blocks = root.querySelectorAll("[data-nui-actions-for]");
+            let any = false;
+            blocks.forEach(function (b) {
+                const on = b.dataset.nuiActionsFor.split(" ").indexOf(t) !== -1;
+                b.classList.toggle("d-none", !on);
+                any = any || on;
+            });
+            const none = root.querySelector("[data-nui-actions-none]");
+            if (none) none.classList.toggle("d-none", any);
+            const label = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + t + '"]');
+            const tabButton = document.getElementById("nui-view-actions-tab");
+            if (tabButton) tabButton.textContent = "De " + (label ? label.textContent.trim() : "la vista");
+        }
+        listPanel.addEventListener("nui:tab", function (ev) { paintViewActions(ev.detail); });
+        root.addEventListener("submit", function (ev) {
+            const f = ev.target.closest("[data-nui-action-form]");
+            if (!f) return;
+            ev.preventDefault();
+            const body = new FormData(f);
+            if (f.hasAttribute("data-nui-needs-selection")) {
+                const ids = Array.from(sel().keys());
+                if (!ids.length) { result("Marca primero en el listado las filas a las que aplicarlo.", true); return; }
+                ids.forEach(id => body.append("selected", id));
+            }
+            post(f.getAttribute("action"), body)
+                .then(function (data) { result(data.message || "Hecho.", false); load(); })
+                .catch(function (err) { result(err.message, true); });
+        });
+
         // Acciones › Esta fila: las acciones de la fila marcada (una sola).
         function paintRowActions() {
             const box = document.getElementById("nui-row-actions");

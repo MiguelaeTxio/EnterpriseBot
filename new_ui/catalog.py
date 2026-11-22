@@ -35,6 +35,7 @@ SECTIONS = OrderedDict([
     ("doc", ("Documentos", "bi-folder2-open", [
         ("bandeja", "Bandeja de entrada"),
         ("circulares", "Circulares"),
+        ("plantillas_circular", "Plantillas de circular"),
         ("dosieres", "Dosieres"),
         ("avisos", "Avisos"),
         ("pedir", "Pedir documentos"),

@@ -1,0 +1,88 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/circulars/circular_generate.html #}
+{% extends "panel/base.html" %}
+
+{% comment %}
+H31 (S114). Generación de UN documento real a partir de una plantilla
+con variables -- Miguel Ángel: "las plantillas deben ser
+programáticas [...] elegimos la empresa, el administrador y el
+trabajador y se genera el documento ad-hoc". El administrador se
+resuelve solo (CompanyFiscalProfile.administrator) al elegir la
+empresa -- no hay selector aparte para él en este primer alcance. Ver
+CircularGenerateView/CircularGeneratePersonSearchView.
+{% endcomment %}
+
+{% block title %}Generar documento -- {{ document_type.label }}{% endblock %}
+{% block page_title %}Generar documento{% endblock %}
+
+{% block extra_head %}
+<style>
+  .circulars-generate-box { max-width: 640px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 pt-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h5 class="mb-0">{{ document_type.label }}</h5>
+            <span class="text-muted small font-monospace">{{ document_type.code }}</span>
+        </div>
+        {% url 'new_ui:circulars_edit' pk=document_type.pk as back_fallback %}<a class="btn btn-sm btn-outline-secondary" href="{{ panel_back_url|default:back_fallback }}">
+            <i class="bi bi-arrow-left"></i> Volver a editar
+        </a>
+    </div>
+
+    <div class="border rounded p-3 circulars-generate-box">
+        <p class="text-muted small">
+            Elige la empresa y el trabajador. El documento se genera
+            sustituyendo las variables que hayas insertado en la
+            plantilla (nombre, DNI y nº de afiliación a la Seguridad
+            Social del trabajador; razón social, CIF y dirección de
+            la empresa; nombre y DNI del administrador; fecha) por
+            los datos reales, se guarda en la carpeta del trabajador
+            y queda disponible para descargar aquí mismo.
+        </p>
+        <form method="post" action="{% url 'new_ui:circulars_generate' pk=document_type.pk %}">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Empresa</label>
+                <select class="form-select" name="company_id" required>
+                    <option value="">Elegir...</option>
+                    {% for company in companies %}
+                    <option value="{{ company.pk }}">
+                        {{ company.legal_name }}
+                        {% if company.administrator %} -- administrador: {{ company.administrator.given_name }} {{ company.administrator.first_surname }}{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Obra (opcional)</label>
+                <select class="form-select" name="worksite_id">
+                    <option value="">Sin obra asociada</option>
+                    {% for worksite in worksites %}
+                    <option value="{{ worksite.pk }}">{{ worksite.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3 position-relative">
+                <label class="form-label small fw-bold">Trabajador</label>
+                <input type="text" class="form-control" id="circular-generate-person-input"
+                       placeholder="Nombre, apellidos o DNI..." autocomplete="off"
+                       hx-get="{% url 'new_ui:circulars_generate_person_search' %}"
+                       hx-trigger="keyup changed delay:300ms"
+                       hx-target="#circular-generate-person-options"
+                       hx-vals='js:{q: document.getElementById("circular-generate-person-input").value}'>
+                <input type="hidden" name="person_id" id="circular-generate-person-id" required>
+                <div id="circular-generate-person-options"></div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Generar y guardar</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

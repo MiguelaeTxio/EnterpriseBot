@@ -28,6 +28,7 @@ from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import render
 from django.views import View
 
+from document_explorer.models import DocumentTypeCatalog
 from ivr_config.models import Company, CompanyUser
 from new_ui.mixins import SuperuserRequiredMixin
 from new_ui.models import UiUserGroup, UiViewGrant
@@ -277,6 +278,13 @@ def _section_context(company_user, section):
         "opts": filter_options(section, company_user.company, company_user),
         "tabs_cols": tabs_cols,
         "entity_tabs": ENTITY_TABS.get(section, ()),
+        # Acciones › De la vista (new_ui/actions/<sección>.html).
+        "circular_families": DocumentTypeCatalog.FAMILY_CHOICES,
+        "circular_domains": [
+            (code, label) for code, label in DocumentTypeCatalog.DOMAIN_CHOICES
+            if code in (DocumentTypeCatalog.DOMAIN_PERSONAL,
+                        DocumentTypeCatalog.DOMAIN_BOTH,
+                        DocumentTypeCatalog.DOMAIN_COMPANY)],
         "selections": selections,
         "scope": scope if isinstance(scope, dict) and scope.get("pk")
         else None,

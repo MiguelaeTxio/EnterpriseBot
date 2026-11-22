@@ -11,7 +11,9 @@ interfaz antigua.
 
 from django.urls import path
 
-from new_ui import state, views, views_docs, views_groups
+from new_ui import (
+    state, views, views_circulars, views_docs, views_groups,
+)
 
 app_name = "new_ui"
 
@@ -53,6 +55,35 @@ urlpatterns = [
          views_docs.MachineQrImageView.as_view(), name="machine_qr_image"),
     path("maquina/<int:pk>/qr/", views_docs.MachineQrActionView.as_view(),
          name="machine_qr_action"),
+    # Circulares (copia de la antigua).
+    path("circulares/nueva/", views_circulars.CircularCreateView.as_view(),
+         name="circulars_create"),
+    path("circulares/firma/",
+         views_circulars.CircularBulkSignatureView.as_view(),
+         name="circulars_bulk_signature"),
+    path("circulares/<int:pk>/", views_circulars.CircularEditView.as_view(),
+         name="circulars_edit"),
+    path("circulares/<int:pk>/guardar-contenido/",
+         views_circulars.CircularSaveContentView.as_view(),
+         name="circulars_save_content"),
+    path("circulares/<int:pk>/importar/",
+         views_circulars.CircularImportDocumentView.as_view(),
+         name="circulars_import"),
+    path("circulares/<int:pk>/descargar/pdf/",
+         views_circulars.CircularExportPdfView.as_view(),
+         name="circulars_export_pdf"),
+    path("circulares/<int:pk>/descargar/word/",
+         views_circulars.CircularExportWordView.as_view(),
+         name="circulars_export_word"),
+    path("circulares/<int:pk>/generar/",
+         views_circulars.CircularGenerateView.as_view(),
+         name="circulars_generate"),
+    path("circulares/generar/buscar-persona/",
+         views_circulars.CircularGeneratePersonSearchView.as_view(),
+         name="circulars_generate_person_search"),
+    path("personal/preparar-docuten/",
+         views_circulars.PersonalDocutenExportView.as_view(),
+         name="personal_docuten_export"),
     # Permisos.
     path("permisos/editor/", views.PermEditorView.as_view(),
          name="perm_editor"),
