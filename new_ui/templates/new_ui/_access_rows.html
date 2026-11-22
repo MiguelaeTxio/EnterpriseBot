@@ -1,0 +1,88 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_access_rows.html #}
+{% comment %}
+H24 (S141). Cuerpo del modal "Dar acceso al fichaje": una fila por
+trabajador marcado con el usuario propuesto (nombre.apellido; con los
+dos apellidos si ya existe) que el supervisor puede cambiar viendo los
+usuarios parecidos que ya hay, y su sección, base y puesto. La
+contraseña es siempre las cuatro últimas cifras de su DNI.
+{% endcomment %}
+<div class="small text-muted mb-2">
+    La base se puede dejar vacía y ponerla después a varios a la vez en
+    Administración › Usuarios (marcarlos y «Poner base»).
+</div>
+{# S149 (Miguel Ángel, 19/11: "las cajas de texto deberían de estar alineadas horizontalmente"): arriba, para que la ayuda bajo la base no descoloque los campos. #}
+<table class="table table-sm align-top small mb-0" id="nui-access-table">
+    <thead class="table-light">
+        <tr><th>Trabajador</th><th>Usuario</th><th>Sección</th><th>Base</th><th>Rol en el panel</th></tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr data-person="{{ row.person.pk }}"{% if row.unlinked %} data-link="{{ row.unlinked.pk }}"{% elif row.has_account or not row.password_ok %} data-skip="1"{% endif %}>
+            <td>
+                <div class="fw-semibold">{{ row.person.first_surname }} {{ row.person.second_surname }}, {{ row.person.given_name }}</div>
+                <div class="text-muted">{{ row.person.dni|default:"sin DNI" }} · {{ row.person.phone|default:"sin teléfono de empresa" }}</div>
+                {% if row.pending %}<div class="text-info">Tenía un pre-registro: se completa.</div>{% endif %}
+            </td>
+            {% if row.unlinked %}
+            <td colspan="4" class="text-info-emphasis">Ya tiene usuario: <strong>{{ row.unlinked.user.username }}</strong> ({{ row.unlinked.get_role_display }}), sin enlazar con su ficha. Se enlaza con ella sin cambiarle el rol, la base ni la contraseña.</td>
+            {% elif row.has_account %}
+            <td colspan="4" class="text-muted">Ya tiene usuario: <strong>{{ row.person.company_user.user.username }}</strong></td>
+            {% elif not row.password_ok %}
+            <td colspan="4" class="text-danger">Sin DNI con cifras: no se le puede poner la contraseña.</td>
+            {% else %}
+            <td>
+                <input type="text" class="form-control form-control-sm pa-username{% if row.conflict %} border-warning{% endif %}" value="{{ row.username }}" aria-label="Usuario">
+                {% if row.similar %}
+                <div class="text-warning-emphasis mt-1">Ya existen:
+                    {% for user in row.similar %}<div><strong>{{ user.username }}</strong>{% if user.name %} ({{ user.name }}){% endif %}</div>{% endfor %}
+                </div>
+                {% endif %}
+            </td>
+            {% comment %}
+            S147 (Miguel Ángel): si ya tiene sección o base, se indica la que
+            tiene y se conserva; si no, se elige aquí. La base también se
+            puede poner después a varios a la vez (Administración > Usuarios).
+            {% endcomment %}
+            <td>
+                {% if row.section %}
+                <input type="hidden" class="pa-section" value="{{ row.section.pk }}">
+                <div class="fw-semibold">{{ row.section.name }}</div>
+                <div class="text-muted">La que ya tiene</div>
+                {% else %}
+                <select class="form-select form-select-sm pa-section" aria-label="Sección">
+                    <option value="">—</option>
+                    {% for section in sections %}<option value="{{ section.pk }}">{{ section.name }}</option>{% endfor %}
+                </select>
+                {% endif %}
+            </td>
+            <td>
+                {% if row.base %}
+                <input type="hidden" class="pa-base" value="{{ row.base.pk }}">
+                <div class="fw-semibold">{{ row.base.name }}</div>
+                <div class="text-muted">La que ya tiene</div>
+                {% else %}
+                <select class="form-select form-select-sm pa-base" aria-label="Base">
+                    <option value="">—</option>
+                    {% for base in bases %}<option value="{{ base.pk }}">{{ base.name }}</option>{% endfor %}
+                </select>
+                <div class="text-muted">Opcional: se puede poner luego</div>
+                {% endif %}
+            </td>
+            <td>
+                {% if row.keep_role %}
+                <input type="hidden" class="pa-role" value="">
+                <div class="fw-semibold">{{ row.keep_role }}</div>
+                <div class="text-muted">El que ya tiene: no se cambia</div>
+                {% else %}
+                <select class="form-select form-select-sm pa-role" aria-label="Rol en el panel" title="Permisos del panel: taller ve también los partes; el resto solo el fichaje y sus solicitudes.">
+                    {% for value, label in worker_roles %}<option value="{{ value }}"{% if row.role == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+                {% endif %}
+            </td>
+            {% endif %}
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">No hay nadie marcado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

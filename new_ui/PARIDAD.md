@@ -48,10 +48,10 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ (S163) Requisitos de documentación: añadir/quitar a los marcados
   (Personal y Centros de gasto); crear, modificar, activar, borrar y
   categoría de un tipo (Documentos › Requisitos)
-- ⬜ Contrato revisado
+- ✅ (S163) Contrato revisado (correcto, deshacer, anular) en «Del trabajador»
 - ✅ (S163) Avisar de una circular a los marcados: WhatsApp o correos (.eml)
-- ⬜ Acceso al panel (vista previa, crear, reenviar)
-- ⬜ Empresa, horario, sección y base en masa · ⬜ sección de uno
+- ✅ (S163) Acceso al panel (preparar, crear o enlazar, reenviar el alta)
+- ✅ (S163) Empresa, horario, sección y base en masa (sección de uno: marcarlo en Horarios)
 - ⬜ Bajas médicas
 - ⬜ Preparar Docuten (ruta copiada; falta su sitio en Acciones)
 - ⬜ EPIs: entrega por lotes, plantillas de lote, historial, ficha técnica

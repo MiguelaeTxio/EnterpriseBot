@@ -13,7 +13,8 @@ from django.urls import path
 
 from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
-    views_doc_actions, views_notify, views_personnel, views_photos,
+    views_access, views_doc_actions, views_notify, views_personnel,
+    views_photos,
     views_requirements, views_schedules,
 )
 
@@ -35,6 +36,19 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Acceso al panel, base, empresa y contrato revisado (S163).
+    path("acceso/", views_access.AccessPreviewView.as_view(),
+         name="access_preview"),
+    path("acceso/crear/", views_access.AccessCreateView.as_view(),
+         name="access_create"),
+    path("acceso/reenviar/", views_access.AccessResendView.as_view(),
+         name="access_resend"),
+    path("personas/base/", views_access.MassBaseView.as_view(),
+         name="mass_base"),
+    path("personas/empresa/", views_access.MassEmployerView.as_view(),
+         name="mass_employer"),
+    path("persona/<int:pk>/contrato-revisado/",
+         views_access.ContractReviewView.as_view(), name="contract_review"),
     # Alta, baja y reactivar (S163).
     path("personas/alta/leer/", views_personnel.NuiIntakeExtractView.as_view(),
          name="person_intake_extract"),

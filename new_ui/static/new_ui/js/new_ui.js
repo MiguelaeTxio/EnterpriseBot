@@ -378,8 +378,14 @@
                     // Lo guardado sigue en el formulario: guardar otra vez lo modifica.
                     const pkInput = f.querySelector("[data-nui-pk]");
                     if (pkInput && data.id) pkInput.value = data.id;
+                    // Contrato revisado: «Correcto» deja a mano el Deshacer.
+                    if (f.hasAttribute("data-nui-contract")) {
+                        const action = submitter ? submitter.value : "";
+                        f.querySelector("[data-nui-contract-info]").textContent = data.message || "";
+                        f.querySelector("[data-nui-contract-undo]").classList.toggle("d-none", action !== "review");
+                    }
                     // Lo de la persona vista (su foto) se repinta.
-                    if (f.closest("#nui-entity-actions")) loadEntityActions();
+                    if (f.closest("#nui-entity-actions") && !f.hasAttribute("data-nui-no-refresh")) loadEntityActions();
                     // Alta: la vista se queda con la persona nueva.
                     if (data.scope && section === "per") setScope(data.scope);
                     // Formularios de un solo uso (subir): vuelven a empezar.
@@ -655,6 +661,43 @@
                     }
                     result(data.message || "Datos leídos.", !!data.duplicate);
                 }).catch(function (err) { result(err.message, true); });
+            });
+        }
+        // Acceso al panel (S163): filas de los marcados y crear.
+        const access = document.getElementById("nui-access");
+        if (access) {
+            const rowsBox = access.querySelector("[data-nui-access-rows]");
+            const createBtn = access.querySelector("[data-nui-access-create]");
+            access.querySelector("[data-nui-access-preview]").addEventListener("click", function () {
+                const ids = Array.from(sel().keys());
+                if (!ids.length) { result("Marca primero en el listado a quién dar acceso.", true); return; }
+                rowsBox.innerHTML = '<p class="small text-muted mb-0">Cargando…</p>';
+                fetch(access.dataset.previewUrl + "?ids=" + ids.join(","), {credentials: "same-origin"})
+                    .then(r => r.text())
+                    .then(function (html) { rowsBox.innerHTML = html; createBtn.classList.remove("d-none"); });
+            });
+            createBtn.addEventListener("click", function () {
+                const rows = Array.from(rowsBox.querySelectorAll("tr[data-person]:not([data-skip])")).map(tr => (tr.dataset.link ? {
+                    person: tr.dataset.person, link: tr.dataset.link,
+                } : {
+                    person: tr.dataset.person,
+                    username: tr.querySelector(".pa-username").value.trim(),
+                    section: tr.querySelector(".pa-section").value,
+                    base: tr.querySelector(".pa-base").value,
+                    role: tr.querySelector(".pa-role").value,
+                }));
+                if (!rows.length) { result("No hay nadie a quien crear usuario.", true); return; }
+                createBtn.disabled = true;
+                result("Creando usuarios…", false);
+                fetch(access.dataset.createUrl, {
+                    method: "POST", credentials: "same-origin",
+                    headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+                    body: JSON.stringify({rows: rows}),
+                }).then(r => r.json()).then(function (data) {
+                    result(data.message || "Hecho.", data.ok === false);
+                    if (data.ok) { rowsBox.innerHTML = ""; createBtn.classList.add("d-none"); load(); }
+                }).catch(function () { result("Error de red: no se ha creado nada.", true); })
+                  .finally(function () { createBtn.disabled = false; });
             });
         }
         // Horario: qué partes del formulario se ven según las casillas.

@@ -38,3 +38,16 @@ automático y subir otra. Vista: new_ui/views_photos.py.
     <input type="file" name="file" accept="image/*" required class="form-control form-control-sm" style="max-width: 16rem;" aria-label="Foto nueva">
     <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-upload me-1"></i>Subir otra foto</button>
 </form>
+
+<div class="small fw-semibold mt-3 mb-1"><i class="bi bi-file-earmark-check me-1"></i>Contrato vigente</div>
+<form data-nui-action-form data-nui-no-refresh data-nui-contract action="{% url 'new_ui:contract_review' person.pk %}" class="small">
+    {% csrf_token %}
+    <input type="hidden" name="previous_date" value="{{ reviewed_at|date:'Y-m-d' }}">
+    <input type="hidden" name="previous_by" value="{{ person.contract_reviewed_by_id|default:'' }}">
+    <div class="text-muted mb-1" data-nui-contract-info>{% if reviewed_at %}Revisado el {{ reviewed_at|date:"d/m/Y" }}{% if reviewed_by %} por {{ reviewed_by }}{% endif %}.{% else %}Sin revisar: el aviso de antigüedad cuenta desde la fecha del contrato.{% endif %}</div>
+    <div class="d-flex flex-wrap gap-1">
+        <button type="submit" name="action" value="review" class="btn btn-sm btn-outline-success">Correcto (revisado hoy)</button>
+        <button type="submit" name="action" value="restore" class="btn btn-sm btn-outline-secondary d-none" data-nui-contract-undo>Deshacer</button>
+        {% if reviewed_at %}<button type="submit" name="action" value="clear" class="btn btn-sm btn-outline-danger">Anular revisión</button>{% endif %}
+    </div>
+</form>

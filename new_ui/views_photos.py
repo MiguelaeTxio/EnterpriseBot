@@ -117,8 +117,13 @@ class PersonPhotoPanelView(SuperuserRequiredMixin, View):
             photo_url = reverse("new_ui:document_file",
                                 args=[person.avatar_document_id])
             source = "Imagen elegida como foto"
+        # S163: y la revisión del contrato vigente (antes, en su ficha).
+        reviewer = person.contract_reviewed_by
         return render(request, "new_ui/_person_photo.html", {
             "person": person, "photo_url": photo_url, "source": source,
+            "reviewed_at": person.contract_reviewed_at,
+            "reviewed_by": (reviewer.user.get_full_name()
+                            or reviewer.user.username) if reviewer else "",
         })
 
 
