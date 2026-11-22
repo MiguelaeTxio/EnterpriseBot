@@ -8,8 +8,8 @@ Jornadas de fichaje de un trabajador y sus correcciones para la nueva
 interfaz (S163). Copia de panel/views_clock_events.py (worker_detail_data,
 apply_correction y lo que usan) y de panel/views_clock_worker.py (una
 fila por jornada y una por día), sin depender de ellas. Se quita la
-comida que se proponía al añadir una pausa (la nueva interfaz no la
-pinta).
+comida que se propone al añadir una pausa sale de
+new_ui/schedule_core.py.
 """
 import datetime
 import json
@@ -180,6 +180,43 @@ def _meal_edits(shift, by_replacement):
 
 
 
+def _lunch_defaults(company, person):
+    """
+    day -> ("YYYY-MM-DDTHH:MM" start, end) of the schedule's lunch, or None.
+
+    ---
+
+    S149: la pausa de comida que se propone al añadirla: entre la salida
+    de la mañana y la entrada de la tarde de su horario ese día (jornada
+    partida); None si ese día no la tiene. S163: con el horario de
+    new_ui/schedule_core.py y las horas de ese día (WorkdaySchedule.for_day).
+    """
+    from hr_calendar.clock_report import public_holiday
+    from new_ui.schedule_core import resolve_person_schedule
+
+    base, _origin = resolve_person_schedule(person, company)
+    cu = person.company_user
+    cache = {}
+
+    def lunch(day):
+        if base is None:
+            return None
+        if day not in cache:
+            schedule = base.for_day(
+                day, holiday=public_holiday(day, getattr(cu, "base", None)))
+            cache[day] = None
+            if (schedule is not None and not schedule.is_open
+                    and not schedule.is_intensive
+                    and schedule.end_time_morning
+                    and schedule.start_time_afternoon):
+                cache[day] = tuple(
+                    "%sT%s" % (day.isoformat(), t.strftime("%H:%M"))
+                    for t in (schedule.end_time_morning,
+                              schedule.start_time_afternoon))
+        return cache[day]
+    return lunch
+
+
 def worker_detail_data(company, person, date_from, date_to):
     """
     Shifts, corrections history and report of one worker in a range.
@@ -189,9 +226,13 @@ def worker_detail_data(company, person, date_from, date_to):
     trabajador en un intervalo. Lo usan el detalle (modal de la ficha) y
     la página de fichajes del trabajador (S144).
     """
-    # S163: el informe (reports_by_user) ya precarga los horarios en
-    # bloque; la comida que se proponía al añadirla no se usa aquí.
-    return _worker_detail_data(company, person, date_from, date_to)
+    # S163: el horario de cada día (comida que se propone) sale de la
+    # caché en bloque de new_ui/schedule_core.py; el informe
+    # (reports_by_user) precarga además el suyo.
+    from new_ui.schedule_core import bulk_schedule_cache
+
+    with bulk_schedule_cache([person], company):
+        return _worker_detail_data(company, person, date_from, date_to)
 
 
 def _worker_detail_data(company, person, date_from, date_to):
@@ -222,6 +263,7 @@ def _worker_detail_data(company, person, date_from, date_to):
 
     bases = clock_extras.company_bases(company)
     budget = clock_extras.new_budget()
+    lunch = _lunch_defaults(company, person)
     shifts = [{
         "day": s.day,
         "presses": [_press_view(s.clock_in, by_replacement),
@@ -258,6 +300,7 @@ def _worker_detail_data(company, person, date_from, date_to):
         # S149: pausas por tipos para corregir y la comida del horario
         # que se propone al añadirla.
         "meal_edits": _meal_edits(s, by_replacement),
+        "lunch": lunch(s.day),
         # S143: comida o cena sin fichar que se descuenta (1 h cada una).
         # S149: con de dónde sale la hora si no es de la jornada (p. ej.
         # "de presencia 1:00").

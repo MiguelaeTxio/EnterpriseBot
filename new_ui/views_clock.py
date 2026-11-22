@@ -51,6 +51,11 @@ def _days(request):
     return days
 
 
+VIEW_SHIFTS = "jornadas"
+VIEW_CALENDAR = "calendario"
+VIEW_HISTORY = "correcciones"
+
+
 def _period(params):
     """
     The period of the common filter; without one, the current month.
@@ -118,7 +123,30 @@ def render_jornadas(request, person):
     (el más reciente arriba), sus totales, la bolsa y el historial.
     """
     company = request.user.company_user.company
-    date_from, date_to = _period(request.GET)
+    view = request.GET.get("vista", "")
+    if view not in (VIEW_SHIFTS, VIEW_CALENDAR, VIEW_HISTORY):
+        view = VIEW_SHIFTS
+    only_day = None
+    try:
+        only_day = datetime.date.fromisoformat(request.GET.get("dia") or "")
+    except ValueError:
+        pass
+    if view == VIEW_CALENDAR:
+        from new_ui.clock_calendar import calendar_range, calendar_years
+
+        cal_from, cal_to = calendar_range()
+        cal = clock_core.worker_detail_data(company, person, cal_from,
+                                            cal_to)
+        parts = [clock_core._row(shift) for shift in cal["shifts"]]
+        return render(request, "new_ui/_jornadas.html", {
+            "person": person, "view": view,
+            "has_account": person.company_user_id is not None,
+            "calendar": calendar_years(parts),
+        })
+    if only_day is not None and view == VIEW_SHIFTS:
+        date_from = date_to = only_day
+    else:
+        date_from, date_to = _period(request.GET)
     data = clock_core.worker_detail_data(company, person, date_from,
                                          date_to)
     rows = [clock_core._row(shift) for shift in data["shifts"]]
@@ -134,6 +162,8 @@ def render_jornadas(request, person):
     report = data["report"]
     return render(request, "new_ui/_jornadas.html", {
         "person": person,
+        "view": view,
+        "only_day": only_day,
         "has_account": person.company_user_id is not None,
         "date_from": date_from,
         "date_to": date_to,
@@ -213,6 +243,27 @@ class ShiftEditView(SuperuserRequiredMixin, View):
         post["action"] = "EDIT"
         post["edit_rows"] = json.dumps(rows)
         request.POST = post
+        message, error, _form = clock_core.apply_correction(request, person)
+        return _error(error) if error else _ok(message)
+
+
+class ShiftFixView(SuperuserRequiredMixin, View):
+    """
+    POST `action` (MEAL | INSERT): meal break or an inserted stretch.
+
+    ---
+
+    POST: añadir o corregir la pausa de comida (meal_start, meal_end y,
+    si se corrige una, meal_out/meal_back; si se añade, meal_entry) o
+    intercalar un tramo de otro tipo que no fichó (insert_entry,
+    insert_type, insert_start y, si no llega al siguiente fichaje,
+    insert_end). Queda quién, cuándo y por qué.
+    """
+
+    def post(self, request, pk):
+        person = _person(pk)
+        if request.POST.get("action") not in ("MEAL", "INSERT"):
+            return _error("Acción no válida.")
         message, error, _form = clock_core.apply_correction(request, person)
         return _error(error) if error else _ok(message)
 

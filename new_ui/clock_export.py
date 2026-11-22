@@ -16,6 +16,7 @@ historial). Con un solo trabajador, sus datos van arriba como membrete.
 from types import SimpleNamespace
 
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
 from django.utils import timezone
 from django.views import View
 
@@ -66,35 +67,37 @@ def _early(shift):
             if shift.early_minutes is not None else None)
 
 
-# (cabecera, ancho, valor(item), formato) -- «Vista del panel» de
-# CLOCK_DAYS; "tipos" se abre en una columna por tipo de fichaje.
+# (clave, cabecera, ancho, valor(item), formato) -- las columnas de
+# CLOCK_DAYS con sus claves (las de las plantillas de exportación que se
+# guardan en panel.ScreenExportTemplate, pantalla "clock_days"); la
+# «Vista del panel» es todas. "tipos" se abre en una columna por tipo.
 DAY_COLUMNS = (
-    ("Fecha", 12, lambda i: i.day, DATE),
-    ("Entrada", 9, lambda i: _hour(i.shift.clock_in, "pressed_at",
+    ("fecha", "Fecha", 12, lambda i: i.day, DATE),
+    ("entrada", "Entrada", 9, lambda i: _hour(i.shift.clock_in, "pressed_at",
                                    i.shift.day), "HH:MM"),
-    ("Salida", 9, lambda i: _hour(i.shift.clock_out, "pressed_at",
+    ("salida", "Salida", 9, lambda i: _hour(i.shift.clock_out, "pressed_at",
                                   i.shift.day), "HH:MM"),
-    ("Entrada (parte)", 9, lambda i: _hour(i.shift.clock_in, "rounded_at",
+    ("entrada_parte", "Entrada (parte)", 9, lambda i: _hour(i.shift.clock_in, "rounded_at",
                                            i.shift.day), "HH:MM"),
-    ("Salida (parte)", 9, lambda i: _hour(i.shift.clock_out, "rounded_at",
+    ("salida_parte", "Salida (parte)", 9, lambda i: _hour(i.shift.clock_out, "rounded_at",
                                           i.shift.day), "HH:MM"),
-    ("Municipio entrada", 26, lambda i: _place(i.shift.clock_in), None),
-    ("Municipio salida", 26, lambda i: _place(i.shift.clock_out), None),
-    ("Coordenadas entrada", 22, lambda i: _coordinates(i.shift.clock_in),
+    ("municipio_entrada", "Municipio entrada", 26, lambda i: _place(i.shift.clock_in), None),
+    ("municipio_salida", "Municipio salida", 26, lambda i: _place(i.shift.clock_out), None),
+    ("coordenadas_entrada", "Coordenadas entrada", 22, lambda i: _coordinates(i.shift.clock_in),
      None),
-    ("Coordenadas salida", 22, lambda i: _coordinates(i.shift.clock_out),
+    ("coordenadas_salida", "Coordenadas salida", 22, lambda i: _coordinates(i.shift.clock_out),
      None),
-    ("Entrada según horario", 10, lambda i: (
+    ("entrada_horario", "Entrada según horario", 10, lambda i: (
         i.shift.expected_start if i.shift.late_minutes is not None
         else None), "HH:MM"),
-    ("Minutos tarde", 9, lambda i: _late(i.shift), None),
-    ("Salida según horario", 10, lambda i: (
+    ("minutos_tarde", "Minutos tarde", 9, lambda i: _late(i.shift), None),
+    ("salida_horario", "Salida según horario", 10, lambda i: (
         i.shift.expected_end if i.shift.early_minutes is not None
         else None), "HH:MM"),
-    ("Minutos antes", 9, lambda i: _early(i.shift), None),
-    ("Horas", 8, lambda i: i.shift.duration_label, None),
-    ("Incidencias", 60, lambda i: "; ".join(i.shift.incidents), None),
-    ("tipos", 14, None, None),
+    ("minutos_antes", "Minutos antes", 9, lambda i: _early(i.shift), None),
+    ("horas", "Horas", 8, lambda i: i.shift.duration_label, None),
+    ("incidencias", "Incidencias", 60, lambda i: "; ".join(i.shift.incidents), None),
+    ("tipos", "tipos", 14, None, None),
 )
 
 
@@ -139,14 +142,16 @@ def _letterhead(row, date_from, date_to, sheets):
             sheet.column_dimensions[get_column_letter(index)].width = width
 
 
-def build_workbook(company, people, date_from, date_to):
+def build_workbook(company, people, date_from, date_to, columns=None):
     """
     The clock-in record workbook of `people` in the range.
 
     ---
 
-    El libro del registro de jornada de estas personas en el intervalo.
+    El libro del registro de jornada de estas personas en el intervalo,
+    con las columnas de «Jornadas» indicadas (sin ellas, todas).
     """
+    columns = columns or DAY_COLUMNS
     from openpyxl import Workbook
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
@@ -177,8 +182,8 @@ def build_workbook(company, people, date_from, date_to):
                   for t in ClockType.objects.filter(company=company)]
     days = book.create_sheet("Jornadas")
     day_headers = [("DNI", 12), ("Apellidos y nombre", 34)]
-    for header, width, _get, _fmt in DAY_COLUMNS:
-        if header == "tipos":
+    for key, header, width, _get, _fmt in columns:
+        if key == "tipos":
             day_headers += [("%s%s" % (name, "" if counts
                                        else " (no cuenta)"), 14)
                             for name, counts in type_names]
@@ -203,8 +208,8 @@ def build_workbook(company, people, date_from, date_to):
             last_day = shift.day
             item = SimpleNamespace(shift=shift, day=shown)
             values = [row.person.dni, row.label]
-            for header, _width, get, _fmt in DAY_COLUMNS:
-                if header == "tipos":
+            for key, _header, _width, get, _fmt in columns:
+                if key == "tipos":
                     values += [format_duration(shift.type_seconds[name])
                                if name in shift.type_seconds else ""
                                for name, _counts in type_names]
@@ -267,8 +272,8 @@ def build_workbook(company, people, date_from, date_to):
             sheet.column_dimensions[get_column_letter(index + 1)].width = (
                 width)
     index = 3
-    for header, _width, _get, fmt in DAY_COLUMNS:
-        if header == "tipos":
+    for key, _header, _width, _get, fmt in columns:
+        if key == "tipos":
             index += len(type_names)
             continue
         if fmt:
@@ -288,6 +293,181 @@ def build_workbook(company, people, date_from, date_to):
             (days, day_headers), (presses, press_headers),
             (fixes, fix_headers)))
     return book
+
+
+# ------------------------------------------------ plantillas de columnas
+SCREEN = "clock_days"
+_BY_KEY = {c[0]: c for c in DAY_COLUMNS}
+
+
+def _template_model():
+    from panel.models import ScreenExportTemplate
+
+    return ScreenExportTemplate
+
+
+def _is_admin(company_user):
+    return company_user.role in company_user.ADMIN_ROLES
+
+
+def templates_for(company_user):
+    """
+    The user's own «Fichajes: jornadas» templates and the global ones.
+
+    ---
+
+    Las plantillas propias de «Fichajes: jornadas» y las globales de la
+    empresa (las mismas que en la interfaz antigua), con si se pueden
+    modificar.
+    """
+    rows = _template_model().objects.filter(
+        company=company_user.company, screen=SCREEN)
+    own = list(rows.filter(company_user=company_user, is_global=False)
+               .order_by("-is_default", "name"))
+    shared = list(rows.filter(is_global=True).order_by("name"))
+    out = []
+    for template in own + shared:
+        out.append({
+            "pk": template.pk, "name": template.name,
+            "is_global": template.is_global,
+            "is_default": template.is_default,
+            "columns": [k for k in (template.columns or []) if k in _BY_KEY],
+            "editable": (_is_admin(company_user) if template.is_global
+                         else True),
+        })
+    return out
+
+
+def _editable(company_user, pk):
+    template = _template_model().objects.filter(
+        pk=pk or 0, company=company_user.company, screen=SCREEN).first()
+    if template is None:
+        return None
+    if template.is_global:
+        return template if _is_admin(company_user) else None
+    return (template if template.company_user_id == company_user.pk
+            else None)
+
+
+def chosen_columns(request):
+    """
+    The «Jornadas» columns of the export, in order.
+
+    ---
+
+    Las columnas marcadas, en el orden de la plantilla elegida si la
+    hay (y coincide), si no en el de siempre; sin ninguna marcada, todas.
+    """
+    keys = [k for k in request.POST.getlist("columns") if k in _BY_KEY]
+    if not keys:
+        return list(DAY_COLUMNS)
+    template = _template_model().objects.filter(
+        pk=request.POST.get("template_pk") or 0,
+        company=request.user.company_user.company, screen=SCREEN).first()
+    if template is not None:
+        order = [k for k in (template.columns or []) if k in keys]
+        keys = order + [k for k in keys if k not in order]
+    else:
+        keys = [c[0] for c in DAY_COLUMNS if c[0] in keys]
+    return [_BY_KEY[k] for k in keys]
+
+
+class ClockExportBlockView(SuperuserRequiredMixin, View):
+    """
+    GET: the export block (dates, templates, columns, buttons).
+
+    ---
+
+    GET: el bloque de exportación del registro de jornada: fechas,
+    plantillas (la de por defecto, ya marcada), columnas y botones.
+    """
+
+    def get(self, request):
+        templates = templates_for(request.user.company_user)
+        default = next((t for t in templates if t["is_default"]), None)
+        checked = set(default["columns"]) if default else set(_BY_KEY)
+        return render(request, "new_ui/_clock_export_block.html", {
+            "templates": templates,
+            "default_pk": default["pk"] if default else "",
+            "columns": [(c[0], c[1], c[0] in checked) for c in DAY_COLUMNS],
+            "all_keys": ",".join(_BY_KEY),
+            "can_global": _is_admin(request.user.company_user),
+        })
+
+
+class ClockTemplateSaveView(SuperuserRequiredMixin, View):
+    """
+    POST: save the marked columns as a template (new or the chosen one).
+
+    ---
+
+    POST: guarda las columnas marcadas como plantilla: nueva con el
+    nombre escrito, o sobre la elegida si se pide modificarla.
+    """
+
+    def post(self, request):
+        cu = request.user.company_user
+        name = (request.POST.get("name") or "").strip()[:100]
+        keys = [k for k in request.POST.getlist("columns") if k in _BY_KEY]
+        if not keys:
+            return JsonResponse({"ok": False, "message": "Marca al menos una "
+                                 "columna."}, status=400)
+        if request.POST.get("overwrite") == "1":
+            template = _editable(cu, request.POST.get("template_pk"))
+            if template is None:
+                return JsonResponse({"ok": False, "message": "Elige una "
+                                     "plantilla que puedas modificar."},
+                                    status=400)
+            name = name or template.name
+        else:
+            if not name:
+                return JsonResponse({"ok": False, "message": "Escribe el "
+                                     "nombre de la plantilla."}, status=400)
+            is_global = request.POST.get("is_global") == "1" and _is_admin(cu)
+            template = _template_model()(
+                company=cu.company, screen=SCREEN, is_global=is_global,
+                company_user=None if is_global else cu)
+        same = _template_model().objects.filter(
+            company=cu.company, screen=SCREEN, name__iexact=name,
+            is_global=template.is_global)
+        if not template.is_global:
+            same = same.filter(company_user=cu)
+        if same.exclude(pk=template.pk).exists():
+            return JsonResponse({"ok": False, "message": "Ya hay una "
+                                 "plantilla con ese nombre."}, status=400)
+        template.name = name
+        template.columns = keys
+        template.is_default = (request.POST.get("is_default") == "1"
+                               and not template.is_global)
+        template.save()
+        if template.is_default:
+            _template_model().objects.filter(
+                company=cu.company, screen=SCREEN, company_user=cu,
+                is_global=False).exclude(pk=template.pk).update(
+                is_default=False)
+        return JsonResponse({"ok": True, "message": "Plantilla «%s» "
+                             "guardada." % name})
+
+
+class ClockTemplateDeleteView(SuperuserRequiredMixin, View):
+    """
+    POST `template_pk`: delete a template the user may edit.
+
+    ---
+
+    POST: borra la plantilla elegida, si se puede modificar.
+    """
+
+    def post(self, request):
+        template = _editable(request.user.company_user,
+                             request.POST.get("template_pk"))
+        if template is None:
+            return JsonResponse({"ok": False, "message": "Elige una "
+                                 "plantilla que puedas borrar."}, status=400)
+        name = template.name
+        template.delete()
+        return JsonResponse({"ok": True, "message": "Plantilla «%s» "
+                             "borrada." % name})
 
 
 class ClockExportView(SuperuserRequiredMixin, View):
@@ -315,7 +495,7 @@ class ClockExportView(SuperuserRequiredMixin, View):
                                  "personas o abre una."}, status=400)
         date_from, date_to = _period(request.POST)
         book = build_workbook(request.user.company_user.company, people,
-                              date_from, date_to)
+                              date_from, date_to, chosen_columns(request))
         buffer = io.BytesIO()
         book.save(buffer)
         response = HttpResponse(

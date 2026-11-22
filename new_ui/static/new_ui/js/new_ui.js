@@ -356,13 +356,40 @@
             if (tabButton) tabButton.textContent = "De " + (label ? label.textContent.trim() : "la vista");
         }
         listPanel.addEventListener("nui:tab", function (ev) { paintViewActions(ev.detail); });
-        // Registro de jornada: las fechas de arriba del bloque van con cada botón.
+        // Registro de jornada: el bloque (fechas, plantillas y columnas)
+        // se pide aparte y se repinta al guardar o borrar una plantilla;
+        // lo común del bloque va con cada formulario al enviarlo.
+        function loadClockBlocks() {
+            root.querySelectorAll("[data-nui-clock-block]").forEach(function (box) {
+                fetch(box.dataset.url, {credentials: "same-origin"})
+                    .then(r => r.ok ? r.text() : Promise.reject(r.status))
+                    .then(function (html) { box.innerHTML = html; })
+                    .catch(function () { box.innerHTML = '<p class="small text-danger mb-0">No se ha podido cargar.</p>'; });
+            });
+        }
+        loadClockBlocks();
+        root.addEventListener("change", function (ev) {
+            const radio = ev.target.closest('[name="nui_clocktpl"]');
+            if (!radio) return;
+            const keys = (radio.dataset.columns || "").split(",");
+            radio.closest("[data-nui-clock-shared]").querySelectorAll("[data-nui-clock-col]").forEach(function (box) { box.checked = keys.indexOf(box.value) !== -1; });
+        });
         root.addEventListener("submit", function (ev) {
             const f = ev.target.closest("[data-nui-clock-export]");
             if (!f) return;
-            const box = f.closest("[data-nui-actions-for]");
-            f.querySelector('[name="desde"]').value = box.querySelector("[data-nui-clock-from]").value;
-            f.querySelector('[name="hasta"]').value = box.querySelector("[data-nui-clock-to]").value;
+            const box = f.closest("[data-nui-clock-shared]");
+            f.querySelectorAll("[data-nui-copied]").forEach(el => el.remove());
+            function add(name, value) {
+                const input = document.createElement("input");
+                input.type = "hidden"; input.name = name; input.value = value;
+                input.setAttribute("data-nui-copied", "");
+                f.appendChild(input);
+            }
+            add("desde", box.querySelector("[data-nui-clock-from]").value);
+            add("hasta", box.querySelector("[data-nui-clock-to]").value);
+            const chosen = box.querySelector('[name="nui_clocktpl"]:checked');
+            add("template_pk", chosen ? chosen.value : "");
+            box.querySelectorAll("[data-nui-clock-col]:checked").forEach(c => add("columns", c.value));
         }, true);
         root.addEventListener("submit", function (ev) {
             const f = ev.target.closest("[data-nui-action-form]");
@@ -408,6 +435,7 @@
                     if (f.closest("#nui-entity-actions") && !f.hasAttribute("data-nui-no-refresh")) loadEntityActions();
                     // Alta: la vista se queda con la persona nueva.
                     if (data.scope && (section === "per" || section === "cdg")) setScope(data.scope);
+                    if (f.hasAttribute("data-nui-clocktpl-reload")) loadClockBlocks();
                     // Formularios de un solo uso (subir): vuelven a empezar.
                     if (f.hasAttribute("data-nui-reset-after")) {
                         f.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
@@ -1146,14 +1174,25 @@
         // Pestaña "Ficha" (S163): la ficha de la persona o máquina vista
         // sola, como una pestaña más del listado (sin acordeones).
         function fichaBox() { return pane(tab()); }
+        let cardView = {pk: null, tab: null, extra: {}};
+        lists.addEventListener("click", function (ev) {
+            const view = ev.target.closest("[data-nui-card-view]");
+            const day = ev.target.closest("[data-nui-card-day]");
+            if (!view && !day) return;
+            ev.preventDefault();
+            cardView = {pk: scope && scope.pk, tab: tab(), extra: view ? {vista: view.dataset.nuiCardView} : {vista: "jornadas", dia: day.dataset.nuiCardDay}};
+            loadCard();
+        });
         function loadCard() {
             const box = fichaBox();
             if (!box) return Promise.resolve();
             if (!(scope && scope.pk)) { box.innerHTML = ""; return Promise.resolve(); }
             const ticket = ++loading;
             box.innerHTML = '<p class="text-muted small p-3 mb-0">Cargando…</p>';
-            // Con el periodo del filtro común (Jornadas lo usa).
-            return fetch(urls.card + "?" + params({pk: scope.pk}).toString(), {credentials: "same-origin"})
+            // Con el periodo del filtro común y la vista elegida dentro de
+            // la pestaña (Jornadas: jornadas, calendario, correcciones).
+            const extra = (cardView.pk === scope.pk && cardView.tab === tab()) ? cardView.extra : {};
+            return fetch(urls.card + "?" + params(Object.assign({pk: scope.pk}, extra)).toString(), {credentials: "same-origin"})
                 .then(r => r.ok ? r.text() : Promise.reject(r.status))
                 .then(function (html) { if (ticket === loading) box.innerHTML = html; })
                 .catch(function () { if (ticket === loading) box.innerHTML = '<p class="text-danger small p-3 mb-0">No se ha podido cargar la ficha.</p>'; });
