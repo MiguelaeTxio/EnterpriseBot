@@ -399,7 +399,7 @@
                     // Lo de la persona vista (su foto) se repinta.
                     if (f.closest("#nui-entity-actions") && !f.hasAttribute("data-nui-no-refresh")) loadEntityActions();
                     // Alta: la vista se queda con la persona nueva.
-                    if (data.scope && section === "per") setScope(data.scope);
+                    if (data.scope && (section === "per" || section === "cdg")) setScope(data.scope);
                     // Formularios de un solo uso (subir): vuelven a empezar.
                     if (f.hasAttribute("data-nui-reset-after")) {
                         f.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
@@ -627,14 +627,14 @@
         }
         // Alta (S163): «Leer los documentos» rellena el formulario con
         // lo leído; cada archivo lleva su tipo detectado al confirmar.
-        const intake = document.getElementById("nui-intake-form");
-        if (intake) {
+        document.querySelectorAll("[data-nui-intake]").forEach(function (intake) {
             const filesInput = intake.querySelector('[name="documents"]');
             const filesBox = intake.querySelector("[data-nui-intake-files]");
+            const reactivateInput = intake.querySelector("[data-nui-reactivate]");
             function clearIntake() {
                 intake.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
                 filesBox.innerHTML = "";
-                intake.querySelector('[name="reactivate_person_id"]').value = "";
+                if (reactivateInput) reactivateInput.value = "";
                 const label = intake.querySelector("[data-nui-intake-submit]");
                 label.textContent = label.dataset.default;
             }
@@ -660,12 +660,13 @@
                     (data.per_file || []).forEach(function (item) {
                         [["document_type_codes", item.document_type_code], ["document_expiry_hints", item.expiry_hint || ""], ["document_issue_hints", item.issue_hint || ""]].forEach(function ([name, value]) {
                             const input = document.createElement("input");
-                            input.type = "hidden"; input.name = name; input.value = value;
+                            input.type = "hidden"; input.name = name; input.value = value || "";
                             input.setAttribute("data-nui-temp", "");
                             intake.appendChild(input);
                         });
                         const li = document.createElement("li");
-                        li.textContent = item.filename + ": " + (item.document_type_code === "DESCONOCIDO" ? "no reconocido (no se guarda)" : item.document_type_code) + (item.error ? " — " + item.error : "");
+                        const kind = item.document_type_label || (item.document_type_code === "DESCONOCIDO" || !item.document_type_code ? "no reconocido (no se guarda)" : item.document_type_code);
+                        li.textContent = (item.filename || item.name) + ": " + kind + (item.error ? " — " + item.error : "");
                         list.appendChild(li);
                     });
                     (data.warnings || []).forEach(function (w) {
@@ -675,14 +676,14 @@
                         list.appendChild(li);
                     });
                     filesBox.appendChild(list);
-                    if (data.reactivate) {
-                        intake.querySelector('[name="reactivate_person_id"]').value = data.reactivate.id;
+                    if (data.reactivate && reactivateInput) {
+                        reactivateInput.value = data.reactivate.id;
                         intake.querySelector("[data-nui-intake-submit]").textContent = "Reactivar y guardar sus documentos";
                     }
                     result(data.message || "Datos leídos.", !!data.duplicate);
                 }).catch(function (err) { result(err.message, true); });
             });
-        }
+        });
         // Acceso al panel (S163): filas de los marcados y crear.
         const access = document.getElementById("nui-access");
         if (access) {

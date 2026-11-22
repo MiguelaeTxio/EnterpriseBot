@@ -14,7 +14,7 @@ from django.urls import path
 from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
-    views_epis, views_medical, views_photos,
+    views_epis, views_machines, views_medical, views_photos,
     views_requirements, views_schedules,
 )
 
@@ -36,6 +36,16 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Alta, baja y borrado de centros de gasto (S163).
+    path("maquinas/alta/leer/",
+         views_machines.NuiMachineIntakeExtractView.as_view(),
+         name="machine_intake_extract"),
+    path("maquinas/alta/", views_machines.MachineCreateView.as_view(),
+         name="machine_create"),
+    path("maquinas/estado/", views_machines.MachineBulkStatusView.as_view(),
+         name="machine_bulk_status"),
+    path("maquinas/borrar/", views_machines.MachineBulkDeleteView.as_view(),
+         name="machine_bulk_delete"),
     # EPIs (S163).
     path("epis/entregar/", views_epis.NuiEpiDeliveryView.as_view(),
          name="epi_deliver"),

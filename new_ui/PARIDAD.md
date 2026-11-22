@@ -102,7 +102,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 ## Centros de gasto
 - ✅ Ficha técnica, Modificar, foto, exportar tarjeta (5 formatos)
 - ✅ QR: código, descarga, observaciones, fotos y vídeos, contraseña editor
-- ⬜ Alta de máquina · ✅ requisito en masa (S163) · ✅ grupos de selección
+- ✅ (S163) Alta de máquina (por documentos o a mano; reactiva si está de baja) · baja/reactivar/borrar en masa · ✅ requisito en masa · ✅ grupos de selección
 - ⬜ Revisiones: nueva, borrar, plan en masa, guardar fila, exportar,
   revisiones que faltan
 - ⬜ Lecturas de contador: nueva, borrar
