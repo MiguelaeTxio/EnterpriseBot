@@ -584,6 +584,48 @@
             });
         }
         loadVacationSetup();
+        // S163 (23/11): Empresa › Nóminas › Nueva entrega: se crea, se
+        // suben sus PDF uno a uno y empieza la lectura en segundo plano
+        // (copia del flujo de panel/payslips/_pane.html).
+        document.addEventListener("change", async function (ev) {
+            const input = ev.target.closest("[data-nui-psl-folder]");
+            if (!input) return;
+            const box = input.closest("[data-nui-payslip-new]");
+            const files = Array.from(input.files || []).filter(f => /\.pdf$/i.test(f.name));
+            input.value = "";
+            if (!files.length) { result("La carpeta no tiene ningún PDF.", true); return; }
+            const folder = (files[0].webkitRelativePath || "").split("/")[0] || "";
+            if (!window.confirm("¿Subir y leer los " + files.length + " PDF de la carpeta «" + folder + "»?")) return;
+            const bar = box.querySelector("[data-nui-psl-progress]");
+            const status = box.querySelector("[data-nui-psl-status]");
+            bar.classList.remove("d-none");
+            const headers = {"X-CSRFToken": csrf()};
+            try {
+                const params = new URLSearchParams({folder: folder, notify: box.querySelector("[data-nui-psl-notify]").checked ? "1" : "0"});
+                box.querySelectorAll("[data-nui-psl-share]:checked").forEach(cb => params.append("share", cb.value));
+                const created = await fetch(box.dataset.create, {method: "POST", credentials: "same-origin", headers: headers, body: params}).then(r => r.json());
+                if (!created.ok) throw new Error(created.message || "No se ha podido crear la entrega.");
+                const errors = [];
+                for (let i = 0; i < files.length; i++) {
+                    status.textContent = "Subiendo " + (i + 1) + " de " + files.length + ": " + files[i].name;
+                    bar.firstElementChild.style.width = Math.round(100 * i / files.length) + "%";
+                    const body = new FormData();
+                    body.append("file", files[i], files[i].name);
+                    const res = await fetch(box.dataset.upload.replace("/0/", "/" + created.id + "/"), {method: "POST", credentials: "same-origin", headers: headers, body: body})
+                        .then(r => r.json()).catch(() => ({ok: false, message: files[i].name + ": sin conexión."}));
+                    if (!res.ok) errors.push(res.message);
+                }
+                bar.firstElementChild.style.width = "100%";
+                const started = await fetch(box.dataset.read.replace("/0/", "/" + created.id + "/"), {method: "POST", credentials: "same-origin", headers: headers}).then(r => r.json());
+                if (!started.ok) throw new Error(started.message || "No se ha podido empezar la lectura.");
+                status.textContent = "Subidos " + (files.length - errors.length) + " de " + files.length + ". Leyendo en segundo plano; elige la entrega en el filtro «Entrega» para verla.";
+                result(errors.length ? "No se han subido: " + errors.join(" · ") : "Entrega subida: leyendo.", !!errors.length);
+            } catch (err) {
+                bar.classList.add("d-none");
+                status.textContent = "";
+                result(err.message || "No se ha podido subir la carpeta.", true);
+            }
+        });
         // Días libres por horas: 8:00 por día mientras no se toquen las horas.
         document.addEventListener("input", function (ev) {
             const f = ev.target.closest("[data-nui-free-days]");
@@ -630,6 +672,13 @@
             if (ask && !window.confirm(ask)) return;
             const body = new FormData(f);
             if (submitter && submitter.name) body.append(submitter.name, submitter.value);
+            // Los filtros propios de la pestaña (p. ej. la entrega elegida
+            // en Nóminas), para las acciones que los necesitan.
+            if (f.hasAttribute("data-nui-own-filters")) {
+                root.querySelectorAll("[data-nui-own-filter]").forEach(function (el) {
+                    if (el.name && el.value && el.name.indexOf("x_" + tab() + "_") === 0) body.append(el.name, el.value);
+                });
+            }
             const asPerson = f.closest("[data-nui-as-person]");
             if (asPerson && f.hasAttribute("data-nui-needs-selection") && scope && scope.pk) {
                 body.append("selected", scope.pk);

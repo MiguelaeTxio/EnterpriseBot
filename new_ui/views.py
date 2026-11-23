@@ -40,6 +40,7 @@ from new_ui.views_notify import notify_context
 from new_ui.views_personnel import personnel_context
 from new_ui.views_access import access_context
 from new_ui.views_medical import absences_context, medical_context
+from new_ui.views_payslips_nui import payslips_context
 from new_ui.views_epis import epis_context
 from new_ui.views_accessories import accessories_context
 from new_ui.views_vacations import VacationSetupBlockView, vacations_context
@@ -97,6 +98,11 @@ USER_SORT = {
 
 
 def _company_user(request):
+    # S163 (23/11): quién mira, para las listas que dependen de él (las
+    # nóminas: solo las entregas que ve, hr_calendar/payslip_access).
+    from new_ui.lists import CURRENT_USER
+
+    CURRENT_USER.set(request.user.company_user)
     return request.user.company_user
 
 
@@ -311,6 +317,7 @@ def _section_context(company_user, section):
         **access_context(section, company_user.company),
         **medical_context(section),
         **absences_context(section, company_user.company),
+        **payslips_context(section, company_user),
         **epis_context(section),
         **machines_context(section, company_user.company),
         **(logbook_context() if section == "cdg" else {}),

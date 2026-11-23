@@ -461,6 +461,100 @@ def _doc_actions(entry):
     return actions
 
 
+# S163 (23/11): el usuario de la petición (views._company_user), para las
+# listas que dependen de quién mira.
+CURRENT_USER = contextvars.ContextVar("nui_current_user", default=None)
+
+
+# ------------------------------------------------------------ nóminas
+def _payslips_def():
+    """
+    Empresa › Nóminas: the payslips of the deliveries the user can see.
+
+    ---
+
+    Empresa › Nóminas (S163, 23/11; copia del listado de
+    panel/views_payslips.py): solo las nóminas de las entregas que ve
+    quien mira (las que subió, las compartidas con él o, con acceso a
+    todas, todas: hr_calendar/payslip_access). Nunca el contenido de la
+    nómina: solo los datos del listado.
+    """
+    from hr_calendar import payslip_access as access
+    from hr_calendar import payslip_delivery as pd
+    from hr_calendar.models import PayslipBatch, PayslipItem
+
+    def queryset(company):
+        user = CURRENT_USER.get()
+        if user is None:
+            return PayslipItem.objects.none()
+        return PayslipItem.objects.filter(
+            batch__in=access.visible_batches(user)).select_related(
+            "batch", "person__company_user")
+
+    def pages(r):
+        if not r.page_to:
+            return ""
+        if r.page_from == r.page_to:
+            return str(r.page_from)
+        return "%s–%s" % (r.page_from, r.page_to)
+
+    def phone(r):
+        if not r.phone and r.person is not None:
+            return pd.worker_phone(r.person) or ""
+        return r.phone
+
+    def batch_options(company):
+        user = CURRENT_USER.get()
+        if user is None:
+            return []
+        return [(str(b.pk), "%s · %s" % (
+            timezone.localtime(b.created_at).strftime("%d/%m/%Y"),
+            b.folder_name or "sin nombre"))
+            for b in access.visible_batches(user).order_by("-created_at")]
+
+    return ListDef(
+        "Nóminas", queryset, [
+            Col("entrega", "Entrega", lambda r: "%s · %s" % (
+                timezone.localtime(r.batch.created_at).strftime("%d/%m/%Y"),
+                r.batch.folder_name or ""), "batch__created_at"),
+            Col("estado_entrega", "Estado de la entrega",
+                lambda r: r.batch.get_status_display(), "batch__status"),
+            Col("archivo", "Archivo", lambda r: r.original_name,
+                "original_name"),
+            Col("paginas", "Páginas", pages),
+            Col("persona", "Trabajador", lambda r: person_name(r.person)
+                if r.person_id else "Sin trabajador",
+                "person__first_surname", entity=True),
+            Col("dni", "DNI/NIE", lambda r: r.dni_found, "dni_found"),
+            Col("mes", "Mes", lambda r: r.period_label, "period_end"),
+            Col("movil", "Móvil", phone),
+            Col("estado", "Estado", lambda r: r.get_status_display(),
+                "status"),
+            Col("enviada", "Enviada", lambda r: fmt_datetime(r.sent_at),
+                "sent_at", "text-nowrap"),
+        ],
+        entity="person", entity_path="person",
+        entity_of=lambda r: r.person,
+        # Las que aún no tienen trabajador se ven siempre.
+        entity_filter=lambda qs, ids: qs.filter(
+            Q(person__in=ids) | Q(person__isnull=True)),
+        search=("original_name", "dni_found", "period_label",
+                "batch__folder_name", "person__first_surname",
+                "person__given_name", "person__dni"),
+        default_order=("-batch__created_at", "original_name", "page_from"),
+        actions=lambda r: [],
+        extras=[
+            Extra("entrega", "Entrega", batch_options,
+                  apply=lambda qs, v: qs.filter(batch_id=int(v))
+                  if v.isdigit() else qs),
+            Extra("estado", "Estado", lambda company: list(
+                PayslipItem.Status.choices),
+                  apply=lambda qs, v: qs.filter(status=v)),
+        ],
+        note="Solo las entregas que puedes ver. Elige la entrega en sus "
+             "filtros para darle el visto bueno, enviarla o compartirla.")
+
+
 # ------------------------------------------------------------ horarios
 # S163: la empresa del listado de Horarios, para resolver el horario de
 # cada trabajador (la fija el propio queryset al pedirse).
@@ -2047,9 +2141,11 @@ def list_def(section, tab):
         _CACHE["per"] = _per_lists()
         _CACHE["doc"] = _doc_lists()
         # S163 (23/11): se configuran en Empresa (catalog.MOVED_VIEWS).
-        for key in ("lista_horarios", "tipos_fichaje", "catalogo_epis",
-                    "nominas"):
+        for key in ("lista_horarios", "tipos_fichaje", "catalogo_epis"):
             _CACHE["doc"][key] = _CACHE["per"].pop(key)
+        # S163 (23/11): Nóminas, en Empresa, por entregas y con su acceso.
+        _CACHE["per"].pop("nominas", None)
+        _CACHE["doc"]["nominas"] = _payslips_def()
         # S163 (23/11): en Fichajes, las correcciones son un filtro (ya
         # no una vista aparte del calendario): corregidos (el original
         # cambiado o anulado) o puestos al corregir.
