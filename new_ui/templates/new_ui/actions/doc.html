@@ -165,3 +165,8 @@ new_ui.js enseña el de la vista abierta. Formularios:
         <p class="small text-muted mt-1 mb-0">Para pedir documentos: Personal › General, marca a los trabajadores y Acciones › Pedir documentos. Si se cancela el activo, se envía el siguiente de su cola.</p>
     </form>
 </div>
+{# S163 (23/11): lo que se configura para toda la empresa, antes en Personal. #}
+{% include "new_ui/actions/_clock_types.html" %}
+{% include "new_ui/actions/_schedule_catalog.html" %}
+{% include "new_ui/actions/_clock_company.html" %}
+{% include "new_ui/actions/_epi_catalog.html" %}

@@ -4,8 +4,8 @@ S163. EPIs (Personal): entregar a los seleccionados (General) o a la persona
 abierta (EPIs), lotes y fichas técnicas (Catálogo de EPIs). Sin
 desplegables. Vista: new_ui/views_epis.py.
 {% endcomment %}
-<div class="d-none" data-nui-actions-for="general epis">
-    <form data-nui-action-form action="{% url 'new_ui:epi_deliver' %}" class="mt-3" data-nui-epi-form data-nui-for="general:sel epis:one">
+<div class="d-none" data-nui-actions-for="epis_trab epis">
+    <form data-nui-action-form action="{% url 'new_ui:epi_deliver' %}" class="mt-3" data-nui-epi-form data-nui-for="epis_trab:sel epis:one">
         {% csrf_token %}
         <input type="hidden" name="person_ids" value="" data-nui-scope-input>
         <div class="small fw-semibold mb-1"><i class="bi bi-cone-striped me-1"></i>Entregar EPIs</div>
@@ -27,38 +27,6 @@ desplegables. Vista: new_ui/views_epis.py.
         <div class="d-flex flex-wrap align-items-center gap-1">
             <input type="date" name="delivery_date" value="{{ nui_today }}" class="form-control form-control-sm" style="width: 10rem;" aria-label="Fecha de entrega" required>
             <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Registrar la entrega de los EPIs seleccionados? Se genera su documento de entrega y se avisa por WhatsApp."><i class="bi bi-box-seam me-1"></i>Entregar</button>
-        </div>
-    </form>
-</div>
-<div class="d-none" data-nui-actions-for="catalogo_epis">
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:epi_sheet_upload' %}" class="mb-3">
-        {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-arrow-up me-1"></i>Ficha técnica o manual del EPI seleccionado</div>
-        <div class="d-flex flex-wrap gap-1">
-            <input type="file" name="file" required class="form-control form-control-sm" style="max-width: 18rem;" aria-label="Ficha técnica">
-            <button type="submit" class="btn btn-sm btn-success">Subir</button>
-        </div>
-        <p class="small text-muted mt-1 mb-0">Se añade (nunca sustituye): un EPI puede tener ficha técnica y declaración de conformidad. Se ven en su menú (botón derecho sobre el EPI).</p>
-    </form>
-    <form data-nui-action-form action="{% url 'new_ui:epi_batch_save' %}" id="nui-epi-batch-form">
-        {% csrf_token %}
-        <input type="hidden" name="batch_pk" value="" data-nui-pk>
-        <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Lotes de EPIs</div>
-        <div class="d-flex flex-wrap gap-1 small mb-1">
-            <span class="text-muted">Modificar:</span>
-            {% for b in epi_batches %}<button type="button" class="btn btn-sm btn-outline-secondary py-0" data-nui-epi-batch-edit="{{ b.pk }}" data-name="{{ b.name }}" data-items="{{ b.items }}">{{ b.name }}</button>{% empty %}<span class="text-muted">no hay lotes todavía</span>{% endfor %}
-            <button type="button" class="btn btn-sm btn-link py-0" data-nui-epi-batch-new>Nuevo</button>
-        </div>
-        <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Nombre del lote (p. ej. Gruista nuevo)" aria-label="Nombre del lote" required>
-        <div class="border rounded px-2 py-1 mb-1 small" style="max-height: 10rem; overflow-y: auto;">
-            {% for family, items in epi_groups %}
-            <div class="fw-semibold text-muted mt-1">{{ family }}</div>
-            <div class="d-flex flex-wrap column-gap-3">{% for pk, label in items %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="item_ids" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}</div>
-            {% endfor %}
-        </div>
-        <div class="d-flex flex-wrap gap-1">
-            <button type="submit" class="btn btn-sm btn-success">Guardar lote</button>
-            <button type="submit" formaction="{% url 'new_ui:epi_batch_delete' %}" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar este lote? Las entregas hechas no se tocan.">Borrar este lote</button>
         </div>
     </form>
 </div>

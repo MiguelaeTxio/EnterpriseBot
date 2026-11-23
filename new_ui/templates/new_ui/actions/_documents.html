@@ -4,7 +4,7 @@ S163. Documentos de una persona o máquina (Acciones › De Documentos):
 subir o actualizar, cambiar el tipo y mandar a la papelera los seleccionados,
 y Separar (desde «Esta fila»). Descargar e Historial van en «Esta fila».
 {% endcomment %}
-<div class="d-none" data-nui-actions-for="documentos">
+<div class="d-none" data-nui-actions-for="documentos laboral">
     <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" id="nui-upload-form" class="mb-3" data-nui-reset-after data-nui-for="one">
         {% csrf_token %}
         <input type="hidden" name="domain" value="{{ nui_doc_domain }}">

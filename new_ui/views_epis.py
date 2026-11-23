@@ -449,7 +449,8 @@ class NuiEpiSheetUploadView(EpiSheetUploadView):
 
 def epis_context(section):
     """EPIs y lotes para las acciones de Personal."""
-    if section != "per":
+    # S163 (23/11): el catálogo de EPIs está en Empresa.
+    if section not in ("per", "doc"):
         return {}
     groups, order = {}, []
     for epi in EpiItemCatalog.objects.filter(is_active=True).order_by(

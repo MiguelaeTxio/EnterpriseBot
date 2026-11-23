@@ -295,10 +295,36 @@
             b.classList.toggle("active", b.dataset.nuiView === current);
             b.setAttribute("aria-selected", b.dataset.nuiView === current ? "true" : "false");
         });
+        // S163 (23/11): el grupo de la vista abierta, marcado, y debajo
+        // sus vistas si tiene más de una a la vista.
+        document.querySelectorAll("[data-nui-group]").forEach(function (g) {
+            const sub = document.querySelector('[data-nui-subbar="' + g.dataset.nuiGroup + '"]');
+            const visible = sub ? Array.from(sub.querySelectorAll("[data-nui-view]")).filter(b => !b.classList.contains("d-none")) : [];
+            const on = g.dataset.views.split(" ").indexOf(current) !== -1;
+            g.classList.toggle("d-none", !visible.length);
+            g.classList.toggle("active", on);
+            if (sub) sub.classList.toggle("d-none", !on || visible.length < 2);
+            if (on) groupLast[g.dataset.nuiGroup] = current;
+        });
         const title = document.getElementById("nui-list-title");
         const button = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + current + '"]');
         if (title) title.textContent = button ? button.textContent.trim() : "";
     }
+    // Al pulsar un grupo se abre la última vista que se usó de él (o la
+    // primera que se vea).
+    const groupLast = (tabs.groups && tabs.groups[section]) || {};
+    document.addEventListener("click", function (ev) {
+        const g = ev.target.closest("[data-nui-group]");
+        if (!g) return;
+        const sub = document.querySelector('[data-nui-subbar="' + g.dataset.nuiGroup + '"]');
+        const visible = Array.from(sub.querySelectorAll("[data-nui-view]")).filter(b => !b.classList.contains("d-none")).map(b => b.dataset.nuiView);
+        const target = visible.indexOf(groupLast[g.dataset.nuiGroup]) !== -1 ? groupLast[g.dataset.nuiGroup] : visible[0];
+        if (!target) return;
+        showTab(panelOf("listado"), target, true);
+        tabs.groups = tabs.groups || {};
+        tabs.groups[section] = groupLast;
+        save({tabs: tabs});
+    });
     // Los botones de «Qué ver» van en la barra de título, fuera de #nui.
     document.addEventListener("click", function (ev) {
         const view = ev.target.closest("[data-nui-view]");
@@ -353,7 +379,10 @@
         root.querySelectorAll("[data-nui-actions-stage] [data-nui-actions-for]").forEach(function (block) {
             const tabs = block.dataset.nuiActionsFor.split(" ").filter(Boolean);
             Array.from(block.children).forEach(function (child) {
-                pieces.push({el: child, tabs: tabs, order: pieces.length});
+                // data-nui-tabs: las pestañas de esta acción, si no son
+                // las de su bloque.
+                const own = (child.dataset.nuiTabs || "").split(" ").filter(Boolean);
+                pieces.push({el: child, tabs: own.length ? own : tabs, order: pieces.length});
             });
         });
         function groupOf(piece, t) {
@@ -392,18 +421,38 @@
             title.closest(".nui-piece").classList.toggle("nui-open");
         });
         function sec(name) { return root.querySelector('[data-nui-sec="' + name + '"]'); }
+        // S163 (23/11): cada vista es de la lista de todos («all»), de la
+        // ficha de uno («one») o de las dos (""); los temas, los grupos de
+        // «Qué ver».
+        function modeOf(t) {
+            const b = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + t + '"]');
+            return b ? (b.dataset.nuiMode || "") : "";
+        }
+        function groupViews(t) {
+            const g = Array.from(document.querySelectorAll("[data-nui-group]")).find(x => x.dataset.views.split(" ").indexOf(t) !== -1);
+            return g ? g.dataset.views.split(" ").filter(Boolean) : [t];
+        }
+        function groupAll(t) { return groupViews(t).find(v => modeOf(v) !== "one") || ""; }
+        function groupOne(t) { return groupViews(t).find(v => modeOf(v) === "one") || ""; }
         function nounOf(t) { return nouns[t] || (section === "cdg" ? ["centro de gasto", "centros de gasto"] : ["trabajador", "trabajadores"]); }
         function paintViewActions(t) {
             t = t || tab();
             const shown = {sel: 0, one: 0, new: 0};
             const bodies = {sel: sec("sel"), one: sec("one"), new: sec("new")};
+            // En la ficha de uno, también las acciones de la lista de su
+            // tema, ya solo para él (data-nui-as-person); no las que
+            // tienen su versión para uno (data-nui-no-person).
+            const scopedNow = !!(scope && scope.pk) && section !== "doc";
+            const all = scopedNow && modeOf(t) === "one" ? groupAll(t) : "";
             pieces.forEach(function (piece) {
-                // En la Ficha, todo lo que se hace con esta persona.
-                const on = piece.tabs.indexOf(t) !== -1
-                    || (t === "ficha" && piece.tabs.some(x => groupOf(piece, x) === "one"));
+                const own = piece.tabs.indexOf(t) !== -1;
+                const asPerson = !own && !!all && piece.tabs.indexOf(all) !== -1
+                    && groupOf(piece, all) === "sel" && !piece.el.hasAttribute("data-nui-no-person");
+                const on = own || asPerson;
                 piece.el.dataset.nuiActive = on ? "1" : "";
+                if (asPerson) piece.el.dataset.nuiAsPerson = all; else delete piece.el.dataset.nuiAsPerson;
                 if (!on) { piece.el.classList.add("d-none"); return; }
-                const g = piece.tabs.indexOf(t) !== -1 ? groupOf(piece, t) : "one";
+                const g = own ? groupOf(piece, t) : "one";
                 const body = bodies[g] && bodies[g].querySelector("[data-nui-sec-body]");
                 if (!body) return;
                 body.appendChild(piece.el);
@@ -473,9 +522,15 @@
                     hint.textContent = closed ? "Pulsa su nombre en la lista para ver aquí todo lo suyo (o usa las acciones de «Con 1 … seleccionado»)." : "";
                     hint.classList.toggle("d-none", !closed);
                 } else {
-                    const person = section === "cdg" ? "un centro de gasto" : "un trabajador";
-                    title.textContent = section === "cdg" ? "Con un centro de gasto" : "Con un trabajador";
-                    hint.textContent = "Pulsa el nombre de " + person + " en la lista (o marca un solo " + noun[0] + ") para ver aquí lo que puedes hacer con él.";
+                    if (section === "doc") {
+                        // En Empresa no hay personas ni máquinas abiertas.
+                        title.textContent = "Con lo que marques";
+                        hint.textContent = "Marca uno solo en la lista de " + noun[1] + " para ver aquí lo que puedes hacer con él.";
+                    } else {
+                        const person = section === "cdg" ? "un centro de gasto" : "un trabajador";
+                        title.textContent = section === "cdg" ? "Con un centro de gasto" : "Con un trabajador";
+                        hint.textContent = "Pulsa el nombre de " + person + " en la lista (o marca un solo " + noun[0] + ") para ver aquí lo que puedes hacer con él.";
+                    }
                     hint.classList.remove("d-none");
                 }
                 // Donde no hay nada que hacer con uno (p. ej. Tipos de
@@ -570,7 +625,11 @@
             if (ask && !window.confirm(ask)) return;
             const body = new FormData(f);
             if (submitter && submitter.name) body.append(submitter.name, submitter.value);
-            if (f.hasAttribute("data-nui-needs-selection")) {
+            const asPerson = f.closest("[data-nui-as-person]");
+            if (asPerson && f.hasAttribute("data-nui-needs-selection") && scope && scope.pk) {
+                body.append("selected", scope.pk);
+                if (f.hasAttribute("data-nui-with-tab")) body.append("tab", asPerson.dataset.nuiAsPerson);
+            } else if (f.hasAttribute("data-nui-needs-selection")) {
                 const ids = Array.from(sel().keys());
                 if (!ids.length) { result("Marca primero con la casilla, en la lista de abajo, a quién aplicarlo.", true); return; }
                 ids.forEach(id => body.append("selected", id));
@@ -1178,8 +1237,9 @@
         listPanel.addEventListener("nui:tab", function (ev) {
             const t = ev.detail;
             const scoped = !!(scope && scope.pk) && section !== "doc";
-            if (isEntityTab(t) && !scoped) { showTab(listPanel, "general", false); return; }
-            if (t === "general" && scoped && entityTabs.length) { showTab(listPanel, "ficha", false); return; }
+            const mode = modeOf(t);
+            if (mode === "one" && !scoped) { showTab(listPanel, groupAll(t) || "general", false); return; }
+            if (mode === "all" && scoped) { showTab(listPanel, groupOne(t) || "ficha", false); return; }
             root.querySelectorAll("[data-nui-total-box]").forEach(el => el.classList.toggle("invisible", isEntityTab(t)));
             root.querySelectorAll("[data-nui-cols-for]").forEach(el => el.classList.toggle("d-none", el.dataset.nuiColsFor !== t));
             root.querySelectorAll("[data-nui-note-for]").forEach(el => el.classList.toggle("d-none", el.dataset.nuiNoteFor !== t));
@@ -1240,10 +1300,10 @@
                 // Clic izquierdo en un nombre de un listado que no es
                 // «General»: sus filas de esta misma vista (sus fichajes
                 // en Fichajes...); en General (o desde el menú), su ficha.
+                // Su ficha, en el tema que estaba elegido (S163, 23/11).
                 let target = pick.dataset.nuiScopeTab;
                 const now = tab();
-                const fromList = pick.tagName === "A" && pick.closest("#nui-lists") && pane() && pane().querySelector('.nui-list-state[data-scopeable="1"]');
-                if (!target && fromList && now !== "general" && !isEntityTab(now)) target = now;
+                if (!target && pick.tagName === "A" && pick.closest("#nui-lists")) target = groupOne(now);
                 setScope({pk: pick.dataset.nuiScope, label: pick.dataset.nuiScopeLabel}, target);
             }
         });
@@ -1272,9 +1332,10 @@
                 if (label) label.textContent = scope ? scope.label : "";
             }
             const scoped = !!(scope && scope.pk);
-            const generalTab = listPanel.querySelector('[data-nui-tab="general"]');
-            listPanel.querySelectorAll("[data-nui-entity-tab]").forEach(b => b.classList.toggle("d-none", !scoped));
-            if (generalTab && entityTabs.length) generalTab.classList.toggle("d-none", scoped);
+            listPanel.querySelectorAll(":scope > .nui-tabs [data-nui-tab]").forEach(function (b) {
+                const mode = b.dataset.nuiMode || "";
+                b.classList.toggle("d-none", (mode === "one" && !scoped) || (mode === "all" && scoped));
+            });
             syncViewbar();
             loadEntityActions();
         }
@@ -1295,11 +1356,11 @@
             save(values);
             paintScope();
             document.dispatchEvent(new CustomEvent("nui:scope"));
-            paintSections();
+            paintViewActions();
             // Con una persona o máquina sola se abre su ficha (o la pestaña
             // pedida desde el menú); al quitarla, se vuelve a "General".
             const now = tab();
-            const wanted = value ? (target || "ficha") : (isEntityTab(now) ? "general" : now);
+            const wanted = value ? (target || groupOne(now) || "ficha") : (modeOf(now) === "one" ? (groupAll(now) || "general") : now);
             if (wanted !== now) showTab(listPanel, wanted, true); else load();
         }
         const scopeClear = document.getElementById("nui-scope-clear");

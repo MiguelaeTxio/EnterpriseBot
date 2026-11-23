@@ -4,7 +4,7 @@ S163. Pedir documentos por WhatsApp y avisar de una circular a los
 seleccionados (Personal › General). Sin desplegables. Vista:
 new_ui/views_notify.py.
 {% endcomment %}
-<div class="d-none" data-nui-actions-for="general">
+<div class="d-none" data-nui-actions-for="comunicaciones">
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:doc_request_send' %}" class="mt-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-whatsapp me-1"></i>Pedir documentos por WhatsApp</div>

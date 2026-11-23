@@ -8,7 +8,7 @@ plantillas y correo conjunto). Sin desplegables: botones de opción.
   plantilla, y comprobar a quién le falta algo de ella.
 Variables: noun ("persona" / "máquina"), section ("per" / "cdg").
 {% endcomment %}
-<div class="d-none" data-nui-actions-for="documentos">
+<div class="d-none" data-nui-actions-for="documentos laboral">
     <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_documents' %}">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Juntarlos en un dosier</div>
@@ -24,7 +24,7 @@ Variables: noun ("persona" / "máquina"), section ("per" / "cdg").
         <p class="small text-muted mt-1 mb-0">Con documentos de varias {{ noun }}s sale un dosier de cada una, todos juntos. Las nóminas confidenciales nunca entran.</p>
     </form>
 </div>
-<div class="d-none" data-nui-actions-for="general">
+<div class="d-none" data-nui-actions-for="requisitos">
     <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_apply' section %}">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Dosier de su documentación</div>

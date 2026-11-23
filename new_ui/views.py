@@ -52,7 +52,7 @@ from new_ui.state import get_key as get_saved_state_key
 from new_ui.state import save_keys as _save_keys
 from new_ui.catalog import (
     ENTITY_TABS, FICHA, PERMISSIONS, SECTIONS, TAB_NOUNS, all_view_keys,
-    label_of,
+    label_of, view_groups, view_mode,
 )
 from new_ui.filters import (
     period_context, period_range, sort_headers, sort_rows,
@@ -394,6 +394,15 @@ class NewUiView(SuperuserRequiredMixin, View):
             "section": section,
             "section_label": SECTIONS[section][0],
             "list_tabs": SECTIONS[section][2],
+            # S163 (23/11): un nivel más en «Qué ver» (Fichaje › ...).
+            # S163 (23/11): de la lista de todos o de la ficha de uno.
+            "view_groups": [
+                (label, [(key, tab_label, view_mode(section, key))
+                         for key, tab_label in members])
+                for label, members in view_groups(
+                    section, SECTIONS[section][2])],
+            "list_tab_rows": [(key, label, view_mode(section, key))
+                              for key, label in SECTIONS[section][2]],
             "pending": PENDING.get(section, ""),
             "layout": layout if isinstance(layout, dict) else {},
             "tabs": tabs if isinstance(tabs, dict) else {},

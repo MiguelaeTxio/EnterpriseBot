@@ -1,6 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_clock.html -- S163: exportar el registro de jornada (Excel) con plantillas de columnas de «Jornadas» (new_ui/_screen_tpl_block.html, pantalla «clock_days»): de los seleccionados y de esta persona. Vista: new_ui/clock_export.py. #}
 <div class="d-none" data-nui-actions-for="jornadas fichajes general">
-    <div data-nui-tpl-shared data-nui-for="sel">
+    <div data-nui-tpl-shared data-nui-for="sel" data-nui-tabs="horarios" data-nui-no-person>
         <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Registro de jornada (Excel)</div>
         <div class="d-flex flex-wrap align-items-center gap-1 mb-1 small">
             <span class="text-muted">Desde</span><input type="date" class="form-control form-control-sm" style="width: 10rem;" data-nui-tpl-from aria-label="Desde">
@@ -14,7 +14,7 @@
             <span class="small text-muted">En Fichajes, los trabajadores de los fichajes seleccionados.</span>
         </form>
     </div>
-    <div data-nui-tpl-shared data-nui-for="one">
+    <div data-nui-tpl-shared data-nui-for="one" data-nui-tabs="fichajes jornadas">
         <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Su registro de jornada (Excel)</div>
         <div class="d-flex flex-wrap align-items-center gap-1 mb-1 small">
             <span class="text-muted">Desde</span><input type="date" class="form-control form-control-sm" style="width: 10rem;" data-nui-tpl-from aria-label="Desde">

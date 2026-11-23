@@ -591,7 +591,8 @@ def schedules_context(section, company):
 
     Contexto de las acciones de horarios y fichaje (solo Personal).
     """
-    if section != "per":
+    # S163 (23/11): horarios y tipos de fichaje se crean en Empresa.
+    if section not in ("per", "doc"):
         return {}
     schedules = list(WorkdaySchedule.objects.filter(
         company=company).order_by("label"))

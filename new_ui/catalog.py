@@ -38,6 +38,12 @@ ENTITY_TABS = {"per": ("ficha", "jornadas", "desglose_vacaciones"),
 TAB_NOUNS = {
     "per": {
         "general": ("trabajador", "trabajadores"),
+        "comunicaciones": ("trabajador", "trabajadores"),
+        "bajas": ("trabajador", "trabajadores"),
+        "partes_trab": ("trabajador", "trabajadores"),
+        "repostajes_trab": ("trabajador", "trabajadores"),
+        "epis_trab": ("trabajador", "trabajadores"),
+        "alta_fichaje": ("trabajador", "trabajadores"),
         "documentos": ("documento", "documentos"),
         "laboral": ("documento", "documentos"),
         "partes": ("parte", "partes"),
@@ -49,12 +55,24 @@ TAB_NOUNS = {
         "ausencias": ("ausencia", "ausencias"),
         "solicitudes": ("solicitud", "solicitudes"),
         "horarios": ("trabajador", "trabajadores"),
-        "lista_horarios": ("horario", "horarios"),
-        "tipos_fichaje": ("tipo de fichaje", "tipos de fichaje"),
         "nominas": ("nómina", "nóminas"),
         "epis": ("entrega de EPI", "entregas de EPI"),
+        "requisitos": ("trabajador", "trabajadores"),
+    },
+    "doc": {
+        "bandeja": ("documento", "documentos"),
+        "circulares": ("circular", "circulares"),
+        "plantillas_circular": ("plantilla", "plantillas"),
+        "dosieres": ("dosier", "dosieres"),
+        "lista_requisitos": ("requisito", "requisitos"),
+        "avisos": ("aviso", "avisos"),
+        "pedir": ("trabajador", "trabajadores"),
+        "firmas": ("documento", "documentos"),
+        "seguros": ("informe", "informes"),
+        "nominas": ("nómina", "nóminas"),
+        "lista_horarios": ("horario", "horarios"),
+        "tipos_fichaje": ("tipo de fichaje", "tipos de fichaje"),
         "catalogo_epis": ("EPI", "EPIs"),
-        "requisitos": ("requisito", "requisitos"),
     },
     "cdg": {
         "general": ("centro de gasto", "centros de gasto"),
@@ -72,42 +90,150 @@ TAB_NOUNS = {
     },
 }
 
+# S163 (Miguel Ángel, 23/11): las vistas de cada sección, agrupadas en un
+# nivel más (Personal › Fichaje › Tipos de fichaje), para que la hilera
+# de arriba quepa en una línea y cada grupo junte lo suyo. Solo cambia
+# cómo se enseñan: las claves de cada vista (y sus permisos) no cambian.
+# Una vista que no esté en ningún grupo va sola, con su nombre.
+TAB_GROUPS = {
+    "doc": [
+        ("Documentación", ("lista_requisitos", "avisos", "dosieres")),
+        ("Circulares", ("plantillas_circular", "circulares")),
+        ("Firmas", ("firmas",)),
+        ("Seguros", ("seguros",)),
+        ("Fichaje", ("tipos_fichaje", "lista_horarios")),
+        ("EPIs", ("catalogo_epis",)),
+        ("Nóminas", ("nominas",)),
+    ],
+    # Personal (23/11): cada tema, su lista de trabajadores (para muchos)
+    # y lo de uno solo, en su ficha (VIEW_MODES).
+    "per": [
+        ("General", ("general", "ficha")),
+        ("Documentación", ("requisitos", "documentos", "laboral",
+                           "solicitudes")),
+        ("Comunicaciones", ("comunicaciones",)),
+        ("Fichaje", ("horarios", "alta_fichaje", "fichajes", "jornadas")),
+        ("Vacaciones", ("saldo_vacaciones", "desglose_vacaciones")),
+        ("Bajas y ausencias", ("bajas", "salud", "ausencias")),
+        ("Partes", ("partes_trab", "partes")),
+        ("Repostajes", ("repostajes_trab", "repostajes")),
+        ("EPIs", ("epis_trab", "epis")),
+    ],
+}
+# S163 (23/11): la lista de todos («all», sin persona abierta) o lo de
+# uno solo («one», con su ficha abierta). Una vista que no está en
+# ninguno de los dos se ve siempre. Al pulsar un trabajador se pasa a
+# su ficha, en el mismo tema.
+VIEW_MODES = {
+    "per": {
+        "all": ("general", "requisitos", "comunicaciones", "horarios",
+                "alta_fichaje", "saldo_vacaciones", "bajas", "partes_trab",
+                "repostajes_trab", "epis_trab"),
+        "one": ("ficha", "documentos", "laboral", "solicitudes",
+                "fichajes", "jornadas", "desglose_vacaciones", "salud",
+                "ausencias", "partes", "repostajes", "epis"),
+    },
+}
+
+
+def view_mode(section, key):
+    """
+    "all", "one" or "" (always shown) for a view of a section.
+
+    ---
+
+    Si una vista es de la lista de todos, de uno solo o de las dos.
+    """
+    modes = VIEW_MODES.get(section)
+    if modes:
+        for mode in ("all", "one"):
+            if key in modes[mode]:
+                return mode
+        return ""
+    if key in ENTITY_TABS.get(section, ()):
+        return "one"
+    if key == "general" and ENTITY_TABS.get(section):
+        return "all"
+    return ""
+
+
+# S163 (Miguel Ángel, 23/11): lo que se configura para toda la empresa
+# (horarios, tipos de fichaje, catálogo de EPIs) pasa de Personal a
+# Empresa (la antigua sección Documentos); en Personal queda a quién se
+# asigna. Las claves antiguas de sus permisos pasan a las nuevas
+# (migración new_ui 0002).
+MOVED_VIEWS = {
+    "per.lista_horarios": "doc.lista_horarios",
+    "per.tipos_fichaje": "doc.tipos_fichaje",
+    "per.catalogo_epis": "doc.catalogo_epis",
+    "per.nominas": "doc.nominas",
+}
+
+
+def view_groups(section, tabs):
+    """
+    [(label, [(key, label)])] grouping the given tabs of a section.
+
+    ---
+
+    Las vistas de una sección agrupadas según TAB_GROUPS, en el orden
+    de los grupos; las que no estén en ninguno van solas al final.
+    """
+    by_key = OrderedDict(tabs)
+    out = []
+    used = set()
+    for label, keys in TAB_GROUPS.get(section, []):
+        members = [(k, by_key[k]) for k in keys if k in by_key]
+        if members:
+            out.append((label, members))
+            used.update(k for k, _ in members)
+    for key, label in by_key.items():
+        if key not in used:
+            out.append((label, [(key, label)]))
+    return out
+
+
 SECTIONS = OrderedDict([
-    ("doc", ("Documentos", "bi-folder2-open", [
-        ("bandeja", "Bandeja de entrada"),
-        ("circulares", "Circulares"),
-        ("plantillas_circular", "Plantillas de circular"),
-        ("dosieres", "Dosieres"),
+    # S163 (23/11): «Documentos» pasa a llamarse «Empresa» (gestión de
+    # toda la empresa); la clave "doc" no cambia.
+    ("doc", ("Empresa", "bi-building", [
         ("lista_requisitos", "Requisitos"),
         ("avisos", "Avisos"),
-        ("pedir", "Pedir documentos"),
+        ("dosieres", "Dosieres"),
+        ("plantillas_circular", "Plantillas"),
+        ("circulares", "Enviadas"),
         ("firmas", "Firmas"),
         ("seguros", "Seguros"),
-        ("calendario", "Calendario"),
+        ("tipos_fichaje", "Tipos de fichaje"),
+        ("lista_horarios", "Horarios"),
+        ("catalogo_epis", "Catálogo de EPIs"),
+        ("nominas", "Nóminas"),
     ])),
+    # S163 (23/11): por temas (TAB_GROUPS); el nombre de la lista de
+    # todos es el del tema, y los de la ficha, lo suyo.
     ("per", ("Personal", "bi-people", [
         ("general", "General"),
-        ("ficha", "Ficha"),
+        ("ficha", "Datos"),
+        ("requisitos", "Documentación"),
         ("documentos", "Documentos"),
         ("laboral", "Laboral"),
-        ("partes", "Partes"),
-        ("fichajes", "Fichajes"),
-        ("jornadas", "Jornadas"),
-        ("alta_fichaje", "Alta en el fichaje"),
-        ("repostajes", "Repostajes"),
-        ("vacaciones", "Vacaciones"),
-        ("saldo_vacaciones", "Saldo de vacaciones"),
-        ("desglose_vacaciones", "Desglose de vacaciones"),
-        ("salud", "Salud"),
-        ("ausencias", "Ausencias"),
         ("solicitudes", "Solicitudes"),
-        ("horarios", "Horarios"),
-        ("lista_horarios", "Lista de horarios"),
-        ("tipos_fichaje", "Tipos de fichaje"),
-        ("nominas", "Nóminas"),
-        ("epis", "EPIs"),
-        ("catalogo_epis", "Catálogo de EPIs"),
-        ("requisitos", "Requisitos"),
+        ("comunicaciones", "Comunicaciones"),
+        ("horarios", "Fichaje"),
+        ("alta_fichaje", "Alta en el fichaje"),
+        ("fichajes", "Fichajes"),
+        ("jornadas", "Calendario"),
+        ("saldo_vacaciones", "Vacaciones"),
+        ("desglose_vacaciones", "Desglose"),
+        ("bajas", "Bajas y ausencias"),
+        ("salud", "Bajas"),
+        ("ausencias", "Ausencias"),
+        ("partes_trab", "Partes"),
+        ("partes", "Partes"),
+        ("repostajes_trab", "Repostajes"),
+        ("repostajes", "Repostajes"),
+        ("epis_trab", "EPIs"),
+        ("epis", "Entregas"),
     ])),
     ("cdg", ("Centros de gasto", "bi-truck", [
         ("general", "General"),

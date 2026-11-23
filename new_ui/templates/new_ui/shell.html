@@ -62,6 +62,9 @@ new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
 .nui-viewbar { display: flex; flex-wrap: wrap; gap: 3px; }
 .nui-viewbar .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .8rem; border: 1px solid #0d6efd; color: #0d6efd; background: #fff; }
 .nui-viewbar .btn.active { background: #0d6efd; color: #fff; font-weight: 600; }
+.nui-subbar { margin-top: 3px; }
+.nui-subbar .btn { border-color: #6ea8fe; }
+.nui-subbar .btn.active { background: #e7f1ff; color: #0a58ca; border-color: #0d6efd; }
 /* S163: botón de pantalla completa de cada panel. */
 /* S163 (23/11): cada acción plegada en su título; al pulsarlo se abre. */
 .nui-sec-title { font-size: .85rem; color: #0d6efd; }
@@ -236,8 +239,8 @@ body.nui-dragging { user-select: none; }
         <section class="nui-panel nui-list" data-nui-panel="listado" aria-label="Listado">
             {# Las pestañas de verdad están arriba (Qué ver); estas, ocultas, solo llevan el estado. #}
             <div class="nui-tabs nav d-none" role="tablist">
-                {% for key, label in list_tabs %}
-                <button type="button" class="nav-link{% if key in entity_tabs and not scope %} d-none{% elif key == 'general' and scope and entity_tabs %} d-none{% endif %}" data-nui-tab="{{ key }}"{% if key in entity_tabs %} data-nui-entity-tab{% endif %} role="tab">{{ label }}</button>
+                {% for key, label, mode in list_tab_rows %}
+                <button type="button" class="nav-link{% if mode == 'one' and not scope %} d-none{% elif mode == 'all' and scope %} d-none{% endif %}" data-nui-tab="{{ key }}"{% if key in entity_tabs %} data-nui-entity-tab{% endif %} data-nui-mode="{{ mode }}" role="tab">{{ label }}</button>
                 {% endfor %}
             </div>
             <div class="nui-head">

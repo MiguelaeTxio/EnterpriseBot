@@ -1759,6 +1759,16 @@ def list_def(section, tab):
         _CACHE["cdg"] = _cdg_lists()
         _CACHE["per"] = _per_lists()
         _CACHE["doc"] = _doc_lists()
+        # S163 (23/11): se configuran en Empresa (catalog.MOVED_VIEWS).
+        for key in ("lista_horarios", "tipos_fichaje", "catalogo_epis",
+                    "nominas"):
+            _CACHE["doc"][key] = _CACHE["per"].pop(key)
+        # S163 (23/11): la lista de trabajadores de cada tema de Personal
+        # (Comunicaciones, Bajas, Partes, Repostajes, EPIs), de momento
+        # con las columnas de General; las propias de cada tema, después.
+        for key in ("comunicaciones", "bajas", "partes_trab",
+                    "repostajes_trab", "epis_trab"):
+            _CACHE["per"][key] = _person_general()
     return _CACHE.get(section, {}).get(tab)
 
 

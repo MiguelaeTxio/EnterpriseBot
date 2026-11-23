@@ -1,6 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_albaranes.html -- S163: cargar albaranes (PDF o fotos) cotejados con los fichajes por la IA: de esta persona o de varios a la vez; la subida va archivo a archivo y la lectura en segundo plano. Vista: new_ui/views_albaranes.py; JS: new_ui.js (data-nui-albaranes). #}
 <div class="d-none" data-nui-actions-for="jornadas fichajes general">
-    <div class="mb-3" data-nui-albaranes data-mode="person" data-nui-for="one" data-start="{% url 'new_ui:albaran_start' %}" data-base="{% url 'new_ui:albaran_start' %}" data-batches="{% url 'new_ui:albaran_batches' %}">
+    <div class="mb-3" data-nui-albaranes data-mode="person" data-nui-for="one" data-nui-tabs="fichajes jornadas" data-start="{% url 'new_ui:albaran_start' %}" data-base="{% url 'new_ui:albaran_start' %}" data-batches="{% url 'new_ui:albaran_batches' %}">
         <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-text me-1"></i>Cargar sus albaranes</div>
         <p class="small text-muted mb-1">La IA lee cada albarán, compara el día con sus fichajes y corrige solo lo que se aparta más que la cortesía de su horario («corregido por IA» a tu nombre); el visado lo da después el supervisor. Solo quien ficha por tipos.</p>
         <div class="d-flex flex-wrap align-items-center gap-1 mb-1 small">
@@ -13,7 +13,7 @@
         <ul class="small mb-0 ps-3" data-nui-alb-notes></ul>
         <div data-nui-alb-batches></div>
     </div>
-    <div class="mb-3" data-nui-albaranes data-mode="many" data-nui-for="new" data-start="{% url 'new_ui:albaran_start' %}" data-base="{% url 'new_ui:albaran_start' %}" data-batches="{% url 'new_ui:albaran_batches' %}">
+    <div class="mb-3" data-nui-albaranes data-mode="many" data-nui-for="new" data-nui-tabs="horarios" data-start="{% url 'new_ui:albaran_start' %}" data-base="{% url 'new_ui:albaran_start' %}" data-batches="{% url 'new_ui:albaran_batches' %}">
         <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-text me-1"></i>Cargar albaranes de varios trabajadores</div>
         <p class="small text-muted mb-1">Cada albarán va al trabajador de su nombre (entre los seleccionados o, si no hay, entre todos los que fichan por tipos). La IA lee cada albarán, compara el día con sus fichajes y corrige solo lo que se aparta más que la cortesía de su horario («corregido por IA» a tu nombre); el visado lo da después el supervisor. Solo quien ficha por tipos.</p>
         <div class="d-flex flex-wrap align-items-center gap-1 mb-1 small">

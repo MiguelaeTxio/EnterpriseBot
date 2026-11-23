@@ -1,5 +1,5 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_clock_settings.html -- S163: visado en masa de los seleccionados y ajustes de fichaje de la empresa (el bloque se pide aparte: new_ui/_clock_settings.html). Vista: new_ui/views_clock_settings.py. #}
-<div class="d-none" data-nui-actions-for="fichajes general horarios">
+<div class="d-none" data-nui-actions-for="horarios">
     <form data-nui-action-form data-nui-needs-selection data-nui-with-tab action="{% url 'new_ui:clock_mass_review' %}" class="border-top pt-2 mt-2 mb-2">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-check2-square me-1"></i>Visar sus días con incidencias</div>
@@ -11,8 +11,4 @@
         </div>
         <p class="small text-muted mb-0">Visa los días con incidencias o procesados por la IA (albaranes). En Fichajes, los trabajadores de los fichajes seleccionados.</p>
     </form>
-    <details class="border-top pt-2">
-        <summary class="small fw-semibold"><i class="bi bi-gear me-1"></i>Ajustes de fichaje de la empresa</summary>
-        <div class="mt-1" data-nui-clockset data-url="{% url 'new_ui:clock_settings_block' %}"><p class="small text-muted mb-0">Cargando…</p></div>
-    </details>
 </div>

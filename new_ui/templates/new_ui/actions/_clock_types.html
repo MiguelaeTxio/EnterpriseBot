@@ -1,0 +1,32 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_clock_types.html -- S163 (23/11): tipos de fichaje de la empresa (Empresa › Fichaje), antes en Personal (copia de _schedules.html). Vista: new_ui/views_schedules.py. #}
+<div class="d-none" data-nui-actions-for="tipos_fichaje">
+    <form data-nui-action-form action="{% url 'new_ui:clock_type_save' %}" id="nui-clocktype-form" data-data-url="{% url 'new_ui:clock_type_data' 0 %}" data-new-title="Nuevo tipo de fichaje">
+        {% csrf_token %}
+        <input type="hidden" name="type_id" value="" data-nui-pk>
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <div class="small fw-semibold" data-nui-form-title><i class="bi bi-plus-circle me-1"></i>Nuevo tipo de fichaje</div>
+            <button type="button" class="btn btn-sm btn-link py-0 ms-auto" data-nui-form-new>Empezar uno nuevo</button>
+        </div>
+        <input type="text" name="name" maxlength="60" class="form-control form-control-sm mb-1" placeholder="Nombre (p. ej. Conducción)" aria-label="Nombre" required>
+        <div class="small text-muted">Icono:</div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Icono">
+            {% for code, label in nui_type_icons %}
+            <label class="form-check form-check-inline mb-0" title="{{ label }}"><input class="form-check-input" type="radio" name="icon" value="{{ code }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label"><i class="bi {{ code }}"></i></span></label>
+            {% endfor %}
+        </div>
+        <div class="small text-muted">Función:</div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Función">
+            {% for code, label in nui_type_roles %}
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="role" value="{{ code }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>
+            {% endfor %}
+        </div>
+        <div class="d-flex flex-wrap align-items-center column-gap-3 small mb-1">
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="counts_as_work" value="1" checked> <span class="form-check-label">Cuenta como jornada</span></label>
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="is_active" value="1" checked> <span class="form-check-label">Activo</span></label>
+            <label class="mb-0 text-muted" for="nui-type-order">Orden</label>
+            <input type="number" min="0" max="999" name="order" id="nui-type-order" value="0" class="form-control form-control-sm" style="width: 5rem;">
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar tipo</button>
+        <p class="small text-muted mt-1 mb-0">Los tipos no se borran: se desactivan (los fichajes hechos los conservan). Presencia y fuerza mayor van a la bolsa, no a la jornada. Quién ficha por tipos: vista «Horarios» › Tipo de fichaje.</p>
+    </form>
+</div>
