@@ -54,6 +54,15 @@ trabajadores (o máquinas). El tema elegido arriba decide tres cosas:
    fichaje de la empresa.
 6. Vacaciones: reglas por sección y tipos de ausencia.
 7. EPIs: catálogo (lotes y fichas técnicas).
+8. Nóminas (23/11, pasa de Personal a Empresa: se gestionan las
+   nóminas, no a los trabajadores). Acceso: solo Jerónimo, que las carga
+   y, al cargar cada entrega, designa un supervisor; a ese supervisor le
+   llega un WhatsApp de que están listas y, desde ese momento, puede
+   enviarlas y descargarlas (p. ej. para subirlas a Oralia). Nadie más ve
+   las nóminas en sí; el listado de a quién se ha enviado cada una, sí.
+   Lista: las nóminas de cada entrega; acciones sobre la entrega y las
+   nóminas cargadas (subir, asignar trabajador, dejar fuera, visto bueno
+   y enviar, reintentar, descargar).
 
 Fuera: Bandeja de entrada (los documentos entran por el agente de H28 y
 desde cada ficha) y Calendario (eran las ausencias, repetidas de
@@ -68,15 +77,14 @@ uno a uno):
   registro de jornada, albaranes.
 - Comunicaciones (todo lo que va por WhatsApp, un mismo «Enviar por
   WhatsApp»): pedir documentos y enviar una circular.
-- Nóminas, tema aparte (permiso especial).
 - Documentación: poner o quitar requisitos (varios a la vez) y dosier de
   los marcados eligiendo qué lleva. Lo mismo en Centros de gasto (pedir
   documentos no: allí los ponemos nosotros).
 
 Hilera de Personal acordada (23/11): General · Documentación ·
 Comunicaciones · Fichaje · Vacaciones · Bajas y ausencias · Partes ·
-Repostajes · Nóminas · EPIs · Horas y pagos (Partes y Repostajes,
-separados: son dos cosas distintas). Cada tema, pendiente de
+Repostajes · EPIs · Horas y pagos (Partes y Repostajes, separados: son
+dos cosas distintas; Nóminas pasa a Empresa). Cada tema, pendiente de
 repasar uno a uno.
 
 **Horas y pagos** (función nueva, 23/11; hoy solo existe para los partes
@@ -96,7 +104,7 @@ digitales de Taller y Taller Huelva, en un Excel con el precio a mano):
 a muchos a la vez; todo lo de uno solo, en su ficha. La ficha tiene sus
 propias pestañas con los mismos temas (Datos, Documentación,
 Comunicaciones, Fichaje, Vacaciones, Bajas y ausencias, Partes,
-Repostajes, Nóminas, EPIs, Horas y pagos) y las mismas acciones, ya
+Repostajes, EPIs, Horas y pagos) y las mismas acciones, ya
 solo para él. El clic en un trabajador abre su ficha en el tema que
 estaba elegido arriba (General → Datos). Columnas de cada tema:
 configurables, cada supervisor las suyas.
