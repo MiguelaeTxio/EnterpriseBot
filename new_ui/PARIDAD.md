@@ -58,7 +58,9 @@ trabajadores (o máquinas). El tema elegido arriba decide tres cosas:
    nóminas, no a los trabajadores). Acceso: solo Jerónimo, que las carga
    y, al cargar cada entrega, designa un supervisor; a ese supervisor le
    llega un WhatsApp de que están listas y, desde ese momento, puede
-   enviarlas y descargarlas (p. ej. para subirlas a Oralia). Nadie más ve
+   enviarlas y descargarlas (p. ej. para subirlas a Oralia). Alejandro
+   ve todas, sin que se le dé acceso en cada una (como hoy,
+   hr_calendar/payslip_access.py). Nadie más ve
    las nóminas en sí; el listado de a quién se ha enviado cada una, sí.
    Lista: las nóminas de cada entrega; acciones sobre la entrega y las
    nóminas cargadas (subir, asignar trabajador, dejar fuera, visto bueno
