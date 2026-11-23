@@ -1,6 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_requests.html -- S163: solicitudes de los trabajadores: las seleccionadas (aprobar, denegar, justificante válido) y el detalle de una («Gestionar» de su fila). Vista: new_ui/views_requests.py. #}
 <div class="d-none" data-nui-actions-for="solicitudes">
-    <div class="mb-3" data-nui-fragment-box data-nui-for="one"></div>
+    <div class="mb-3" data-nui-fragment-box data-nui-for="one" data-nui-only-forced></div>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:request_mass' %}">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-check2-all me-1"></i>Aprobar, denegar o validar el justificante</div>

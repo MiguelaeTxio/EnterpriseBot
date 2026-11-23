@@ -452,7 +452,9 @@
                 // abrirla (data-nui-forced).
                 let forced = "";
                 activeIn(s2).forEach(function (c) {
-                    const visible = scoped || !!c.dataset.nuiForced;
+                    // Separar páginas y Gestionar una solicitud solo salen
+                    // al pulsarlos.
+                    const visible = c.hasAttribute("data-nui-only-forced") ? !!c.dataset.nuiForced : (scoped || !!c.dataset.nuiForced);
                     c.classList.toggle("d-none", !visible);
                     if (!scoped && c.dataset.nuiForced) forced = c.dataset.nuiForced;
                 });
@@ -476,6 +478,9 @@
                     hint.textContent = "Pulsa el nombre de " + person + " en la lista (o marca un solo " + noun[0] + ") para ver aquí lo que puedes hacer con él.";
                     hint.classList.remove("d-none");
                 }
+                // Donde no hay nada que hacer con uno (p. ej. Tipos de
+                // fichaje), el apartado no sale.
+                s2.classList.toggle("d-none", !who && !hasRow && !activeIn(s2).length);
             }
             // 3) Nuevo y ajustes.
             const s3 = sec("new");

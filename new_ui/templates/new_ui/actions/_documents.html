@@ -34,5 +34,5 @@ y Separar (desde «Esta fila»). Descargar e Historial van en «Esta fila».
         {% csrf_token %}
         <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Mandar a la papelera los documentos seleccionados? Se pueden recuperar desde la papelera."><i class="bi bi-trash me-1"></i>Mandar a la papelera</button>
     </form>
-    <div id="nui-split-box" data-nui-for="one" data-url="{% url 'new_ui:document_split' 0 %}"></div>
+    <div id="nui-split-box" data-nui-for="one" data-nui-only-forced data-url="{% url 'new_ui:document_split' 0 %}"></div>
 </div>
