@@ -457,6 +457,56 @@ class VacationDetailActionView(SuperuserRequiredMixin, View):
 
 
 # ------------------------------------------------- reglas, importar, tipos
+class VacationOwnDaysView(SuperuserRequiredMixin, View):
+    """
+    POST: own vacation days for the marked workers (or remove them).
+
+    ---
+
+    POST (S163, 23/11): días propios de los trabajadores marcados, que
+    mandan sobre los de su grupo y los de la empresa (una regla por
+    persona, con su fecha); `what=remove` les quita los días propios
+    (vuelven a los de su grupo o los de la empresa).
+    """
+
+    def post(self, request):
+        company = _company(request)
+        post = request.POST
+        ids = [v for v in post.getlist("selected") if v.isdigit()]
+        people = list(PersonIdentity.objects.filter(pk__in=ids))
+        if not people:
+            return _error("Marca primero a los trabajadores.")
+        if post.get("what") == "remove":
+            count, _detail = VacationRule.objects.filter(
+                company=company, person__in=people).delete()
+            return _ok("Días propios quitados (%d regla(s)): vuelven a los "
+                       "de su grupo o los de la empresa." % count)
+        valid_from = _date(post.get("valid_from"))
+        days = _decimal(post.get("days_per_year"))
+        kind = post.get("day_kind")
+        errors = validate_rule(company, None, valid_from, days, kind,
+                               None, None)
+        if errors:
+            return _error(" ".join(errors))
+        done, skipped = 0, []
+        for person in people:
+            if VacationRule.objects.filter(company=company, person=person,
+                                           valid_from=valid_from).exists():
+                skipped.append(_label(person))
+                continue
+            VacationRule.objects.create(
+                company=company, person=person, valid_from=valid_from,
+                days_per_year=days, day_kind=kind,
+                carry_over=post.get("carry_over") == "1",
+                created_by=request.user.company_user)
+            done += 1
+        message = "Días propios (%s al año desde el %s) a %d trabajador(es)." % (
+            days, valid_from.strftime("%d/%m/%Y"), done)
+        if skipped:
+            message += " Ya tenían una con esa fecha: %s." % ", ".join(skipped)
+        return _ok(message) if done else _error(message)
+
+
 class VacationSetupBlockView(SuperuserRequiredMixin, View):
     """
     GET: rules by section and absence types (block asked apart).
@@ -470,21 +520,30 @@ class VacationSetupBlockView(SuperuserRequiredMixin, View):
     def get(self, request):
         from ivr_config.models import AbsenceCategory
 
+        from document_explorer.models import PersonGroupTemplate
+
         company = _company(request)
+        # S163 (23/11): las de la empresa y de cada grupo; los días
+        # propios de cada trabajador se ven en Personal › Vacaciones.
         rules = list(VacationRule.objects.filter(
-            company=company).select_related(
-            "section", "holiday_base").order_by("section__name",
-                                                "-valid_from"))
+            company=company, person__isnull=True).select_related(
+            "section", "group", "holiday_base").order_by(
+            "group__name", "section__name", "-valid_from"))
         today = datetime.date.today()
         in_force = {}
+
+        def who(rule):
+            return (rule.group_id, rule.section_id)
+
         for rule in sorted(rules, key=lambda r: r.valid_from):
             if rule.valid_from <= today:
-                in_force[rule.section_id] = rule.pk
+                in_force[who(rule)] = rule.pk
         for rule in rules:
-            rule.is_in_force = in_force.get(rule.section_id) == rule.pk
+            rule.is_in_force = (in_force.get(who(rule)) == rule.pk
+                                and not rule.section_id)
         return render(request, "new_ui/_vacation_setup.html", {
             "rules": rules,
-            "sections": _sections(company),
+            "groups": PersonGroupTemplate.objects.order_by("name"),
             "bases": Base.objects.filter(company=company).order_by("name"),
             "day_kinds": VacationRule.DayKind.choices,
             "categories": AbsenceCategory.objects.filter(
@@ -512,9 +571,11 @@ class VacationSetupSaveView(SuperuserRequiredMixin, View):
         post = request.POST
         what = post.get("what", "")
         if what == "rule_add":
-            section = Section.objects.filter(
-                pk=_int(post.get("section_id")), company=company).first() \
-                if post.get("section_id") else None
+            from document_explorer.models import PersonGroupTemplate
+
+            group = PersonGroupTemplate.objects.filter(
+                pk=_int(post.get("group_id"))).first() \
+                if post.get("group_id") else None
             valid_from = _date(post.get("valid_from"))
             days = _decimal(post.get("days_per_year"))
             month = _int(post.get("deadline_month"))
@@ -522,19 +583,20 @@ class VacationSetupSaveView(SuperuserRequiredMixin, View):
             base = Base.objects.filter(
                 pk=_int(post.get("holiday_base_id")), company=company,
             ).first() if post.get("holiday_base_id") else None
-            errors = validate_rule(company, section, valid_from, days,
-                                   post.get("day_kind"), month, day)
+            errors = validate_rule(company, None, valid_from, days,
+                                   post.get("day_kind"), month, day,
+                                   group=group)
             if errors:
                 return _error(" ".join(errors))
             VacationRule.objects.create(
-                company=company, section=section, valid_from=valid_from,
+                company=company, group=group, valid_from=valid_from,
                 days_per_year=days, day_kind=post.get("day_kind"),
                 carry_over=post.get("carry_over") == "1",
                 carry_over_deadline_month=month or None,
                 carry_over_deadline_day=day or None, holiday_base=base,
                 created_by=request.user.company_user)
             return _ok("Regla guardada: %s desde %s." % (
-                section.name if section else "General de la empresa",
+                "grupo «%s»" % group.name if group else "la empresa",
                 valid_from.strftime("%d/%m/%Y")))
         if what == "rule_remove":
             rule = VacationRule.objects.filter(

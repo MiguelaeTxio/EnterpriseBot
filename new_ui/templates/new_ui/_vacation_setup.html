@@ -1,13 +1,13 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_vacation_setup.html -- S163: reglas de vacaciones por sección (copia de panel/templates/panel/vacation_balance/_rules.html) y tipos de ausencia (copia de panel/workday/absence_category_list.html). Se pide aparte y se repinta tras cada cambio. Vista: new_ui/views_vacations.py. #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_vacation_setup.html -- S163 (23/11: por empresa y grupo de selección, Empresa › Vacaciones): reglas de vacaciones (copia de panel/templates/panel/vacation_balance/_rules.html) y tipos de ausencia (copia de panel/workday/absence_category_list.html). Se pide aparte y se repinta tras cada cambio. Vista: new_ui/views_vacations.py. #}
 <div class="small">
-    <div class="fw-semibold mb-1">Reglas por sección</div>
-    <p class="text-muted mb-1">Un cambio de regla es siempre una regla nueva con su fecha (nunca se edita la anterior): los años pasados se calculan con la que tenían. La general (sin sección) cubre a quien no tiene sección.</p>
+    <div class="fw-semibold mb-1">Días de vacaciones</div>
+    <p class="text-muted mb-1">Tres niveles y manda el más concreto: los días propios de un trabajador (se ponen en Personal › Vacaciones); si no tiene, los de su grupo de selección; si no, los de la empresa. Quien está en varios grupos con días distintos y no tiene los suyos, los de la empresa. Un cambio es siempre una regla nueva con su fecha (nunca se edita la anterior): los años pasados se calculan con la que tenían.</p>
     <table class="table table-sm mb-2">
-        <thead><tr><th>Sección</th><th>Desde</th><th class="text-end">Días</th><th>Sobrantes</th><th>Festivos</th><th></th></tr></thead>
+        <thead><tr><th>Para</th><th>Desde</th><th class="text-end">Días</th><th>Sobrantes</th><th>Festivos</th><th></th></tr></thead>
         <tbody>
         {% for rule in rules %}
         <tr{% if rule.is_in_force %} class="table-success"{% endif %}>
-            <td>{{ rule.section.name|default:"General de la empresa" }}{% if rule.is_in_force %} <span class="badge text-bg-success">vigente</span>{% endif %}</td>
+            <td>{{ rule.target_label }}{% if rule.is_in_force %} <span class="badge text-bg-success">vigente</span>{% endif %}</td>
             <td class="text-nowrap">{{ rule.valid_from|date:"d/m/Y" }}</td>
             <td class="text-end text-nowrap">{{ rule.days_per_year|floatformat:"-1" }} {{ rule.get_day_kind_display|lower }}</td>
             <td>{% if rule.carry_over %}Pasan{% if rule.carry_over_deadline_day %} hasta el {{ rule.carry_over_deadline_day }}/{{ rule.carry_over_deadline_month }}{% endif %}{% else %}No pasan{% endif %}</td>
@@ -23,8 +23,9 @@
         {% csrf_token %}<input type="hidden" name="what" value="rule_add">
         <div class="fw-semibold mb-1">Nueva regla</div>
         <div class="mb-1">
-            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="section_id" value="" checked> General de la empresa</label>
-            {% for s in sections %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="section_id" value="{{ s.pk }}"> {{ s.name }}</label>{% endfor %}
+            <span class="text-muted">Para:</span>
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="group_id" value="" checked> La empresa</label>
+            {% for g in groups %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="group_id" value="{{ g.pk }}"> Grupo «{{ g.name }}»</label>{% endfor %}
         </div>
         <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
             <span class="text-muted">Vigente desde *</span><input type="date" name="valid_from" value="{{ today.year }}-01-01" class="form-control form-control-sm" style="width: 10rem;" required>

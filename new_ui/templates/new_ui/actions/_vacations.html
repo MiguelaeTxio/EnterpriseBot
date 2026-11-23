@@ -10,15 +10,19 @@
         </div>
         <p class="small text-muted mb-0">El mismo periodo a cada uno (con su tarea automática si tiene cuenta del panel). Cambiar o borrar un periodo: en su desglose.</p>
     </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_section_assign' %}" class="mb-3">
+    {# S163 (23/11): días propios (mandan sobre los de su grupo y los de la empresa, que se ponen en Empresa › Vacaciones). #}
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_own_days' %}" class="mb-3">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-diagram-3 me-1"></i>Sección desde una fecha</div>
-        <div class="small mb-1">{% for s in vac_sections %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="section_id" value="{{ s.pk }}" required> {{ s.name }}</label>{% endfor %}</div>
-        <div class="d-flex flex-wrap align-items-center gap-1 small">
-            <span class="text-muted">Desde</span><input type="date" name="valid_from" value="{{ vac_today|date:'Y-m-d' }}" class="form-control form-control-sm" style="width: 10rem;" required>
-            <button type="submit" class="btn btn-sm btn-primary">Asignar</button>
+        <div class="small fw-semibold mb-1"><i class="bi bi-person-gear me-1"></i>Días propios</div>
+        <div class="d-flex flex-wrap align-items-center gap-1 small mb-1">
+            <span class="text-muted">Días al año</span><input name="days_per_year" class="form-control form-control-sm" style="width: 5rem;" placeholder="25" required>
+            {% for value, label in vac_day_kinds %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="day_kind" value="{{ value }}" required> {{ label }}</label>{% endfor %}
+            <span class="text-muted">desde</span><input type="date" name="valid_from" value="{{ vac_this_year }}-01-01" class="form-control form-control-sm" style="width: 10rem;" required>
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="carry_over" value="1" checked> los sobrantes pasan al año siguiente</label>
         </div>
-        <p class="small text-muted mb-0">Decide qué regla de vacaciones le toca.</p>
+        <button type="submit" class="btn btn-sm btn-primary">Poner días propios</button>
+        <button type="submit" name="what" value="remove" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Quitarles los días propios? Vuelven a los de su grupo o los de la empresa.">Quitar los días propios</button>
+        <p class="small text-muted mb-0">Mandan sobre los de su grupo y los de la empresa (Empresa › Vacaciones).</p>
     </form>
     <div class="mb-3">
         <div class="small fw-semibold mb-1"><i class="bi bi-upload me-1"></i>Importar saldos de partida</div>
@@ -29,8 +33,4 @@
             <button type="submit" class="btn btn-sm btn-outline-primary">Cargar la plantilla rellenada</button>
         </form>
     </div>
-    <details>
-        <summary class="small fw-semibold"><i class="bi bi-gear me-1"></i>Reglas por sección y tipos de ausencia</summary>
-        <div class="mt-1" data-nui-vacset data-url="{% url 'new_ui:vacation_setup_block' %}"><p class="small text-muted mb-0">Cargando…</p></div>
-    </details>
 </div>

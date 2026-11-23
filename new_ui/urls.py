@@ -71,6 +71,9 @@ urlpatterns = [
          .as_view(), name="vacation_setup_block"),
     path("vacaciones/ajustes/guardar/", views_vacations.VacationSetupSaveView
          .as_view(), name="vacation_setup_save"),
+    path("vacaciones/dias-propios/",
+         views_vacations.VacationOwnDaysView.as_view(),
+         name="vacation_own_days"),
     path("vacaciones/plantilla/", views_vacations.VacationImportTemplateView
          .as_view(), name="vacation_import_template"),
     path("vacaciones/importar/", views_vacations.VacationImportUploadView

@@ -26,7 +26,7 @@ Documentos, Personal y Centros de gasto se van llenando por fases.
 import re
 
 from django.db.models import Q
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import render
 from django.views import View
 
@@ -42,7 +42,7 @@ from new_ui.views_access import access_context
 from new_ui.views_medical import absences_context, medical_context
 from new_ui.views_epis import epis_context
 from new_ui.views_accessories import accessories_context
-from new_ui.views_vacations import vacations_context
+from new_ui.views_vacations import VacationSetupBlockView, vacations_context
 from new_ui.views_logbook import logbook_context
 from new_ui.views_machines import machines_context
 from new_ui.mixins import SuperuserRequiredMixin
@@ -674,6 +674,16 @@ class NewUiListView(SuperuserRequiredMixin, View):
             from new_ui.views_onboarding import render_report
 
             return render_report(request)
+        if (section, tab) == ("doc", "vacaciones") and _check_view(
+                request, section, tab):
+            # S163 (23/11): días de la empresa y de cada grupo, y tipos de
+            # ausencia (el bloque que antes estaba en Saldo de vacaciones).
+            from django.urls import reverse as _reverse
+
+            return HttpResponse(
+                '<div class="p-2" data-nui-vacset data-url="%s">%s</div>' % (
+                    _reverse("new_ui:vacation_setup_block"),
+                    VacationSetupBlockView.as_view()(request).content.decode()))
         if (section, tab) == ("per", "saldo_vacaciones") and _check_view(
                 request, section, tab):
             from new_ui.views_vacations import render_balance
