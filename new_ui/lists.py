@@ -249,8 +249,13 @@ class ListDef:
                  search=(), date_field="", date_is_datetime=False,
                  default_order=("-pk",), actions=None, note="",
                  scope_filter=None, prepare=None, extras=(),
-                 default_cols=None, col_templates=None):
+                 default_cols=None, col_templates=None,
+                 period_annotate=None):
         self.label = label
+        # S163 (23/11): period_annotate(qs, desde, hasta) añade a una
+        # lista de trabajadores sus datos del periodo (repostajes,
+        # partes...) como columnas que se pueden ordenar.
+        self.period_annotate = period_annotate
         # S163 (23/11): columnas que se ven si el usuario no ha elegido
         # (None: todas) y plantillas de columnas de serie {nombre: claves}.
         self.default_cols = default_cols
@@ -1845,6 +1850,187 @@ def _doc_lists():
     }
 
 
+def _per_person(model_path, person_path, date_lookup, start, end,
+                value, extra=None):
+    """
+    Subquery: one aggregate of a worker's rows of a model in the period.
+
+    ---
+
+    Subconsulta con un dato de las filas de un trabajador en un modelo
+    (cuántas, la suma, la última...) dentro del periodo, si lo hay.
+    """
+    from django.db.models import OuterRef, Subquery
+
+    rows = apps.get_model(model_path).objects.filter(
+        **{person_path: OuterRef("pk")})
+    if extra:
+        rows = rows.filter(**extra)
+    if date_lookup and start:
+        rows = rows.filter(**{date_lookup + "__gte": start})
+    if date_lookup and end:
+        rows = rows.filter(**{date_lookup + "__lte": end})
+    return Subquery(rows.order_by().values(person_path).annotate(
+        v=value).values("v")[:1])
+
+
+def _count(*args, **kwargs):
+    from django.db.models import Count, IntegerField
+    from django.db.models.functions import Coalesce
+
+    return Coalesce(_per_person(*args, value=Count("pk"), **kwargs), 0,
+                    output_field=IntegerField())
+
+
+def _annotate_repostajes(qs, start, end):
+    from django.db.models import Max, Sum
+
+    path, day = "user__person", "supplied_at__date"
+    return qs.annotate(
+        nui_rep=_count("fleet.GasoGesSupply", path, day, start, end),
+        nui_rep_l=_per_person("fleet.GasoGesSupply", path, day, start, end,
+                              Sum("litres")),
+        nui_rep_last=_per_person("fleet.GasoGesSupply", path, "", None,
+                                 None, Max("supplied_at")))
+
+
+def _annotate_partes(qs, start, end):
+    from django.db.models import Max
+
+    path = "work_order__uploaded_by__person_identity"
+    return qs.annotate(
+        nui_par=_count("work_order_processor.WorkOrderEntry", path,
+                       "work_date", start, end),
+        nui_par_last=_per_person("work_order_processor.WorkOrderEntry",
+                                 path, "", None, None, Max("work_date")))
+
+
+def _annotate_epis(qs, start, end):
+    from django.db.models import Max
+
+    return qs.annotate(
+        nui_epi=_count("document_explorer.EpiDelivery", "person",
+                       "delivery_date", start, end),
+        nui_epi_all=_count("document_explorer.EpiDelivery", "person", "",
+                           None, None),
+        nui_epi_last=_per_person("document_explorer.EpiDelivery", "person",
+                                 "", None, None, Max("delivery_date")))
+
+
+def _annotate_bajas(qs, start, end):
+    from django.db.models import Exists, Max, Min, OuterRef, Q
+    from django.utils import timezone
+
+    today = timezone.localdate()
+    leave = apps.get_model("hr_calendar.MedicalLeavePeriod")
+    current = leave.objects.filter(
+        Q(date_end__isnull=True) | Q(date_end__gte=today),
+        person=OuterRef("pk"), date_start__lte=today)
+    return qs.annotate(
+        nui_baja=Exists(current),
+        nui_baja_desde=_per_person(
+            "hr_calendar.MedicalLeavePeriod", "person", "", None, None,
+            Max("date_start"), extra={"date_start__lte": today}),
+        nui_bajas=_count("hr_calendar.MedicalLeavePeriod", "person",
+                         "date_start", start, end),
+        nui_aus=_count("hr_calendar.AbsencePeriod", "person", "date_start",
+                       start, end),
+        nui_aus_next=_per_person(
+            "hr_calendar.AbsencePeriod", "person", "", None, None,
+            Min("date_start"), extra={"date_start__gte": today}))
+
+
+def _annotate_comunicaciones(qs, start, end):
+    from django.db.models import Max
+
+    open_states = ("QUEUED", "SENT")
+    return qs.annotate(
+        nui_ped=_count("document_explorer.WorkerDocumentRequest", "person",
+                       "", None, None, extra={"status__in": open_states}),
+        nui_ped_per=_count("document_explorer.WorkerDocumentRequest",
+                           "person", "created_at__date", start, end),
+        nui_circ=_count("document_explorer.DocumentAcknowledgment",
+                        "person", "delivery_date", start, end),
+        nui_circ_last=_per_person("document_explorer.DocumentAcknowledgment",
+                                  "person", "", None, None,
+                                  Max("delivery_date")))
+
+
+def _yes(value):
+    return "Sí" if value else ""
+
+
+# Tema -> (anotar, [columnas del tema], nota). S163 (23/11).
+THEME_COLUMNS = {
+    "comunicaciones": (_annotate_comunicaciones, [
+        Col("pedidos", "Documentos pedidos sin recibir",
+            lambda p: p.nui_ped or "", "nui_ped", "text-end"),
+        Col("pedidos_periodo", "Pedidos en el periodo",
+            lambda p: p.nui_ped_per or "", "nui_ped_per", "text-end"),
+        Col("circulares", "Circulares en el periodo",
+            lambda p: p.nui_circ or "", "nui_circ", "text-end"),
+        Col("ultima_circular", "Última circular",
+            lambda p: fmt_date(p.nui_circ_last), "nui_circ_last"),
+    ], "Periodo: pedidos y circulares en esas fechas."),
+    "bajas": (_annotate_bajas, [
+        Col("de_baja", "De baja ahora", lambda p: _yes(p.nui_baja),
+            "nui_baja"),
+        Col("baja_desde", "Desde", lambda p: fmt_date(p.nui_baja_desde)
+            if p.nui_baja else "", "nui_baja_desde"),
+        Col("bajas", "Bajas en el periodo", lambda p: p.nui_bajas or "",
+            "nui_bajas", "text-end"),
+        Col("ausencias", "Ausencias en el periodo",
+            lambda p: p.nui_aus or "", "nui_aus", "text-end"),
+        Col("proxima_ausencia", "Próxima ausencia",
+            lambda p: fmt_date(p.nui_aus_next), "nui_aus_next"),
+    ], "Periodo: bajas y ausencias que empiezan en esas fechas."),
+    "partes_trab": (_annotate_partes, [
+        Col("partes", "Partes en el periodo", lambda p: p.nui_par or "",
+            "nui_par", "text-end"),
+        Col("ultimo_parte", "Último parte",
+            lambda p: fmt_date(p.nui_par_last), "nui_par_last"),
+    ], "Periodo: partes de esas fechas."),
+    "repostajes_trab": (_annotate_repostajes, [
+        Col("repostajes", "Repostajes en el periodo",
+            lambda p: p.nui_rep or "", "nui_rep", "text-end"),
+        Col("litros", "Litros en el periodo",
+            lambda p: fmt_num(p.nui_rep_l) if p.nui_rep_l else "",
+            "nui_rep_l", "text-end"),
+        Col("ultimo_repostaje", "Último repostaje",
+            lambda p: fmt_datetime(p.nui_rep_last), "nui_rep_last"),
+    ], "Periodo: repostajes de esas fechas (como conductor en GasoGes)."),
+    "epis_trab": (_annotate_epis, [
+        Col("entregas_periodo", "Entregas en el periodo",
+            lambda p: p.nui_epi or "", "nui_epi", "text-end"),
+        Col("entregas", "Entregas en total",
+            lambda p: p.nui_epi_all or "", "nui_epi_all", "text-end"),
+        Col("ultima_entrega", "Última entrega",
+            lambda p: fmt_date(p.nui_epi_last), "nui_epi_last"),
+    ], "Periodo: entregas de esas fechas."),
+}
+
+
+def _theme_person_list(key):
+    """
+    The workers list of a Personal theme: General's columns plus its own.
+
+    ---
+
+    La lista de trabajadores de un tema: las columnas de General y las
+    del tema (de entrada: nombre, sección, estado y las del tema).
+    """
+    annotate, columns, note = THEME_COLUMNS[key]
+    definition = _person_general()
+    definition.columns = list(definition.columns) + list(columns)
+    definition.period_annotate = annotate
+    # El periodo es el de sus datos, no la fecha de alta del trabajador.
+    definition.date_field = ""
+    definition.default_cols = ["nombre", "seccion", "estado"] + [
+        c.key for c in columns]
+    definition.note = note
+    return definition
+
+
 _CACHE = {}
 
 
@@ -1879,11 +2065,10 @@ def list_def(section, tab):
                 qs.filter(correction__isnull=True,
                           replaces__isnull=True))))
         # S163 (23/11): la lista de trabajadores de cada tema de Personal
-        # (Comunicaciones, Bajas, Partes, Repostajes, EPIs), de momento
-        # con las columnas de General; las propias de cada tema, después.
-        for key in ("comunicaciones", "bajas", "partes_trab",
-                    "repostajes_trab", "epis_trab"):
-            _CACHE["per"][key] = _person_general()
+        # (Comunicaciones, Bajas, Partes, Repostajes, EPIs): las columnas
+        # de General más las del tema (THEME_COLUMNS).
+        for key in THEME_COLUMNS:
+            _CACHE["per"][key] = _theme_person_list(key)
     return _CACHE.get(section, {}).get(tab)
 
 
@@ -1934,6 +2119,9 @@ def filtered(definition, company, params, scope_pk=None):
         ids = entity_ids(definition.entity, company, params)
         if ids is not None:
             qs = by_entities(qs, ids)
+    if definition.period_annotate:
+        start, end = period_range(params)
+        qs = definition.period_annotate(qs, start, end)
     return qs
 
 
