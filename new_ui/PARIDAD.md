@@ -180,6 +180,21 @@ configurables, cada supervisor las suyas.
   el periodo, litros. En su ficha: sus repostajes con vehículo y
   contador; corregir vehículo o contador, preguntar.
 
+**Centros de gasto** (hilera acordada el 23/11; detalle de cada tema, en
+principio como se propuso): General (código, matrícula, tipo, empresa,
+base, estado; alta, activar o desactivar, empresa o base; clic → su
+ficha con datos, foto y QR) · Documentación (falta y caduca; requisitos
+y dosier; sus documentos en la ficha) · Especificaciones (columnas y
+modificarlas en la ficha) · Mantenimiento (próxima revisión, última
+lectura, vencidas; apuntar revisión o lectura, plan de revisiones) ·
+Taller (en la ficha: sus partes, solo consulta; averías; libro
+historial) · Repostajes (litros y consumo; correcciones) · Accesorios
+(asignar, quitar, mover) · Equipos (formar o deshacer vehículo y
+persona) · Seguridad (nuevo: sus extintores y botiquines, a quién se
+entregaron, número de serie, fechas y avisos). Desaparecen como vistas
+Ficha, QR, Avisos, Revisiones, Lecturas, Averías y Libro historial
+(pasan a columnas y a la ficha).
+
 ## Comunes a las vistas
 - ✅ Listados con filtros comunes, periodo rápido y fechas, filtros propios,
   columnas, orden múltiple, selección, grupos de selección, exportar.
