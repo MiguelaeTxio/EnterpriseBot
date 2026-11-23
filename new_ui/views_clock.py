@@ -152,6 +152,11 @@ def render_jornadas(request, person):
     rows = [clock_core._row(shift) for shift in data["shifts"]]
     rows = clock_core._group_by_day(rows)
     rows.reverse()
+    from new_ui.views_albaranes import albaranes_by_day
+
+    albaranes = albaranes_by_day(person, date_from, date_to)
+    for row in rows:
+        row["albaranes"] = albaranes.get(row["day"], [])
     clock_types = list(ClockType.objects.filter(company=company))
     for row in rows:
         row["edit_rows"] = [

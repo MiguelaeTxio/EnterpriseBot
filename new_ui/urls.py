@@ -12,7 +12,8 @@ interfaz antigua.
 from django.urls import path
 
 from new_ui import (
-    clock_export, views_accessories, views_clock, views_crews,
+    clock_export, views_accessories, views_albaranes, views_clock,
+    views_crews,
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
     views_epis, views_machines, views_medical, views_photos,
@@ -47,6 +48,20 @@ urlpatterns = [
          name="reading_add"),
     path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
          name="service_rows_delete"),
+    # Albaranes cotejados con los fichajes (S163).
+    path("albaranes/carga/", views_albaranes.AlbaranStartView.as_view(),
+         name="albaran_start"),
+    path("albaranes/carga/<int:batch_id>/archivo/",
+         views_albaranes.AlbaranFileView.as_view(), name="albaran_file"),
+    path("albaranes/carga/<int:batch_id>/fin/",
+         views_albaranes.AlbaranFinishView.as_view(), name="albaran_finish"),
+    path("albaranes/carga/<int:batch_id>/estado/",
+         views_albaranes.AlbaranStatusView.as_view(), name="albaran_status"),
+    path("albaranes/cargas/", views_albaranes.AlbaranBatchesView.as_view(),
+         name="albaran_batches"),
+    path("albaranes/<int:sheet_id>/archivo/",
+         views_albaranes.AlbaranSheetFileView.as_view(),
+         name="albaran_sheet"),
     path("fichajes/exportar/", clock_export.ClockExportView.as_view(),
          name="clock_export"),
     path("fichajes/exportar/bloque/",

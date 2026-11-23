@@ -1070,6 +1070,7 @@
             values["scope_" + section] = value;
             save(values);
             paintScope();
+            document.dispatchEvent(new CustomEvent("nui:scope"));
             // Con una persona o máquina sola se abre su ficha (o la pestaña
             // pedida desde el menú); al quitarla, se vuelve a "General".
             const now = tab();
@@ -1175,6 +1176,147 @@
         // sola, como una pestaña más del listado (sin acordeones).
         function fichaBox() { return pane(tab()); }
         let cardView = {pk: null, tab: null, extra: {}};
+        // S163: carga de albaranes (copia adaptada de
+        // panel/static/panel/js/albaran_upload.js). La ventana solo sube los
+        // archivos (4 a la vez); la IA los lee en segundo plano, así que se
+        // puede seguir trabajando. Si se sale de la página a mitad de la
+        // subida, el navegador avisa.
+        root.querySelectorAll("[data-nui-albaranes]").forEach(function (box) {
+            const PARALLEL = 4, OK = /\.(pdf|jpe?g|png)$/i;
+            const q = name => box.querySelector("[data-nui-alb-" + name + "]");
+            const folder = q("folder"), loose = q("files"), go = q("go"), status = q("status"), notes = q("notes"), list = q("batches");
+            const bar = q("progress").querySelector(".progress-bar");
+            let files = [], uploading = false, watching = null, listTimer = null;
+            function note(text, cls) { const li = document.createElement("li"); if (cls) li.className = cls; li.textContent = text; notes.appendChild(li); }
+            function progress(done, total) { q("progress").classList.remove("d-none"); bar.style.width = Math.round(done * 100 / Math.max(total, 1)) + "%"; }
+            function mode() { return (box.querySelector('[name="nui_alb_mode"]:checked') || {}).value || "person"; }
+            function loadList() {
+                clearTimeout(listTimer);
+                const personPk = (mode() === "person" && scope && scope.pk) ? scope.pk : "";
+                fetch(box.dataset.batches + (personPk ? "?person_pk=" + personPk : ""), {credentials: "same-origin"})
+                    .then(r => r.ok ? r.text() : "")
+                    .then(function (html) {
+                        list.innerHTML = html;
+                        const busy = list.querySelector('[data-nui-alb-busy="1"]');
+                        if (busy) listTimer = setTimeout(loadList, 20000);
+                    });
+            }
+            function pick(input) {
+                files = Array.from(input.files || []).filter(f => OK.test(f.name));
+                status.textContent = files.length ? files.length + " archivo(s) PDF o foto." : "No hay PDF ni fotos.";
+                notes.innerHTML = "";
+                go.disabled = !files.length || uploading;
+            }
+            folder.addEventListener("change", function () { loose.value = ""; pick(folder); });
+            loose.addEventListener("change", function () { folder.value = ""; pick(loose); });
+            box.addEventListener("change", function (ev) { if (ev.target.name === "nui_alb_mode") loadList(); });
+            async function post(url, body) {
+                const r = await fetch(url, {method: "POST", credentials: "same-origin", headers: {"X-CSRFToken": csrf(), "Accept": "application/json"}, body: body});
+                const data = await r.json().catch(() => ({error: "El servidor no ha respondido bien (puede estar reiniciándose). Inténtalo de nuevo en un minuto."}));
+                if (!r.ok || data.error) throw new Error(data.error || ("Error " + r.status));
+                return data;
+            }
+            window.addEventListener("beforeunload", function (evt) { if (!uploading) return; evt.preventDefault(); evt.returnValue = ""; });
+            go.addEventListener("click", async function () {
+                if (uploading || !files.length) return;
+                const start = new FormData();
+                start.append("mode", mode());
+                if (mode() === "person") {
+                    if (!scope || !scope.pk) { note("Abre primero a la persona.", "text-danger"); return; }
+                    start.append("person_pk", scope.pk);
+                } else {
+                    start.append("selected", Array.from(sel().keys()).join(","));
+                    start.append("tab", tab());
+                }
+                uploading = true;
+                go.disabled = folder.disabled = loose.disabled = true;
+                notes.innerHTML = "";
+                const todo = files;
+                files = [];
+                try {
+                    const first = todo[0].webkitRelativePath || "";
+                    start.append("count", todo.length);
+                    start.append("folder", first.split("/")[0] || "");
+                    const batch = (await post(box.dataset.start, start)).batch;
+                    let next = 0, done = 0;
+                    async function worker() {
+                        while (next < todo.length) {
+                            const file = todo[next++];
+                            const body = new FormData();
+                            body.append("file", file, file.name);
+                            const data = await post(box.dataset.base + batch + "/archivo/", body);
+                            if (data.skipped) note(data.skipped, "text-warning-emphasis");
+                            done++;
+                            progress(done, todo.length);
+                            status.textContent = "Subiendo " + done + " de " + todo.length + "… (no salgas de esta página hasta que termine la subida)";
+                        }
+                    }
+                    await Promise.all(Array.from({length: Math.min(PARALLEL, todo.length)}, worker));
+                    await post(box.dataset.base + batch + "/fin/", new FormData());
+                    uploading = false;
+                    bar.style.width = "0%";
+                    status.textContent = "";
+                    note("Subidos " + todo.length + " archivo(s). La IA los lee en segundo plano: puedes seguir trabajando. El avance y el resultado se ven aquí y en «Cargas de albaranes».", "text-success");
+                    loadList();
+                    watch(batch);
+                } catch (err) {
+                    status.textContent = "";
+                    note(err.message, "text-danger");
+                }
+                uploading = false;
+                folder.disabled = loose.disabled = false;
+                go.disabled = true;
+            });
+            async function watch(batch) {
+                watching = batch;
+                while (watching === batch) {
+                    await new Promise(ok => setTimeout(ok, 4000));
+                    if (watching !== batch) return;
+                    let d;
+                    try {
+                        const r = await fetch(box.dataset.base + batch + "/estado/", {credentials: "same-origin", headers: {"Accept": "application/json"}});
+                        if (!r.ok) throw new Error(String(r.status));
+                        d = await r.json();
+                    } catch (e) {
+                        status.textContent = "Esperando al servidor (puede estar reiniciándose)… La lectura sigue: si se corta, se reanuda sola.";
+                        continue;
+                    }
+                    progress(d.read, d.files);
+                    if (d.status !== "READY" && d.status !== "CANCELLED") {
+                        status.textContent = "La IA está leyendo: " + d.read + " de " + d.files + " archivo(s)…";
+                        continue;
+                    }
+                    watching = null;
+                    status.textContent = "";
+                    bar.style.width = "0%";
+                    q("progress").classList.add("d-none");
+                    notes.innerHTML = "";
+                    show(d);
+                    loadList();
+                    if (scope && scope.pk && tab() === "jornadas") loadCard();
+                    return;
+                }
+            }
+            function show(d) {
+                note(d.albaranes + " albarán(es) leído(s); " + d.days + " día(s) procesado(s) por la IA, " + d.corrected + " corregido(s). Quedan sin visar: los visa un supervisor.", "text-success");
+                (d.people || []).forEach(p => note(p.name + ": " + p.albaranes + " albarán(es), " + p.days + " día(s), " + p.corrected + " corregido(s)."));
+                (d.no_person || []).forEach(n => note("Sin trabajador: " + n + " Cárgalo como «De la persona abierta» con quien sea.", "text-warning-emphasis"));
+                (d.mismatch || []).forEach(n => note("El nombre «" + n + "» no coincide del todo con el trabajador: revísalo.", "text-warning-emphasis"));
+                (d.unreadable || []).forEach(n => note("Sin leer: " + n, "text-danger"));
+                if (d.error) note(d.error, "text-danger");
+            }
+            box.addEventListener("click", function (ev) {
+                const link = ev.target.closest("[data-nui-alb-show]");
+                if (!link) return;
+                ev.preventDefault();
+                if (uploading) return;
+                notes.innerHTML = "";
+                status.textContent = "Consultando la carga…";
+                watch(link.dataset.nuiAlbShow);
+            });
+            loadList();
+            document.addEventListener("nui:scope", loadList);
+        });
         // Motivos habituales de una corrección: al campo «reason» de su
         // formulario; «Según albarán n.º(s)…», con los números del día.
         lists.addEventListener("click", function (ev) {

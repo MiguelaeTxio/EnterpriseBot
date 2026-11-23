@@ -61,6 +61,14 @@ def _maps_url(event):
     )
 
 
+def _person_label(person):
+    """"Apellidos, Nombre" (copia de panel/views_vacation_balance)."""
+    surnames = " ".join(
+        p for p in (person.first_surname, person.second_surname) if p
+    )
+    return "%s, %s" % (surnames, person.given_name)
+
+
 def _user_label(company_user):
     """
     Name of a panel user for the history.
