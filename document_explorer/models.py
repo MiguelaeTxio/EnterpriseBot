@@ -2285,6 +2285,31 @@ class EpiDelivery(models.Model):
         auto_now_add=True,
         verbose_name="Fecha de registro",
     )
+    # S163 (23/11, Miguel Ángel): extintores y botiquines (Centros de
+    # gasto › Seguridad): su número de serie (o la matrícula a la que
+    # van) y tres fechas, todas opcionales -- la práctica dirá cuáles se
+    # usan. Avisan 30 días antes.
+    serial_number = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Número de serie o matrícula",
+    )
+    expiry_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Caducidad",
+    )
+    review_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Próxima revisión",
+    )
+    retimbrado_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Retimbrado",
+    )
 
     class Meta:
         verbose_name = "Entrega de EPI"
