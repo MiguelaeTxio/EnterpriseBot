@@ -91,6 +91,23 @@ digitales de Taller y Taller Huelva, en un Excel con el precio a mano):
 - La bolsa de horas se gestiona aquí.
 - Un periodo liquidado queda bloqueado.
 
+**Lista y ficha (23/11).** La lista de trabajadores es para hacer cosas
+a muchos a la vez; todo lo de uno solo, en su ficha. La ficha tiene sus
+propias pestañas con los mismos temas (Datos, Documentación,
+Comunicaciones, Fichaje, Vacaciones, Bajas y ausencias, Partes y
+repostajes, Nóminas, EPIs, Horas y pagos) y las mismas acciones, ya
+solo para él. El clic en un trabajador abre su ficha en el tema que
+estaba elegido arriba (General → Datos). Columnas de cada tema:
+configurables, cada supervisor las suyas.
+- Documentación (lista, con los marcados): solo requisitos de
+  documentación y dosier. Sus documentos (ver, añadir, actualizar,
+  separar, cambiar tipo, papelera), en su ficha.
+- Comunicaciones: circular, pedir documentos y Docuten. Siempre con
+  plantillas: nada de mensajes de texto libre (si hace falta uno, el
+  supervisor desde su móvil).
+- General (lista, con los marcados): baja o reactivar, empresa, base,
+  volver a sacar la foto; nuevo: alta de un trabajador.
+
 ## Comunes a las vistas
 - ✅ Listados con filtros comunes, periodo rápido y fechas, filtros propios,
   columnas, orden múltiple, selección, grupos de selección, exportar.
