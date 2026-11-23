@@ -3486,10 +3486,26 @@ class VoiceOrchestrationService:
             )
             return False
 
+        # S155: si llama un trabajador desde su teléfono registrado, la
+        # sección no debe pedirle nombre ni teléfono.
+        try:
+            from asgiref.sync import sync_to_async
+            from ivr_config.services import internal_caller_note
+            caller_note = await sync_to_async(internal_caller_note)(
+                self.twilio_number, self.caller_number)
+        except Exception as exc:
+            caller_note = ""
+            logger.warning(
+                "[ESTRATEGIA-B] No se pudo identificar al llamante interno: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        if caller_note:
+            new_system_instruction += "\n\n" + caller_note
+
         logger.info(
             f"[ESTRATEGIA-B] Reinyectando system_instruction de sección "
             f"(pk={section_pk}, CallFlow='{call_flow.name}') en sesión Gemini "
-            "Live activa."
+            f"Live activa. Llamante interno: {'sí' if caller_note else 'no'}."
         )
 
         try:

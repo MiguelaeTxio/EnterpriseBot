@@ -512,6 +512,31 @@ def _time_in_tract(moment, tract) -> bool:
     return moment >= t_open or moment <= t_close
 
 
+def internal_caller_note(twilio_number: str, caller_number: str) -> str:
+    """
+    Known-caller note for section reinjection, or "" if not internal.
+    ---
+    S155 (llamada real del 23/11 a las 07:29: al pasar a la sección, el
+    flujo pidió nombre y teléfono a un trabajador que llamaba desde su
+    teléfono registrado): texto que se añade a la instrucción de sección
+    cuando el llamante es un Contact de la empresa.
+    """
+    if not caller_number:
+        return ""
+    contact = Contact.objects.filter(
+        company__phone_numbers__number=twilio_number,
+        phone_number=caller_number,
+    ).first()
+    if contact is None:
+        return ""
+    return (
+        "DATOS DEL LLAMANTE YA CONOCIDOS: es "
+        f"{contact.name}, trabajador de la empresa, y llama desde su "
+        f"teléfono {caller_number}. No le pidas el nombre ni el teléfono; "
+        "si tienes que guardar sus datos, usa estos."
+    )
+
+
 def section_closed_reason(section_id: int):
     """
     Why the section cannot take a transfer right now, or None if open.
