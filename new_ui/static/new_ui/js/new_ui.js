@@ -647,6 +647,11 @@
                 goToActions(uploadForm);
                 return;
             }
+            if (kind === "nui-doc-jornada") {
+                cardView = {pk: parts[1], tab: "jornadas", extra: {vista: "jornadas", dia: parts[2]}};
+                setScope({pk: parts[1], label: decodeURIComponent(parts[3] || "")}, "jornadas");
+                return;
+            }
             if (kind === "nui-doc-fragment") {
                 // S163: un fragmento con acciones (p. ej. «Gestionar» una
                 // solicitud) en el bloque de Acciones de la vista abierta.
@@ -916,11 +921,12 @@
             const map = sel();
             const listBox = pane();
             const mark = map.size === 1 && listBox ? listBox.querySelector('.nui-rowmark[value="' + CSS.escape(Array.from(map.keys())[0]) + '"]') : null;
-            const items = mark ? Array.from(mark.closest("tr").querySelectorAll("[data-nui-row-actions] .dropdown-item")) : [];
+            // «Ver su ficha» no se repite aquí: es el botón derecho.
+            const items = mark ? Array.from(mark.closest("tr").querySelectorAll("[data-nui-row-actions] .dropdown-item")).filter(i => !i.hasAttribute("data-nui-scope")) : [];
             if (!items.length) {
                 const p = document.createElement("p");
                 p.className = "small text-muted mb-0";
-                p.textContent = map.size === 1 ? "Esa fila no tiene acciones propias." : "Marca una sola fila del listado para ver aquí sus acciones.";
+                p.textContent = map.size === 1 ? "Esa fila no tiene acciones propias (su ficha y su menú: botón derecho sobre ella)." : "Marca una sola fila del listado para ver aquí sus acciones.";
                 box.appendChild(p);
                 return;
             }
@@ -1091,7 +1097,14 @@
                     try { extra = JSON.parse(pick.dataset.nuiScopeExtra || "{}"); } catch (e) { extra = {}; }
                     cardView = {pk: pick.dataset.nuiScope, tab: pick.dataset.nuiScopeTab, extra: extra};
                 }
-                setScope({pk: pick.dataset.nuiScope, label: pick.dataset.nuiScopeLabel}, pick.dataset.nuiScopeTab);
+                // Clic izquierdo en un nombre de un listado que no es
+                // «General»: sus filas de esta misma vista (sus fichajes
+                // en Fichajes...); en General (o desde el menú), su ficha.
+                let target = pick.dataset.nuiScopeTab;
+                const now = tab();
+                const fromList = pick.tagName === "A" && pick.closest("#nui-lists") && pane() && pane().querySelector('.nui-list-state[data-scopeable="1"]');
+                if (!target && fromList && now !== "general" && !isEntityTab(now)) target = now;
+                setScope({pk: pick.dataset.nuiScope, label: pick.dataset.nuiScopeLabel}, target);
             }
         });
         const clear = document.getElementById("nui-sel-clear");
@@ -1168,13 +1181,11 @@
                 title.className = "small fw-semibold mb-1";
                 title.textContent = scope.label;
                 box.appendChild(title);
-                p.textContent = "Todo lo suyo está en las pestañas de abajo.";
                 const panelUrl = section === "per" ? urls.photoPanel : (section === "cdg" ? urls.machinePanel : "");
                 if (panelUrl) {
-                    // S163: su foto (para plataformas, girar, subir...).
+                    // S163: sus acciones que no son un listado (foto para
+                    // plataformas, contrato revisado, revisiones...).
                     const photo = document.createElement("div");
-                    photo.className = "mt-2";
-                    box.appendChild(p);
                     box.appendChild(photo);
                     fetch(panelUrl.replace("/0/", "/" + scope.pk + "/"), {credentials: "same-origin"})
                         .then(r => r.ok ? r.text() : "")

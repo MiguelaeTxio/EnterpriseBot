@@ -7,7 +7,7 @@ la fila (botón derecho = su menú; pulsar = ver su ficha aquí). Es
 salida: sin botones; las acciones de cada fila van ocultas y salen en
 Acciones › Esta fila al marcarla, y en su botón derecho.
 {% endcomment %}
-<div class="nui-list-state d-none" data-count="{{ total }}" data-sorted="{% if sort_active %}1{% endif %}" data-note="{{ definition.note }}"></div>
+<div class="nui-list-state d-none"{% if definition.entity %} data-scopeable="1"{% endif %} data-count="{{ total }}" data-sorted="{% if sort_active %}1{% endif %}" data-note="{{ definition.note }}"></div>
 {% if limited %}<div class="alert alert-warning small py-1 px-2 m-2">Se muestran {{ shown }} de {{ total }}: afina los filtros para ver el resto (exportar saca todas).</div>{% endif %}
 <table class="table table-sm table-hover align-middle small mb-0">
     <thead>
@@ -25,7 +25,7 @@ Acciones › Esta fila al marcarla, y en su botón derecho.
             {% for cell in row.cells %}
             {% if cell.entity and row.entity_pk %}
             <td class="{{ cell.css }} fw-semibold" {% if row.entity_kind == "machine" %}data-machine-pk="{{ row.entity_pk }}"{% else %}data-person-pk="{{ row.entity_pk }}"{% endif %}>
-                <a href="#" data-nui-scope="{{ row.entity_pk }}" data-nui-scope-label="{{ row.entity_label }}" title="Ver su ficha y sus listados aquí">{{ cell.value|default:"—" }}</a>
+                <a href="#" data-nui-scope="{{ row.entity_pk }}" data-nui-scope-label="{{ row.entity_label }}" title="Sus filas de esta vista (botón derecho: su menú)">{{ cell.value|default:"—" }}</a>
             </td>
             {% else %}
             <td class="{{ cell.css }}">{{ cell.value|default:"—" }}</td>

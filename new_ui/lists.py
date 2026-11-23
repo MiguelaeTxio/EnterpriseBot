@@ -1125,6 +1125,29 @@ def _person_general():
     )
 
 
+def _clock_event_actions(event):
+    """
+    Row actions of a press: its day in Jornadas (to see or correct it).
+
+    ---
+
+    Acciones de un fichaje: abrir la jornada de ese día de esa persona
+    en Personal › Jornadas, donde se ve entera y se corrige.
+    """
+    from urllib.parse import quote
+
+    from django.utils import timezone
+
+    person = getattr(event.company_user, "person_identity", None) if (
+        event.company_user_id) else None
+    if person is None:
+        return []
+    day = timezone.localtime(event.pressed_at).date().isoformat()
+    return [("Su jornada de ese día (ver y corregir)", "bi-calendar-day",
+             "#nui-doc-jornada:%d:%s:%s" % (
+                 person.pk, day, quote(person_name(person), safe="")))]
+
+
 def _request_detail_text(row):
     """«Qué pide» de una solicitud (hr_calendar.worker_requests)."""
     from hr_calendar import worker_requests as wr
@@ -1241,7 +1264,8 @@ def _per_lists():
                             family=DocumentTypeCatalog.FAMILY_LABORAL),
         "partes": _partes_def(),
         "fichajes": _person_fk_def(
-            "Fichajes", "hr_calendar.ClockEvent", ("clock_type",), [
+            "Fichajes", "hr_calendar.ClockEvent",
+            ("clock_type", "company_user__person_identity"), [
                 Col("hora", "Fecha y hora", lambda r: fmt_datetime(
                     r.pressed_at), "pressed_at", "text-nowrap"),
                 Col("tipo", "Entrada / salida", lambda r: disp(r, "kind"),
@@ -1255,6 +1279,7 @@ def _per_lists():
             ], "pressed_at", date_is_datetime=True, search=("municipality",),
             default_order=("-pressed_at",),
             extra_filter=lambda qs, company: qs.filter(company=company),
+            actions=_clock_event_actions,
             note="Periodo: hora del fichaje."),
         "repostajes": _person_fk_def(
             "Repostajes", "fleet.GasoGesSupply", ("vehicle__machine",), [

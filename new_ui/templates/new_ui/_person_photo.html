@@ -5,7 +5,9 @@ ventana «Ver foto» antigua): descargar para plataformas (entera o el
 recuadro que se marque arrastrando sobre la foto), girar, modo
 automático y subir otra. Vista: new_ui/views_photos.py.
 {% endcomment %}
-<div class="small fw-semibold mb-1"><i class="bi bi-person-bounding-box me-1"></i>Foto</div>
+<details class="mb-2">
+<summary class="small fw-semibold"><i class="bi bi-person-bounding-box me-1"></i>Foto para plataformas <span class="fw-normal text-muted">{% if photo_url %}(descargar entera o recortada, girar, subir otra){% else %}(no tiene: subir o sacarla de un documento){% endif %}</span></summary>
+<div class="mt-1">
 {% if photo_url %}
 <div class="d-flex flex-wrap gap-2 align-items-start mb-2">
     <div class="position-relative d-inline-block border rounded" style="max-width: 180px; touch-action: none; user-select: none;" data-nui-crop>
@@ -38,8 +40,10 @@ automático y subir otra. Vista: new_ui/views_photos.py.
     <input type="file" name="file" accept="image/*" required class="form-control form-control-sm" style="max-width: 16rem;" aria-label="Foto nueva">
     <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-upload me-1"></i>Subir otra foto</button>
 </form>
+</div>
+</details>
 
-<div class="small fw-semibold mt-3 mb-1"><i class="bi bi-file-earmark-check me-1"></i>Contrato vigente</div>
+<div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-check me-1"></i>Contrato vigente</div>
 <form data-nui-action-form data-nui-no-refresh data-nui-contract action="{% url 'new_ui:contract_review' person.pk %}" class="small">
     {% csrf_token %}
     <input type="hidden" name="previous_date" value="{{ reviewed_at|date:'Y-m-d' }}">
