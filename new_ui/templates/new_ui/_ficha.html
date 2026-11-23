@@ -176,3 +176,12 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
          data-photo-upload="{% if kind == 'machine' %}{% url 'new_ui:subject_upload' domain='machine' subject_pk=obj.pk %}{% else %}{% url 'new_ui:person_photo_upload' pk=obj.pk %}{% endif %}"
          data-photo-set="{% if kind == 'machine' %}{% url 'new_ui:machine_set_avatar' pk=obj.pk %}{% endif %}"></div>
 </form>
+{% if kind == "person" and platform %}
+{# S163 (23/11, Miguel Ángel: la foto para plataformas "nos lo hemos cepillado por completo"): a la vista en la ficha, como en la ficha antigua. Va fuera del formulario de la ficha (lleva los suyos). #}
+<div class="nui-ficha px-2 pb-2">
+    <section class="nui-ficha-box">
+        <div class="nui-ficha-head"><i class="bi bi-person-bounding-box me-1"></i>Foto para plataformas</div>
+        <div class="p-2">{% include "new_ui/_platform_photo.html" with person=obj photo_url=platform.photo_url source=platform.source %}</div>
+    </section>
+</div>
+{% endif %}

@@ -1,0 +1,33 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_platform_photo.html -- S163: foto para plataformas (descargar entera o recortada, girar, modo automático, subir otra). En Acciones (_person_photo.html) y en la ficha (Datos) del trabajador. Contexto: person, photo_url, source. Vista: new_ui/views_photos.py. #}
+{% if photo_url %}
+<div class="d-flex flex-wrap gap-2 align-items-start mb-2">
+    <div class="position-relative d-inline-block border rounded" style="max-width: 180px; touch-action: none; user-select: none;" data-nui-crop>
+        <img src="{{ photo_url }}?v={% now 'U' %}" alt="Foto de {{ person.given_name }}" class="d-block" style="max-width: 180px; max-height: 220px;" draggable="false">
+        <div class="position-absolute border border-2 border-primary d-none" style="background: rgba(13,110,253,.12); pointer-events: none;" data-nui-crop-box></div>
+    </div>
+    <div class="small">
+        <div class="text-muted mb-1">{{ source }}</div>
+        <div class="d-flex flex-wrap gap-1 mb-1">
+            <a class="btn btn-sm btn-primary" href="{% url 'new_ui:person_platform_photo' person.pk %}" data-nui-crop-download data-base="{% url 'new_ui:person_platform_photo' person.pk %}"><i class="bi bi-download me-1"></i><span data-nui-crop-label>Descargar para plataformas</span></a>
+            <button type="button" class="btn btn-sm btn-link py-0 d-none" data-nui-crop-clear>Quitar el recuadro</button>
+        </div>
+        <div class="text-muted mb-1">PNG de menos de 128 KB con su nombre. Arrastra sobre la foto para descargar solo el recuadro (que la cara ocupe casi todo).</div>
+        <form data-nui-action-form action="{% url 'new_ui:person_photo_action' person.pk %}" class="d-flex flex-wrap gap-1">
+            {% csrf_token %}
+            <button type="submit" name="action" value="left" class="btn btn-sm btn-outline-secondary" title="Girar a la izquierda"><i class="bi bi-arrow-counterclockwise"></i></button>
+            <button type="submit" name="action" value="right" class="btn btn-sm btn-outline-secondary" title="Girar a la derecha"><i class="bi bi-arrow-clockwise"></i></button>
+            <button type="submit" name="action" value="automatic" class="btn btn-sm btn-outline-secondary">Modo automático</button>
+        </form>
+    </div>
+</div>
+{% else %}
+<p class="small text-muted mb-1">No tiene foto. Súbela, o en Documentos marca su DNI y pulsa «Sacar la foto de aquí».</p>
+<form data-nui-action-form action="{% url 'new_ui:person_photo_action' person.pk %}" class="mb-1">
+    {% csrf_token %}<button type="submit" name="action" value="automatic" class="btn btn-sm btn-outline-secondary">Buscarla en sus documentos (modo automático)</button>
+</form>
+{% endif %}
+<form data-nui-action-form action="{% url 'new_ui:person_photo_upload' person.pk %}" class="d-flex flex-wrap align-items-center gap-1">
+    {% csrf_token %}
+    <input type="file" name="file" accept="image/*" required class="form-control form-control-sm" style="max-width: 16rem;" aria-label="Foto nueva">
+    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-upload me-1"></i>Subir otra foto</button>
+</form>

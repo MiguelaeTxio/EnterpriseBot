@@ -100,31 +100,47 @@ class PersonPhotoPanelView(SuperuserRequiredMixin, View):
 
     def get(self, request, pk):
         person = get_object_or_404(PersonIdentity, pk=pk)
-        id_photo = PersonIdPhoto.objects.filter(person=person).select_related(
-            "source__document_type").first()
-        photo_url = ""
-        source = ""
-        if id_photo is not None:
-            photo_url = reverse("new_ui:person_photo", args=[pk])
-            if id_photo.source_id:
-                source = _source_label(id_photo.source)
-            source = ("Puesta a mano" if id_photo.is_manual
-                      else "Automática") + (" · de %s" % source
-                                            if source else "")
-        elif (person.avatar_document_id
-              and person.avatar_document.name.lower().endswith(
-                  IMAGE_EXTENSIONS)):
-            photo_url = reverse("new_ui:document_file",
-                                args=[person.avatar_document_id])
-            source = "Imagen elegida como foto"
-        # S163: y la revisión del contrato vigente (antes, en su ficha).
-        reviewer = person.contract_reviewed_by
-        return render(request, "new_ui/_person_photo.html", {
-            "person": person, "photo_url": photo_url, "source": source,
-            "reviewed_at": person.contract_reviewed_at,
-            "reviewed_by": (reviewer.user.get_full_name()
-                            or reviewer.user.username) if reviewer else "",
-        })
+        return render(request, "new_ui/_person_photo.html",
+                      photo_panel_context(person))
+
+
+def photo_panel_context(person):
+    """
+    Context of the photo block (Acciones and the worker's Datos).
+
+    ---
+
+    Lo que pinta el bloque de la foto para plataformas y la revisión del
+    contrato: en Acciones y, a la vista, en la ficha (Datos) del
+    trabajador (S163, 23/11, Miguel Ángel: "la foto para plataformas
+    [...] nos lo hemos cepillado por completo").
+    """
+    pk = person.pk
+    id_photo = PersonIdPhoto.objects.filter(person=person).select_related(
+        "source__document_type").first()
+    photo_url = ""
+    source = ""
+    if id_photo is not None:
+        photo_url = reverse("new_ui:person_photo", args=[pk])
+        if id_photo.source_id:
+            source = _source_label(id_photo.source)
+        source = ("Puesta a mano" if id_photo.is_manual
+                  else "Automática") + (" · de %s" % source
+                                        if source else "")
+    elif (person.avatar_document_id
+          and person.avatar_document.name.lower().endswith(
+              IMAGE_EXTENSIONS)):
+        photo_url = reverse("new_ui:document_file",
+                            args=[person.avatar_document_id])
+        source = "Imagen elegida como foto"
+    # S163: y la revisión del contrato vigente (antes, en su ficha).
+    reviewer = person.contract_reviewed_by
+    return {
+        "person": person, "photo_url": photo_url, "source": source,
+        "reviewed_at": person.contract_reviewed_at,
+        "reviewed_by": (reviewer.user.get_full_name()
+                        or reviewer.user.username) if reviewer else "",
+    }
 
 
 class PersonPlatformPhotoView(SuperuserRequiredMixin, View):
