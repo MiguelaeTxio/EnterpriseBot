@@ -187,6 +187,20 @@ class BestSeriesTests(unittest.TestCase):
         self.assertEqual(series_reason(points, 1, chain, UNIT_HOURS),
                          "KM vacío o a 0")
 
+    def test_hours_vehicle_ignores_old_kilometres(self):
+        # S163 (B27): kilómetros de antes y las primeras horas de verdad.
+        points = [(_d("2026-07-01 12:00:00"), 25155),
+                  (_d("2026-07-03 12:00:00"), 247246),
+                  (_d("2026-07-28 12:00:00"), 247689),
+                  (_d("2026-10-21 12:00:00"), 251451),
+                  (_d("2026-11-17 12:00:00"), 25734),
+                  (_d("2026-11-23 12:00:00"), 25744)]
+        chain = best_series(points, UNIT_HOURS)
+        self.assertEqual(chain, {0, 4, 5})
+        self.assertEqual(series_reason(points, 1, chain, UNIT_HOURS),
+                         "más de lo que marca un horómetro: parecen "
+                         "kilómetros")
+
     def test_hours_too_fast(self):
         points = [(_d("2026-06-01 08:00:00"), 17500),
                   (_d("2026-06-03 08:00:00"), 17600),

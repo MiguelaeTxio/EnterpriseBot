@@ -42,6 +42,13 @@ MAX_HOURS_PER_DAY = 24
 # Such a small number is never a real reading.
 MIN_CREDIBLE_VALUE = 10
 
+# S137: ningún horómetro llega a 50.000 horas; un número así en un
+# vehículo de horas son kilómetros tecleados por costumbre. S163
+# (23/11): tampoco cuentan para la serie de un vehículo de horas (B27).
+# ---
+# No hour meter reaches this: in an hours vehicle it is kilometres.
+MAX_CREDIBLE_HOURS = 50000
+
 UNIT_UNKNOWN = "UNKNOWN"
 UNIT_KM = "KM"
 UNIT_HOURS = "HOURS"
@@ -254,8 +261,13 @@ def best_series(points, unit):
     tarde.
     """
     limit = MAX_KM_PER_DAY if unit == UNIT_KM else MAX_HOURS_PER_DAY
+    # S163 (23/11, B27): en un vehículo de horas, los kilómetros que se
+    # tecleaban antes (247.000...) no forman serie. Hacían la cadena más
+    # larga y dejaban dudosas las primeras horas de verdad (25.734 y
+    # 25.744), y se preguntaba al chófer aunque las había puesto bien.
     usable = [i for i, (_when, value) in enumerate(points)
-              if value and value >= MIN_CREDIBLE_VALUE]
+              if value and value >= MIN_CREDIBLE_VALUE
+              and (unit == UNIT_KM or value < MAX_CREDIBLE_HOURS)]
     score, back = {}, {}
     for pos, i in enumerate(usable):
         best, best_from = 0, None
@@ -287,6 +299,8 @@ def series_reason(points, index, chain, unit):
         return "KM vacío o a 0"
     if value < MIN_CREDIBLE_VALUE:
         return "número demasiado pequeño (%s)" % value
+    if unit != UNIT_KM and value >= MAX_CREDIBLE_HOURS:
+        return "más de lo que marca un horómetro: parecen kilómetros"
     limit = MAX_KM_PER_DAY if unit == UNIT_KM else MAX_HOURS_PER_DAY
     before = [i for i in chain if i < index]
     after = [i for i in chain if i > index]

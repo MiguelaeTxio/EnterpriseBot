@@ -78,6 +78,7 @@ from document_explorer.person_phone_service import (
     resolve_person_by_phone,
 )
 from fleet.gasoges_rules import (
+    MAX_CREDIBLE_HOURS,
     MAX_HOURS_PER_DAY,
     MAX_KM_PER_DAY,
     MIN_CREDIBLE_VALUE,
@@ -117,7 +118,6 @@ UNIT_ASK = {
 # "AVERIADO", "averiado.", "está averiado": mensaje corto con la palabra.
 _BROKEN_RE = re.compile(r"\baveriad[oa]s?\b", re.I)
 _BROKEN_MAX_LEN = 60
-MAX_CREDIBLE_HOURS = 50000
 _ANY_NUMBER_RE = re.compile(r"\d{1,3}(?:\.\d{3})+|\d+")
 _TEXT_MAX_LEN = 80
 # "Sí", "si, es correcto", "correcto", "eso es lo que marca", "está
@@ -404,6 +404,12 @@ def _candidates():
             asked_units.add(supply.vehicle_id)
         elif not unit_unknown and (
                 supply.status == GasoGesSupply.STATUS_ANOMALY):
+            # S163 (23/11, Miguel Ángel: "si estás metiendo bien, no hay
+            # que enviar ningún mensaje"): solo se pregunta si se le
+            # puede decir al chófer por qué no encaja con las lecturas
+            # buenas; sin motivo concreto, no se le molesta.
+            if not value_problem(supply, supply.meter_value):
+                continue
             pairs.append((RefuelQuestion.KIND_VALUE, supply))
     # Primero las de unidad: una respuesta desbloquea todas las lecturas
     # de ese vehículo (S135).
