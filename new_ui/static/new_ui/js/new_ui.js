@@ -398,10 +398,12 @@
             const shown = {sel: 0, one: 0, new: 0};
             const bodies = {sel: sec("sel"), one: sec("one"), new: sec("new")};
             pieces.forEach(function (piece) {
-                const on = piece.tabs.indexOf(t) !== -1;
+                // En la Ficha, todo lo que se hace con esta persona.
+                const on = piece.tabs.indexOf(t) !== -1
+                    || (t === "ficha" && piece.tabs.some(x => groupOf(piece, x) === "one"));
                 piece.el.dataset.nuiActive = on ? "1" : "";
                 if (!on) { piece.el.classList.add("d-none"); return; }
-                const g = groupOf(piece, t);
+                const g = piece.tabs.indexOf(t) !== -1 ? groupOf(piece, t) : "one";
                 const body = bodies[g] && bodies[g].querySelector("[data-nui-sec-body]");
                 if (!body) return;
                 body.appendChild(piece.el);
