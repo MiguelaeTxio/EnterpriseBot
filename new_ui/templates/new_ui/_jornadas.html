@@ -4,7 +4,6 @@
     <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Vista">
         <button type="button" class="btn btn-outline-primary{% if view == 'jornadas' %} active{% endif %}" data-nui-card-view="jornadas"><i class="bi bi-list-ul me-1"></i>Jornadas</button>
         <button type="button" class="btn btn-outline-primary{% if view == 'calendario' %} active{% endif %}" data-nui-card-view="calendario"><i class="bi bi-calendar3 me-1"></i>Calendario</button>
-        <button type="button" class="btn btn-outline-primary{% if view == 'correcciones' %} active{% endif %}" data-nui-card-view="correcciones"><i class="bi bi-clock-history me-1"></i>Correcciones</button>
     </div>
     {% if view == "calendario" %}
     {% include "new_ui/_jornadas_calendar.html" %}

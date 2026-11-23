@@ -1763,6 +1763,20 @@ def list_def(section, tab):
         for key in ("lista_horarios", "tipos_fichaje", "catalogo_epis",
                     "nominas"):
             _CACHE["doc"][key] = _CACHE["per"].pop(key)
+        # S163 (23/11): en Fichajes, las correcciones son un filtro (ya
+        # no una vista aparte del calendario): corregidos (el original
+        # cambiado o anulado) o puestos al corregir.
+        from django.db.models import Q as _Q
+        _CACHE["per"]["fichajes"].extras.append(Extra(
+            "corregidos", "Correcciones",
+            lambda company: [("si", "Solo corregidos"),
+                             ("no", "Sin corregir")],
+            apply=lambda qs, v: (
+                qs.filter(_Q(correction__isnull=False)
+                          | _Q(replaces__isnull=False))
+                if v == "si" else
+                qs.filter(correction__isnull=True,
+                          replaces__isnull=True))))
         # S163 (23/11): la lista de trabajadores de cada tema de Personal
         # (Comunicaciones, Bajas, Partes, Repostajes, EPIs), de momento
         # con las columnas de General; las propias de cada tema, después.
