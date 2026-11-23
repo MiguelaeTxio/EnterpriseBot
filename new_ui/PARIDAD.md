@@ -268,7 +268,7 @@ Ficha, QR, Avisos, Revisiones, Lecturas, Averías y Libro historial
 - ⬜ Subir, estado, reclasificar
 
 ## Nóminas
-- ⬜ Nueva remesa, subir, leer, acciones, exportar, descargar
+- ✅ (S163, 23/11) Empresa › Nóminas: nueva entrega (carpeta, supervisor, lectura), entrega elegida (visto bueno y enviar, reintentar, avisar, anular, compartir), marcadas (descargar, fuera/dentro, poner trabajador); acceso de payslip_access
 
 ## Firmas y seguros
 - ⬜ Firmas: guardar, borrar, imagen, certificado, generar firmados, lotes
