@@ -10,7 +10,7 @@ cuando tiene más de una vista (new_ui/catalog.py, TAB_GROUPS).
 {% endcomment %}
 <div class="nui-viewbar" role="tablist" aria-label="Qué ver">
     {% for label, members in view_groups %}
-    <button type="button" class="btn btn-sm py-0" data-nui-group="{{ forloop.counter }}" data-views="{% for key, l, mode in members %}{{ key }} {% endfor %}">{{ label }}</button>
+    <button type="button" class="btn btn-sm py-0" data-nui-theme="{{ forloop.counter }}" data-views="{% for key, l, mode in members %}{{ key }} {% endfor %}">{{ label }}</button>
     {% endfor %}
 </div>
 {% for label, members in view_groups %}

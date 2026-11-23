@@ -297,14 +297,14 @@
         });
         // S163 (23/11): el grupo de la vista abierta, marcado, y debajo
         // sus vistas si tiene más de una a la vista.
-        document.querySelectorAll("[data-nui-group]").forEach(function (g) {
-            const sub = document.querySelector('[data-nui-subbar="' + g.dataset.nuiGroup + '"]');
+        document.querySelectorAll("[data-nui-theme]").forEach(function (g) {
+            const sub = document.querySelector('[data-nui-subbar="' + g.dataset.nuiTheme + '"]');
             const visible = sub ? Array.from(sub.querySelectorAll("[data-nui-view]")).filter(b => !b.classList.contains("d-none")) : [];
             const on = g.dataset.views.split(" ").indexOf(current) !== -1;
             g.classList.toggle("d-none", !visible.length);
             g.classList.toggle("active", on);
             if (sub) sub.classList.toggle("d-none", !on || visible.length < 2);
-            if (on) groupLast[g.dataset.nuiGroup] = current;
+            if (on) groupLast[g.dataset.nuiTheme] = current;
         });
         const title = document.getElementById("nui-list-title");
         const button = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + current + '"]');
@@ -314,11 +314,11 @@
     // primera que se vea).
     const groupLast = (tabs.groups && tabs.groups[section]) || {};
     document.addEventListener("click", function (ev) {
-        const g = ev.target.closest("[data-nui-group]");
+        const g = ev.target.closest("[data-nui-theme]");
         if (!g) return;
-        const sub = document.querySelector('[data-nui-subbar="' + g.dataset.nuiGroup + '"]');
+        const sub = document.querySelector('[data-nui-subbar="' + g.dataset.nuiTheme + '"]');
         const visible = Array.from(sub.querySelectorAll("[data-nui-view]")).filter(b => !b.classList.contains("d-none")).map(b => b.dataset.nuiView);
-        const target = visible.indexOf(groupLast[g.dataset.nuiGroup]) !== -1 ? groupLast[g.dataset.nuiGroup] : visible[0];
+        const target = visible.indexOf(groupLast[g.dataset.nuiTheme]) !== -1 ? groupLast[g.dataset.nuiTheme] : visible[0];
         if (!target) return;
         showTab(panelOf("listado"), target, true);
         tabs.groups = tabs.groups || {};
@@ -429,7 +429,7 @@
             return b ? (b.dataset.nuiMode || "") : "";
         }
         function groupViews(t) {
-            const g = Array.from(document.querySelectorAll("[data-nui-group]")).find(x => x.dataset.views.split(" ").indexOf(t) !== -1);
+            const g = Array.from(document.querySelectorAll("[data-nui-theme]")).find(x => x.dataset.views.split(" ").indexOf(t) !== -1);
             return g ? g.dataset.views.split(" ").filter(Boolean) : [t];
         }
         function groupAll(t) { return groupViews(t).find(v => modeOf(v) !== "one") || ""; }
