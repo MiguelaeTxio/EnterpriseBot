@@ -79,12 +79,24 @@ def _as_date(value):
 
 
 def pay_period(params):
-    """El periodo del filtro; sin periodo, el mes en curso hasta hoy."""
+    """
+    The period of the filter; without one, the pay period in progress.
+
+    ---
+
+    El periodo del filtro; sin periodo, el periodo de pago en curso (del
+    21 al 20, el de los periodos de trabajo).
+    """
+    from new_ui.filters import pay_period_range
+
     start, end = period_range(params)
-    today = timezone.localdate()
     if start is None and end is None:
-        return today.replace(day=1), today
-    return start or (end or today).replace(day=1), end or today
+        return pay_period_range()
+    if start is None:
+        start = pay_period_range(end)[0]
+    if end is None:
+        end = pay_period_range(start)[1]
+    return start, end
 
 
 def _minutes_label(minutes):

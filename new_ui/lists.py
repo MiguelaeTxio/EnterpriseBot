@@ -2314,7 +2314,7 @@ def _theme_person_list(key):
 
 # --------------------------------------------------------- horas y pagos
 def _annotate_pagos(qs, start, end):
-    """El periodo del cálculo en cada fila (sin periodo, el mes en curso)."""
+    """El periodo del cálculo en cada fila (sin periodo, el periodo de pago en curso)."""
     from django.db.models import DateField, Value
 
     from new_ui.views_pay import pay_period
@@ -2375,7 +2375,7 @@ def _pay_person_list():
     Personal › Horas y pagos (S163, 23/11): por trabajador, las horas
     que se pagan del periodo (normales y en festivo), lo que va a la
     bolsa por el tope y el importe con sus precios (hr_calendar/pay.py).
-    Sin periodo, el mes en curso hasta hoy.
+    Sin periodo, el periodo de pago en curso (del 21 al 20).
     """
     definition = _person_general()
     definition.columns = list(definition.columns) + [

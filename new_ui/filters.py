@@ -14,7 +14,9 @@ import datetime
 from django.utils import timezone
 
 PERIOD_UNITS = (
-    ("dia", "Día"), ("semana", "Semana"), ("mes", "Mes"), ("ano", "Año"),
+    ("dia", "Día"), ("semana", "Semana"), ("mes", "Mes"),
+    # S163 (23/11, Miguel Ángel): el periodo de pago, del 21 al 20.
+    ("pago", "Periodo de pago"), ("ano", "Año"),
 )
 PERIOD_WHICH = (("actual", "Periodo actual"), ("anterior", "Periodo anterior"))
 MAX_SORT_KEYS = 4
@@ -65,8 +67,29 @@ def period_range(params):
             start = (start - datetime.timedelta(days=1)).replace(day=1)
         following = (start + datetime.timedelta(days=32)).replace(day=1)
         return start, following - datetime.timedelta(days=1)
+    if unit == "pago":
+        return pay_period_range(today, previous)
     year = today.year - 1 if previous else today.year
     return datetime.date(year, 1, 1), datetime.date(year, 12, 31)
+
+
+def pay_period_range(today=None, previous=False):
+    """
+    (start, end) of the pay period (21st to 20th) in progress or before.
+
+    ---
+
+    El periodo de pago (del 21 de un mes al 20 del siguiente, el de los
+    periodos de trabajo de los partes) en curso o el anterior.
+    """
+    from hr_calendar.parte_clock import PERIOD_START_DAY, period_start
+
+    start = period_start(today or timezone.localdate())
+    if previous:
+        start = period_start(start - datetime.timedelta(days=1))
+    end = (start + datetime.timedelta(days=32)).replace(
+        day=PERIOD_START_DAY) - datetime.timedelta(days=1)
+    return start, end
 
 
 def period_context(params):

@@ -10,7 +10,7 @@
         {% if result.to_bag %}<span>A la bolsa por el tope: <strong>{{ result.bag_hours|floatformat:2 }}</strong></span>{% endif %}
         <span>Importe: <strong>{{ result.total|floatformat:2 }} €</strong></span>
         {% endif %}
-        <span class="text-muted">El periodo es el del filtro de arriba; sin periodo, el mes en curso hasta hoy.</span>
+        <span class="text-muted">El periodo es el del filtro de arriba; sin periodo, el periodo de pago en curso (del 21 al 20).</span>
     </div>
     {% if not has_account %}<div class="alert alert-warning small py-1 px-2">No tiene cuenta del panel: no ficha ni hace partes.</div>{% endif %}
     {% if liquidated %}<div class="alert alert-info small py-1 px-2">Ya liquidado: {% for a, b in liquidated %}{{ a|date:"d/m/Y" }}–{{ b|date:"d/m/Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}. Esos días no se cuentan aquí.</div>{% endif %}
