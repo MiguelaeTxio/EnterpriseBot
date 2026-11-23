@@ -7,10 +7,9 @@ Horarios y ajustes de Fichajes). Sin desplegables: botones de opción.
 (#nui-edit:<formulario>:<pk>, new_ui.js).
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="horarios">
-    <div class="small fw-semibold mb-1"><i class="bi bi-people me-1"></i>Horario, fichaje y recordatorios</div>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:worker_clock' %}" class="mb-2">
         {% csrf_token %}<input type="hidden" name="action" value="schedule">
-        <div class="small text-muted">Horario propio:</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-clock me-1"></i>Asignar horario</div>
         <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Horario">
             {% for sched in nui_schedules %}
             <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="schedule_id" value="{{ sched.pk }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ sched.label }}</span></label>
@@ -21,7 +20,7 @@ Horarios y ajustes de Fichajes). Sin desplegables: botones de opción.
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:worker_clock' %}" class="mb-2">
         {% csrf_token %}<input type="hidden" name="action" value="clock_mode">
-        <div class="small text-muted">Tipo de fichaje:</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Tipo de fichaje</div>
         <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Tipo de fichaje">
             {% for code, label in nui_clock_modes %}
             <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="mode" value="{{ code }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>
@@ -31,7 +30,7 @@ Horarios y ajustes de Fichajes). Sin desplegables: botones de opción.
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:worker_clock' %}" class="mb-2">
         {% csrf_token %}
-        <div class="small text-muted">Fichaje y avisos:</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-bell me-1"></i>Ficha o no ficha, y recordatorios</div>
         <div class="d-flex flex-wrap gap-1 mb-1">
             <button type="submit" name="action" value="clocks_on" class="btn btn-sm btn-outline-success">Ficha</button>
             <button type="submit" name="action" value="clocks_off" class="btn btn-sm btn-outline-secondary">No ficha</button>
@@ -45,7 +44,7 @@ Horarios y ajustes de Fichajes). Sin desplegables: botones de opción.
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:worker_clock' %}">
         {% csrf_token %}<input type="hidden" name="action" value="section">
-        <div class="small text-muted">Sección:</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-diagram-3 me-1"></i>Sección (para su horario y tipo por defecto)</div>
         <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Sección">
             {% for sec in nui_sections %}
             <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="section_id" value="{{ sec.pk }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ sec.name }}</span></label>
