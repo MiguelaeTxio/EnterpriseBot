@@ -140,6 +140,18 @@ configurables, cada supervisor las suyas.
   su ficha: sus bajas (dar el alta con fecha y parte, o borrar) y sus
   ausencias (cambiar o borrar), y lo mismo solo para él. Las vistas
   «Salud» y «Ausencias» desaparecen (a su ficha y a columnas).
+- Partes (23/11). Solo consulta: los partes digitales del taller
+  (Málaga y Huelva) tienen su pipeline y se hacen y editan (trabajador y
+  supervisor) en la interfaz antigua, donde siguen; no hay escaneos.
+  Lista, con los marcados: exportar sus partes del periodo. Columnas
+  para elegir: partes en el periodo, horas en partes, días laborables
+  sin parte. En su ficha: el listado de sus partes y, en cada uno, el
+  documento del parte (ver, sin editar). Lo mismo en Centros de gasto:
+  los partes de cada máquina.
+- Repostajes (23/11). Lista, con los marcados: preguntar por WhatsApp
+  al chófer por un repostaje dudoso (plantilla). Columnas: repostajes en
+  el periodo, litros. En su ficha: sus repostajes con vehículo y
+  contador; corregir vehículo o contador, preguntar.
 
 ## Comunes a las vistas
 - ✅ Listados con filtros comunes, periodo rápido y fechas, filtros propios,
@@ -229,7 +241,8 @@ configurables, cada supervisor las suyas.
 - ✅ (S163) Lecturas de contador: nueva, borrar (vista Lecturas)
 - ✅ (S163) Libro historial: generar, externo («Del centro de gasto»)
 - ✅ (S163) Taller: listados de partes, averías y libro (vistas Taller, Averías y Libro historial; Excel con Exportar), libros en ZIP (Documentos › Descargar los marcados), revisiones del libro (escaneo, reconstruir, a firma, quitar) y revisiones que faltan («Del centro de gasto» y página aparte)
-- ⬜ Partes de trabajo del taller: subir el escaneo, modificar el parte y
+- ➖ (23/11: se quedan en la interfaz antigua; en la nueva, solo
+  consulta y exportar) Partes de trabajo del taller: subir el escaneo, modificar el parte y
   sus líneas (guardar, insertar, ordenar, recuperar, borrar), fotos de
   tareas, revisión de partes, duplicados, borradores, exportar (también
   con plantillas y la del administrador), historial, periodos de trabajo
