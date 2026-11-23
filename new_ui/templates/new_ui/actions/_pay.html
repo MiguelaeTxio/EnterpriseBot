@@ -28,12 +28,11 @@
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:pay_liquidate' %}" class="mb-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-lock me-1"></i>Liquidar el periodo</div>
-        <div class="d-flex flex-wrap align-items-center gap-1 small">
-            <span class="text-muted">Del</span><input type="date" name="date_from" class="form-control form-control-sm" style="width: 10rem;" required>
-            <span class="text-muted">al</span><input type="date" name="date_to" class="form-control form-control-sm" style="width: 10rem;" required>
-            <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Liquidar ese periodo? Lo que se paga queda guardado y esos días ya no se vuelven a calcular.">Liquidar</button>
+        <div class="d-flex flex-wrap gap-1 small">
+            <button type="submit" name="which" value="anterior" class="btn btn-sm btn-success" data-nui-confirm="¿Liquidar del {{ pay_previous.0|date:'d/m/Y' }} al {{ pay_previous.1|date:'d/m/Y' }}? Se cierra su periodo de trabajo y lo que se paga queda guardado.">Periodo anterior ({{ pay_previous.0|date:"d/m" }}–{{ pay_previous.1|date:"d/m" }})</button>
+            <button type="submit" name="which" value="actual" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Liquidar del {{ pay_current.0|date:'d/m/Y' }} al {{ pay_current.1|date:'d/m/Y' }}? Aún no ha terminado.">Periodo actual ({{ pay_current.0|date:"d/m" }}–{{ pay_current.1|date:"d/m" }})</button>
         </div>
-        <p class="small text-muted mb-0">Queda bloqueado: horas, precios e importe se guardan tal cual. Se ve y se deshace en Empresa › Horas y pagos › Liquidaciones.</p>
+        <p class="small text-muted mb-0">Del 21 al 20, como los periodos de trabajo: se cierra el suyo (los partes de dentro ya no se editan) y horas, precios e importe se guardan tal cual. No deja liquidar con partes sin revisar. Se ve y se deshace (reabre) en Empresa › Horas y pagos › Liquidaciones.</p>
     </form>
 </div>
 {% endif %}
@@ -45,7 +44,7 @@
             {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-excel me-1"></i>Descargar en Excel</button>
         </form>
         <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:pay_undo' %}">
-            {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Deshacer esas liquidaciones? Se borran sus líneas y esos días se vuelven a calcular con los precios de ahora.">Deshacer la liquidación</button>
+            {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Deshacer esas liquidaciones? Se reabren sus periodos de trabajo, se borran sus líneas y esos días se vuelven a calcular con los precios de ahora.">Deshacer la liquidación</button>
         </form>
     </div>
 </div>

@@ -126,9 +126,13 @@ def pay_context(section, company):
     """Contexto de las acciones de Horas y pagos (Personal)."""
     if section != "per":
         return {}
+    from new_ui.filters import pay_period_range
+
     return {
         "pay_classes": pay.hour_classes(company),
         "pay_sources": PayWorker.Source.choices,
+        "pay_previous": pay_period_range(previous=True),
+        "pay_current": pay_period_range(),
     }
 
 
@@ -187,14 +191,15 @@ class PayPeriodActionView(SuperuserRequiredMixin, View):
 
     def post(self, request):
         ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
-        periods = PayPeriod.objects.filter(company=_company(request),
-                                           pk__in=ids)
-        count = periods.count()
-        if not count:
+        periods = list(PayPeriod.objects.filter(
+            company=_company(request), pk__in=ids))
+        if not periods:
             return _error("Marca primero los periodos.")
-        periods.delete()
-        return _ok("%d liquidación(es) deshecha(s): esos días se vuelven "
-                   "a calcular." % count)
+        for period in periods:
+            pay.undo(period)
+        return _ok("%d liquidación(es) deshecha(s): sus periodos de trabajo "
+                   "se reabren y esos días se vuelven a calcular."
+                   % len(periods))
 
 
 class PayPeriodDownloadView(SuperuserRequiredMixin, View):
@@ -326,11 +331,14 @@ class PayLiquidateView(SuperuserRequiredMixin, View):
 
     def post(self, request):
         company = _company(request)
+        from new_ui.filters import pay_period_range
+
+        date_from, date_to = pay_period_range(
+            previous=request.POST.get("which") != "actual")
         try:
             users, without = _marked_users(request)
             period, _count = pay.liquidate(
-                company, users, _date(request.POST.get("date_from")),
-                _date(request.POST.get("date_to")),
+                company, users, date_from, date_to,
                 request.user.company_user)
         except pay.PayError as exc:
             return _error(str(exc))

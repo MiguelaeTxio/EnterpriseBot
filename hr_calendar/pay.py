@@ -346,6 +346,12 @@ def liquidate(company, company_users, date_from, date_to, by):
     if clash:
         raise PayError("Hay trabajadores con días ya liquidados en esas "
                        "fechas (%d): ajusta el periodo." % len(clash))
+    pending = unreviewed_partes(company, users, date_from, date_to)
+    if pending:
+        raise PayError(
+            "No se puede liquidar: hay partes sin revisar (%s). Revísalos "
+            "antes de liquidar." % ", ".join(
+                "%s: %d" % (name, count) for name, count in pending))
     results = compute(company, users, date_from, date_to)
     labels = dict(hour_classes(company))
     period = PayPeriod.objects.create(company=company, date_from=date_from,
@@ -369,4 +375,81 @@ def liquidate(company, company_users, date_from, date_to, by):
                 holiday_price=result.price(key, True),
                 amount=result.amount(key))
             count += 1
+    close_work_periods(company, users, date_from, date_to, True)
     return period, count
+
+
+def _parte_query(company, users, date_from, date_to):
+    from work_order_processor.models import WorkOrder
+
+    return WorkOrder.objects.filter(
+        company=company, uploaded_by__in=users,
+        source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+        entries__work_date__gte=date_from, entries__work_date__lte=date_to,
+    )
+
+
+def unreviewed_partes(company, users, date_from, date_to):
+    """
+    [(name, count)] of the digital partes not reviewed in the dates.
+
+    ---
+
+    Partes digitales sin revisar de esos trabajadores en esas fechas,
+    por trabajador (como al liquidar un periodo de trabajo: S133, no se
+    liquida con partes pendientes).
+    """
+    from django.db.models import Count
+
+    rows = _parte_query(company, users, date_from, date_to).filter(
+        reviewed=False).values("uploaded_by").annotate(
+        n=Count("pk", distinct=True))
+    names = {cu.pk: (cu.user.get_full_name() or cu.user.username)
+             for cu in users}
+    return sorted((names.get(r["uploaded_by"], "?"), r["n"]) for r in rows)
+
+
+def close_work_periods(company, users, date_from, date_to, closed):
+    """
+    Close (or reopen) the work periods of the workers in the dates.
+
+    ---
+
+    Liquidar en Horas y pagos cierra los mismos periodos de trabajo de
+    siempre (Miguel Ángel, 23/11: "los periodos de trabajo siguen siendo
+    exactamente los mismos"): los de cada trabajador que caen en esas
+    fechas, y el periodo de la empresa cuando ya están todos cerrados.
+    Deshacer la liquidación los reabre. Con un periodo cerrado, los
+    partes de dentro ya no se pueden editar.
+    """
+    from django.db.models import Q
+
+    from ivr_config.models import WorkPeriod
+
+    periods = WorkPeriod.objects.filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=date_from),
+        company_user__in=users, start_date__lte=date_to,
+    ).select_related("group")
+    groups = {}
+    for period in periods:
+        if period.is_closed != closed:
+            period.is_closed = closed
+            period.save(update_fields=["is_closed"])
+        if period.group_id:
+            groups[period.group_id] = period.group
+    for group in groups.values():
+        if closed:
+            if not group.operator_periods.filter(is_closed=False).exists():
+                group.is_closed = True
+                group.save(update_fields=["is_closed", "updated_at"])
+        elif group.is_closed:
+            group.is_closed = False
+            group.save(update_fields=["is_closed", "updated_at"])
+
+
+def undo(period):
+    """Deshace una liquidación: reabre sus periodos de trabajo y la borra."""
+    users = list({line.company_user for line in period.lines.all()})
+    close_work_periods(period.company, users, period.date_from,
+                       period.date_to, False)
+    period.delete()
