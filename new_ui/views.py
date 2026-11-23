@@ -695,6 +695,17 @@ class NewUiListView(SuperuserRequiredMixin, View):
                 '<div class="p-2" data-nui-vacset data-url="%s">%s</div>' % (
                     _reverse("new_ui:vacation_setup_block"),
                     VacationSetupBlockView.as_view()(request).content.decode()))
+        if (section, tab) == ("doc", "avisos_pendientes") and _check_view(
+                request, section, tab):
+            # S163 (23/11): avisos pendientes y su configuración.
+            from new_ui.views_notices import render_pending
+
+            return render_pending(request)
+        if (section, tab) == ("doc", "avisos_config") and _check_view(
+                request, section, tab):
+            from new_ui.views_notices import render_config
+
+            return render_config(request)
         if (section, tab) == ("doc", "pagos_config") and _check_view(
                 request, section, tab):
             # S163 (23/11): Horas y pagos › Qué se paga.

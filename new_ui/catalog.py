@@ -109,7 +109,8 @@ TAB_NOUNS = {
 # Una vista que no esté en ningún grupo va sola, con su nombre.
 TAB_GROUPS = {
     "doc": [
-        ("Documentación", ("lista_requisitos", "avisos", "avisos_seguridad",
+        ("Documentación", ("lista_requisitos", "avisos_pendientes",
+                           "avisos_config", "avisos", "avisos_seguridad",
                            "dosieres")),
         ("Circulares", ("plantillas_circular", "circulares")),
         ("Firmas", ("firmas",)),
@@ -233,7 +234,9 @@ SECTIONS = OrderedDict([
     # toda la empresa); la clave "doc" no cambia.
     ("doc", ("Empresa", "bi-building", [
         ("lista_requisitos", "Requisitos"),
-        ("avisos", "Avisos"),
+        ("avisos_pendientes", "Avisos pendientes"),
+        ("avisos_config", "Configuración de avisos"),
+        ("avisos", "Avisos enviados"),
         ("avisos_seguridad", "Extintores y botiquines"),
         ("dosieres", "Dosieres"),
         ("plantillas_circular", "Plantillas"),

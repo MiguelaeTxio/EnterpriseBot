@@ -267,8 +267,16 @@ Ficha, QR, Avisos, Revisiones, Lecturas, Averías y Libro historial
 - ✅ (S163) Solicitudes de los trabajadores: «Gestionar» de cada fila (en Acciones: aprobar, denegar, entregar un documento subido o de su ficha, responder, justificante, deshacer), las marcadas (aprobar, denegar, justificante válido) y sus archivos
 
 ## Avisos
-- ⬜ Avisos de documentos: reglas por requisito, destinatarios, WhatsApp,
-  pendientes, subir desde el aviso, cita, antelación de revisiones
+- ✅ (S163, 23/11) Empresa › Documentación › Avisos pendientes (Personal o
+  Centros de gasto, de quién, requisito y documento como botones; caducados,
+  próximos, faltan y calendario; pedir por WhatsApp los marcados, subir desde
+  el aviso, cita solicitada) y Configuración de avisos (avisos de cada
+  requisito, mi WhatsApp, antelación de revisiones, destinatarios)
+
+## Horas y pagos
+- ✅ (S163, 23/11) Empresa › Horas y pagos: Qué se paga y Liquidaciones
+  (Excel, deshacer) · Personal › Horas y pagos: lista del periodo, precios,
+  de dónde salen las horas, liquidar; en la ficha, Cálculo y bolsa
 
 ## Bandeja de entrada
 - ⬜ Subir, estado, reclasificar
