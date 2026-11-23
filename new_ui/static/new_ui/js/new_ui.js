@@ -1782,6 +1782,7 @@
         // Columnas › plantillas: guardar las columnas marcadas con un
         // nombre, aplicarlas o borrarlas (por vista, de cada usuario).
         const colTemplates = json("nui-coltpl", {});
+        const colBuiltin = json("nui-coltpl-builtin", {});
         function paintColTemplates() {
             const box = root.querySelector("[data-nui-coltpl]");
             if (!box) return;
@@ -1794,6 +1795,22 @@
             title.className = "fw-semibold mb-1";
             title.textContent = "Plantillas de columnas";
             box.appendChild(title);
+            // Las de serie (iguales para todos; no se borran).
+            const builtin = (colBuiltin[t] || {});
+            Object.keys(builtin).forEach(function (name) {
+                const row = document.createElement("div");
+                row.className = "d-flex align-items-center gap-1 mb-1";
+                row.innerHTML = '<span class="me-auto"></span><button type="button" class="btn btn-sm btn-outline-primary py-0">Aplicar</button>';
+                row.querySelector("span").textContent = name;
+                row.querySelector("button").addEventListener("click", function () {
+                    block.querySelectorAll("[data-nui-col]").forEach(function (c) {
+                        if (!c.disabled) c.checked = builtin[name].indexOf(c.value) !== -1;
+                    });
+                    block.querySelector("[data-nui-col]").dispatchEvent(new Event("change", {bubbles: true}));
+                    result("Columnas de «" + name + "» puestas.", false);
+                });
+                box.appendChild(row);
+            });
             Object.keys(mine).sort().forEach(function (name) {
                 const row = document.createElement("div");
                 row.className = "d-flex align-items-center gap-1 mb-1";

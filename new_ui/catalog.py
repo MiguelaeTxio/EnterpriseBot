@@ -43,7 +43,6 @@ TAB_NOUNS = {
         "partes_trab": ("trabajador", "trabajadores"),
         "repostajes_trab": ("trabajador", "trabajadores"),
         "epis_trab": ("trabajador", "trabajadores"),
-        "alta_fichaje": ("trabajador", "trabajadores"),
         "documentos": ("documento", "documentos"),
         "laboral": ("documento", "documentos"),
         "partes": ("parte", "partes"),
@@ -112,7 +111,7 @@ TAB_GROUPS = {
         ("Documentación", ("requisitos", "documentos", "laboral",
                            "solicitudes")),
         ("Comunicaciones", ("comunicaciones",)),
-        ("Fichaje", ("horarios", "alta_fichaje", "fichajes", "jornadas")),
+        ("Fichaje", ("horarios", "fichajes", "jornadas")),
         ("Vacaciones", ("saldo_vacaciones", "desglose_vacaciones")),
         ("Bajas y ausencias", ("bajas", "salud", "ausencias")),
         ("Partes", ("partes_trab", "partes")),
@@ -127,7 +126,7 @@ TAB_GROUPS = {
 VIEW_MODES = {
     "per": {
         "all": ("general", "requisitos", "comunicaciones", "horarios",
-                "alta_fichaje", "saldo_vacaciones", "bajas", "partes_trab",
+                "saldo_vacaciones", "bajas", "partes_trab",
                 "repostajes_trab", "epis_trab"),
         "one": ("ficha", "documentos", "laboral", "solicitudes",
                 "fichajes", "jornadas", "desglose_vacaciones", "salud",
@@ -220,7 +219,6 @@ SECTIONS = OrderedDict([
         ("solicitudes", "Solicitudes"),
         ("comunicaciones", "Comunicaciones"),
         ("horarios", "Fichaje"),
-        ("alta_fichaje", "Alta en el fichaje"),
         ("fichajes", "Fichajes"),
         ("jornadas", "Calendario"),
         ("saldo_vacaciones", "Vacaciones"),

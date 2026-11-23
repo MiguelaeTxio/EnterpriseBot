@@ -248,8 +248,13 @@ class ListDef:
                  entity_path="", entity_filter=None, entity_of=None,
                  search=(), date_field="", date_is_datetime=False,
                  default_order=("-pk",), actions=None, note="",
-                 scope_filter=None, prepare=None, extras=()):
+                 scope_filter=None, prepare=None, extras=(),
+                 default_cols=None, col_templates=None):
         self.label = label
+        # S163 (23/11): columnas que se ven si el usuario no ha elegido
+        # (None: todas) y plantillas de columnas de serie {nombre: claves}.
+        self.default_cols = default_cols
+        self.col_templates = col_templates or {}
         # Filtros propios declarados (además de los automáticos de
         # extras_for).
         self.extras = list(extras)
@@ -502,6 +507,73 @@ def _prepare_schedules(people):
                 label = "De la sección %s" % section.name
             person.nui_origin = label
             person.nui_current = True
+
+
+def _prepare_fichaje(people):
+    """
+    Schedules plus the clock-in onboarding report of each worker.
+
+    ---
+
+    S163 (23/11): la lista de Fichaje lleva también el informe de «Alta
+    en el fichaje» (new_ui/onboarding_report.py), que antes era una
+    vista aparte: a cada trabajador, su fila del informe o None si no se
+    le ha enviado el alta.
+    """
+    from new_ui.onboarding_report import build_rows
+
+    _prepare_schedules(people)
+    rows = {}
+    for company in {p.company for p in people if p.company_id}:
+        rows.update({row["person"].pk: row for row in build_rows(company)})
+    for person in people:
+        person.nui_alta = rows.get(person.pk)
+
+
+def _alta(field, kind=""):
+    """Value of the onboarding row for a column (blank without alta)."""
+    def value(person):
+        row = getattr(person, "nui_alta", None)
+        if row is None:
+            return "Sin alta enviada" if field == "state_label" else ""
+        raw = row.get(field)
+        if raw is None:
+            return ""
+        return fmt_datetime(raw) if kind == "dt" else raw
+    return value
+
+
+def _alta_state(person, value):
+    """Own filter «Alta en el fichaje» (onboarding situation)."""
+    from new_ui.onboarding_report import not_clocking
+
+    row = getattr(person, "nui_alta", None)
+    if value == "sin":
+        return row is None
+    if row is None:
+        return False
+    if value == "no_fichan":
+        return not_clocking(row)
+    return row["state"] == value
+
+
+def _alta_options(company):
+    from new_ui.onboarding_report import STATES
+
+    return ([("sin", "Sin alta enviada"),
+             ("no_fichan", "Con alta, pero no fichan")]
+            + [(key, label) for key, label, _badge in STATES])
+
+
+ALTA_REPORT_COLS = [
+    "nombre", "seccion", "situacion", "alta", "envios", "reenvio",
+    "whatsapp", "abierta", "acceso", "ultimo_fichaje", "dias_alta",
+    "dias_reenvio", "dias_fichaje",
+]
+FICHAJE_DEFAULT_COLS = [
+    "nombre", "seccion", "horario", "origen", "horas", "ficha", "tipo",
+    "avisos",
+]
 
 
 def _schedule_summary(schedule):
@@ -1378,11 +1450,41 @@ def _per_lists():
                     p.nui_state)),
                 Col("avisos", "Recordatorios", lambda p: "Sí"
                     if p.nui_state.reminders else "No"),
+                # S163 (23/11): el informe de «Alta en el fichaje».
+                Col("dni", "DNI", lambda p: p.dni, "dni"),
+                Col("telefono", "Teléfono", _alta("phone")),
+                Col("usuario", "Usuario del panel", _alta("username")),
+                Col("situacion", "Alta en el fichaje",
+                    _alta("state_label")),
+                Col("alta", "Alta enviada", _alta("first_sent", "dt")),
+                Col("envios", "Envíos", _alta("sends"), "", "text-end"),
+                Col("reenvio", "Último reenvío", _alta("last_sent", "dt")),
+                Col("whatsapp", "WhatsApp", _alta("whatsapp")),
+                Col("abierta", "Abrió la circular", _alta("opened", "dt")),
+                Col("acceso", "Último acceso al panel",
+                    _alta("last_login", "dt")),
+                Col("primer_fichaje", "Primer fichaje",
+                    _alta("first_clock", "dt")),
+                Col("ultimo_fichaje", "Último fichaje",
+                    _alta("last_clock", "dt")),
+                Col("dias_alta", "Días sin fichar desde el alta",
+                    _alta("days_since_first"), "", "text-end"),
+                Col("dias_reenvio", "Días sin fichar desde el reenvío",
+                    _alta("days_since_resend"), "", "text-end"),
+                Col("dias_fichaje", "Días desde el último fichaje",
+                    _alta("days_since_clock"), "", "text-end"),
             ],
             entity="person", search=("given_name", "first_surname", "dni"),
             default_order=("first_surname", "given_name"),
-            actions=_person_actions, prepare=_prepare_schedules,
+            actions=_person_actions, prepare=_prepare_fichaje,
+            default_cols=FICHAJE_DEFAULT_COLS,
+            col_templates={
+                "Horarios y fichaje": FICHAJE_DEFAULT_COLS,
+                "Informe de alta en el fichaje": ALTA_REPORT_COLS,
+            },
             extras=[
+                Extra("alta", "Alta en el fichaje", _alta_options,
+                      keep=_alta_state),
                 Extra("horario", "Horario", _schedule_options,
                       keep=lambda p, v: (p.nui_schedule is None) if v ==
                       "none" else (p.nui_schedule is not None
@@ -1846,6 +1948,9 @@ def visible_columns(definition, saved_keys):
                 if key not in chosen:
                     chosen.insert(0, key)
             return [c for c in definition.columns if c.key in chosen]
+    if definition.default_cols:
+        return [c for c in definition.columns
+                if c.key in definition.default_cols or c.entity]
     return list(definition.columns)
 
 

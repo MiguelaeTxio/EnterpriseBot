@@ -320,6 +320,13 @@ def _section_context(company_user, section):
         # de exportación antiguas de Personal).
         "col_templates": get_saved_state_key(
             company_user, SCREEN_KEY, "coltpl_" + section, {}) or {},
+        # S163 (23/11): plantillas de columnas de serie de cada vista
+        # (p. ej. «Informe de alta en el fichaje»), para todos.
+        "col_templates_builtin": {
+            tab_key: definition.col_templates
+            for tab_key, definition in (
+                (k, list_def(section, k)) for k, _l in SECTIONS[section][2])
+            if definition is not None and definition.col_templates},
         "scope": scope if isinstance(scope, dict) and scope.get("pk")
         else None,
         "group_nodes": group_tree(company_user, kind),
