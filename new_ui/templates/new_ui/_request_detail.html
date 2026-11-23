@@ -1,0 +1,83 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_request_detail.html -- S163: una solicitud con sus acciones, en Acciones («Gestionar» de su fila). Copia de panel/templates/panel/worker_requests/_detail.html. Vista: new_ui/views_requests.py. #}
+<div class="border rounded p-2 small">
+    <div class="fw-semibold mb-1"><i class="bi bi-inbox me-1"></i>Solicitud de {{ item.person_label }} <span class="text-muted fw-normal">({{ item.person.dni }})</span></div>
+    <dl class="row mb-2">
+        <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">{{ item.get_kind_display }}</dd>
+        <dt class="col-sm-3">Qué pide</dt><dd class="col-sm-9">{{ item.detail|default:"—" }}{% if item.days %} · {{ item.days }} día{{ item.days|pluralize }}{% endif %}</dd>
+        <dt class="col-sm-3">Nota</dt><dd class="col-sm-9">{{ item.note|default:"—"|linebreaksbr }}</dd>
+        <dt class="col-sm-3">Pedida</dt><dd class="col-sm-9">{{ item.created_at|date:"d/m/Y H:i" }}</dd>
+        <dt class="col-sm-3">Estado</dt><dd class="col-sm-9">{{ item.get_status_display }}{% if item.resolved_at %} el {{ item.resolved_at|date:"d/m/Y H:i" }}{% if item.resolved_by %} por {{ item.resolved_by.user.get_full_name|default:item.resolved_by.user.username }}{% endif %}{% endif %}</dd>
+        {% if item.response %}<dt class="col-sm-3">Respuesta</dt><dd class="col-sm-9">{{ item.response|linebreaksbr }}</dd>{% endif %}
+        {% if item.kind == 'MEDICAL' %}<dt class="col-sm-3">Justificante</dt><dd class="col-sm-9">{{ item.get_proof_status_display }}{% if item.proof_reviewed_at %} el {{ item.proof_reviewed_at|date:"d/m/Y H:i" }}{% endif %}</dd>{% endif %}
+    </dl>
+    {% if files %}<div class="fw-semibold">Archivos</div><ul>{% for stored in files %}<li><a href="{% url 'new_ui:request_file' stored.pk %}" target="_blank" rel="noopener">{{ stored.get_role_display }}: {{ stored.name }}</a> <span class="text-muted">({{ stored.uploaded_at|date:"d/m/Y H:i" }})</span></li>{% endfor %}</ul>{% endif %}
+    {% if item.is_pending and item.is_dated %}
+    <form data-nui-action-form data-nui-fragment-reload action="{% url 'new_ui:request_action' item.pk %}" class="border rounded p-2 mb-2">
+        {% csrf_token %}
+        <label class="text-muted d-block">Respuesta al trabajador (obligatoria para denegar)</label>
+        <textarea name="response" class="form-control form-control-sm mb-1" rows="2"></textarea>
+        <button type="submit" name="action" value="approve" class="btn btn-sm btn-success">Aprobar</button>
+        <button type="submit" name="action" value="deny" class="btn btn-sm btn-outline-danger">Denegar</button>
+    </form>
+    {% endif %}
+    {% if item.kind == 'MEDICAL' and item.status != 'DENIED' and item.status != 'CANCELLED' %}
+    <div class="border rounded p-2 mb-2">
+        {% if item.proof_status != 'NONE' %}
+        <form data-nui-action-form data-nui-fragment-reload action="{% url 'new_ui:request_action' item.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" name="action" value="proof_valid" class="btn btn-sm btn-outline-success">Justificante válido</button>
+            <button type="submit" name="action" value="proof_invalid" class="btn btn-sm btn-outline-danger">No válido</button>
+        </form>
+        {% endif %}
+        <form data-nui-action-form data-nui-fragment-reload action="{% url 'new_ui:request_action' item.pk %}" enctype="multipart/form-data" class="d-flex gap-1 mt-2">
+            {% csrf_token %}<input type="hidden" name="action" value="proof">
+            <input type="file" name="file" class="form-control form-control-sm" accept="image/*,application/pdf" required>
+            <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap" title="Si te lo ha dado en mano, súbelo aquí en su nombre.">Subir justificante</button>
+        </form>
+    </div>
+    {% endif %}
+    {% if item.kind == 'DOCUMENT' and item.status != 'DENIED' and item.status != 'CANCELLED' %}
+    <form data-nui-action-form data-nui-fragment-reload action="{% url 'new_ui:request_action' item.pk %}" enctype="multipart/form-data" class="border rounded p-2 mb-2">
+        {% csrf_token %}<input type="hidden" name="action" value="deliver">
+        <div class="fw-semibold mb-1">Entregar {{ document_label|lower }}</div>
+        <label class="text-muted d-block">Subir el archivo</label>
+        <input type="file" name="file" class="form-control form-control-sm mb-1">
+        <div class="text-muted">Tipo con el que se archiva en su ficha</div>
+        <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el tipo…" aria-label="Buscar tipo" data-nui-filter-list>
+        <div class="border rounded px-2 py-1 mb-1" style="max-height: 7rem; overflow-y: auto;" data-nui-filter-target>
+            {% for doc_type in delivery_types %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="type_code" value="{{ doc_type.code }}"{% if doc_type.code == default_type %} checked{% endif %}> <span class="form-check-label">{{ doc_type.label }}</span></label>{% endfor %}
+        </div>
+        <div class="text-muted">O elegir uno de su ficha</div>
+        <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el documento…" aria-label="Buscar documento" data-nui-filter-list>
+        <div class="border rounded px-2 py-1 mb-1" style="max-height: 8rem; overflow-y: auto;" data-nui-filter-target>
+            <label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="entry_id" value="" checked> <span class="form-check-label text-muted">Ninguno (subo el archivo)</span></label>
+            {% for entry in person_documents %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="entry_id" value="{{ entry.pk }}"> <span class="form-check-label">{{ entry.document_type.label|default:"Sin tipo" }} · {{ entry.name }}{% if entry.issue_date %} · {{ entry.issue_date|date:"d/m/Y" }}{% endif %}{% if entry.is_obsolete %} (obsoleto){% endif %}</span></label>{% endfor %}
+        </div>
+        <label class="text-muted d-block">Mensaje al trabajador (opcional)</label>
+        <textarea name="response" class="form-control form-control-sm mb-1" rows="2"></textarea>
+        <button type="submit" class="btn btn-sm btn-success">Entregar</button>
+    </form>
+    {% if item.is_pending %}
+    <form data-nui-action-form data-nui-fragment-reload action="{% url 'new_ui:request_action' item.pk %}" class="border rounded p-2 mb-2">
+        {% csrf_token %}
+        <label class="text-muted d-block">Motivo para no entregarlo</label>
+        <textarea name="response" class="form-control form-control-sm mb-1" rows="2"></textarea>
+        <button type="submit" name="action" value="deny" class="btn btn-sm btn-outline-danger">Denegar</button>
+    </form>
+    {% endif %}
+    {% endif %}
+    {% if item.kind == 'CLAIM' and item.status != 'CANCELLED' %}
+    <form data-nui-action-form data-nui-fragment-reload action="{% url 'new_ui:request_action' item.pk %}" class="border rounded p-2 mb-2">
+        {% csrf_token %}
+        <label class="text-muted d-block">Respuesta</label>
+        <textarea name="response" class="form-control form-control-sm mb-1" rows="3">{{ item.response }}</textarea>
+        <button type="submit" name="action" value="answer" class="btn btn-sm btn-success">Responder</button>
+    </form>
+    {% endif %}
+    {% if not item.is_pending and item.status != 'CANCELLED' %}
+    <form data-nui-action-form data-nui-fragment-reload action="{% url 'new_ui:request_action' item.pk %}">
+        {% csrf_token %}
+        <button type="submit" name="action" value="undo" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Volver a dejarla pendiente?{% if item.vacation_period_id or item.absence_period_id %} Se borrará el periodo que creó la aprobación.{% endif %}" title="Vuelve a pendiente; si se aprobó, borra el periodo creado.">Deshacer la resolución</button>
+    </form>
+    {% endif %}
+</div>

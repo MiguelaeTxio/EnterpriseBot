@@ -474,6 +474,10 @@
                     if (f.hasAttribute("data-nui-tpl-reload")) loadScreenTpl();
                     if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
                     if (f.hasAttribute("data-nui-vacset-reload")) loadVacationSetup();
+                    if (f.hasAttribute("data-nui-fragment-reload")) {
+                        const box = f.closest("[data-nui-fragment-box]");
+                        if (box && box.dataset.current) loadFragment(box);
+                    }
                     // Formularios de un solo uso (subir): vuelven a empezar.
                     if (f.hasAttribute("data-nui-reset-after")) {
                         f.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
@@ -597,6 +601,13 @@
         });
         // Documentos (S163): historial de un tipo (el propio listado,
         // filtrado), actualizar (subir la versión nueva) y separar.
+        function loadFragment(box) {
+            box.innerHTML = '<p class="small text-muted mb-0">Cargando…</p>';
+            fetch(box.dataset.current, {credentials: "same-origin"})
+                .then(r => r.ok ? r.text() : Promise.reject(new Error("No se ha podido abrir.")))
+                .then(function (html) { box.innerHTML = html; })
+                .catch(function (err) { box.innerHTML = ""; result(err.message, true); });
+        }
         function goToActions(el) {
             showTab(panelOf("acciones"), "vista", true);
             if (el) el.scrollIntoView({block: "start", behavior: "smooth"});
@@ -634,6 +645,16 @@
                 uploadForm.querySelector("[data-nui-upload-title]").textContent = "Actualizar " + typeLabel;
                 uploadForm.querySelector("[data-nui-upload-who]").textContent = "De: " + who + " (la versión nueva sustituye a la anterior).";
                 goToActions(uploadForm);
+                return;
+            }
+            if (kind === "nui-doc-fragment") {
+                // S163: un fragmento con acciones (p. ej. «Gestionar» una
+                // solicitud) en el bloque de Acciones de la vista abierta.
+                const box = document.querySelector('[data-nui-actions-for~="' + tab() + '"] [data-nui-fragment-box]');
+                if (!box) return;
+                box.dataset.current = decodeURIComponent(parts[1]);
+                loadFragment(box);
+                goToActions(box);
                 return;
             }
             if (kind === "nui-doc-split") {

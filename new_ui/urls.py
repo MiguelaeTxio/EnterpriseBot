@@ -13,7 +13,7 @@ from django.urls import path
 
 from new_ui import (
     clock_export, screen_templates, views_clock_settings,
-    views_onboarding, views_vacations, views_accessories, views_albaranes, views_clock,
+    views_onboarding, views_requests, views_vacations, views_accessories, views_albaranes, views_clock,
     views_crews,
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
@@ -49,6 +49,15 @@ urlpatterns = [
          name="reading_add"),
     path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
          name="service_rows_delete"),
+    # Solicitudes de los trabajadores (S163).
+    path("solicitudes/<int:pk>/", views_requests.RequestDetailView.as_view(),
+         name="request_detail"),
+    path("solicitudes/<int:pk>/accion/",
+         views_requests.RequestActionView.as_view(), name="request_action"),
+    path("solicitudes/marcadas/", views_requests.RequestMassView.as_view(),
+         name="request_mass"),
+    path("solicitudes/archivo/<int:pk>/",
+         views_requests.RequestFileView.as_view(), name="request_file"),
     # Vacaciones y ausencias (S163).
     path("vacaciones/registrar/",
          views_vacations.VacationRegisterView.as_view(),

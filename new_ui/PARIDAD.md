@@ -81,7 +81,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 
 ## Pedir documentos y solicitudes
 - ✅ (S163) Pedir documentos (pedir, cancelar; cancelar peticiones marcadas) · ⬜ pedir al trabajador desde avisos
-- ⬜ Solicitudes de los trabajadores (detalle, acciones, en masa)
+- ✅ (S163) Solicitudes de los trabajadores: «Gestionar» de cada fila (en Acciones: aprobar, denegar, entregar un documento subido o de su ficha, responder, justificante, deshacer), las marcadas (aprobar, denegar, justificante válido) y sus archivos
 
 ## Avisos
 - ⬜ Avisos de documentos: reglas por requisito, destinatarios, WhatsApp,

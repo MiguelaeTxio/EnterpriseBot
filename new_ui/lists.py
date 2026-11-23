@@ -1125,6 +1125,30 @@ def _person_general():
     )
 
 
+def _request_detail_text(row):
+    """«Qué pide» de una solicitud (hr_calendar.worker_requests)."""
+    from hr_calendar import worker_requests as wr
+
+    return wr.detail_text(row)
+
+
+def _request_actions(row):
+    """
+    Row actions of a worker request: manage it (in Acciones).
+
+    ---
+
+    Acciones de una solicitud: «Gestionar» (su detalle con sus acciones,
+    en Acciones) y las de su persona.
+    """
+    from urllib.parse import quote
+
+    url = reverse("new_ui:request_detail", args=[row.pk])
+    return [("Gestionar", "bi-pencil-square",
+             "#nui-doc-fragment:" + quote(url, safe=""))] + _person_actions(
+        row.person)
+
+
 def _person_fk_def(label, model_path, related, columns, date_field,
                    date_is_datetime=False, search=(),
                    default_order=("-pk",), entity_path="person", note="",
@@ -1301,12 +1325,16 @@ def _per_lists():
                     "date_start", "text-nowrap"),
                 Col("hasta", "Hasta", lambda r: fmt_date(r.date_end),
                     "date_end", "text-nowrap"),
+                Col("que_pide", "Qué pide", _request_detail_text),
                 Col("nota", "Nota", lambda r: short(r.note), "note"),
                 Col("pedida", "Pedida", lambda r: fmt_datetime(r.created_at),
                     "created_at", "text-nowrap"),
+                Col("resuelta", "Resuelta", lambda r: fmt_datetime(
+                    r.resolved_at), "resolved_at", "text-nowrap"),
             ], "created_at", date_is_datetime=True, search=("note",),
             default_order=("-created_at",),
             extra_filter=lambda qs, company: qs.filter(company=company),
+            actions=_request_actions,
             note="Periodo: fecha de la solicitud."),
         # S163: el horario que le toca a cada trabajador y de dónde le
         # viene (como la pestaña Horarios antigua), y cómo ficha.
