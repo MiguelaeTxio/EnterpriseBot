@@ -755,7 +755,14 @@ class NewUiListView(SuperuserRequiredMixin, View):
             definition, qs, post, ROW_LIMIT,
             state_first=bool(definition.prepare) and not current)
         rows = rows_for(definition, objects, columns)
+        # S163 (23/11): la fila TOTAL, fija abajo (de todo lo filtrado).
+        totals_row = None
+        if definition.totals and total:
+            values = definition.totals(qs)
+            totals_row = [{"value": values.get(c.key, ""), "css": c.css}
+                          for c in columns]
         return render(request, "new_ui/_list.html", {
+            "totals_row": totals_row,
             "section": section,
             "tab": tab,
             "definition": definition,

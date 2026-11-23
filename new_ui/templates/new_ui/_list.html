@@ -49,4 +49,13 @@ Acciones › Esta fila al marcarla, y en su botón derecho.
         <tr class="eb-empty-row"><td colspan="{{ headers|length|add:1 }}" class="text-center text-muted py-4">Nada cumple los filtros.</td></tr>
         {% endfor %}
     </tbody>
+    {% if totals_row %}
+    {# S163 (23/11): la fila TOTAL, fija abajo mientras la lista corre por dentro. #}
+    <tfoot class="nui-total">
+        <tr>
+            <td></td>
+            {% for cell in totals_row %}<td class="{{ cell.css }} fw-semibold">{{ cell.value }}</td>{% endfor %}
+        </tr>
+    </tfoot>
+    {% endif %}
 </table>

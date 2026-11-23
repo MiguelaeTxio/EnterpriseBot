@@ -250,7 +250,7 @@ class ListDef:
                  default_order=("-pk",), actions=None, note="",
                  scope_filter=None, prepare=None, extras=(),
                  default_cols=None, col_templates=None,
-                 period_annotate=None, row_url=None):
+                 period_annotate=None, row_url=None, totals=None):
         self.label = label
         # S163 (23/11): period_annotate(qs, desde, hasta) añade a una
         # lista de trabajadores sus datos del periodo (repostajes,
@@ -259,6 +259,9 @@ class ListDef:
         # S163 (23/11): row_url(fila) -> lo que se abre en el visor al
         # pulsar la fila (p. ej. el documento del parte).
         self.row_url = row_url
+        # S163 (23/11): totals(qs) -> {clave de columna: texto}: la fila
+        # TOTAL fija abajo, de todo lo filtrado (no solo lo pintado).
+        self.totals = totals
         # S163 (23/11): columnas que se ven si el usuario no ha elegido
         # (None: todas) y plantillas de columnas de serie {nombre: claves}.
         self.default_cols = default_cols
@@ -2520,6 +2523,43 @@ def _prepare_pay_partes(rows):
             day_out.rounded_at or day_out.pressed_at) if day_out else None
 
 
+def _pay_partes_totals(qs):
+    """
+    TOTAL row of the partes list: hours, extra, festive, blocks, diets.
+
+    ---
+
+    La fila TOTAL de Partes (como en Partes digitales): de todos los
+    partes filtrados, horas, extra, festivas (con el festivo de la base
+    de cada trabajador), bloques y dietas.
+    """
+    import datetime as _dt
+    from decimal import Decimal
+
+    from work_order_processor.festive import is_festive, split_hours
+
+    hours = extra = festive = Decimal("0")
+    blocks = diets = count = 0
+    for row in qs:
+        count += 1
+        day = row.nui_fecha
+        if isinstance(day, str):
+            day = _dt.date.fromisoformat(day[:10])
+        total = row.nui_horas or Decimal("0")
+        more, holiday = split_hours(total, is_festive(day, row.uploaded_by))
+        hours += total
+        extra += more
+        festive += holiday
+        blocks += row.nui_bloques or 0
+        diets += 1 if row.nui_dieta else 0
+    return {
+        "fecha": "TOTAL (%d parte%s)" % (count, "" if count == 1 else "s"),
+        "bloques": str(blocks), "horas": fmt_num(hours),
+        "extra": fmt_num(extra), "festivas": fmt_num(festive),
+        "dieta": "%d dieta%s" % (diets, "" if diets == 1 else "s"),
+    }
+
+
 def _pay_partes_def():
     """
     Personal › Horas y pagos › Partes: the digital partes to review.
@@ -2605,6 +2645,7 @@ def _pay_partes_def():
         actions=lambda r: [],
         prepare=_prepare_pay_partes,
         row_url=lambda r: reverse("new_ui:parte_sheet", args=[r.pk]),
+        totals=_pay_partes_totals,
         default_cols=["persona", "fecha", "entrada", "salida", "bloques",
                       "horas", "extra", "festivas", "dieta", "revisado"],
         extras=[
