@@ -423,10 +423,12 @@
             const n = map.size;
             const noun = nounOf(t);
             // 1) Los seleccionados.
+            function activeIn(s) { return s ? Array.from(s.querySelector("[data-nui-sec-body]").children).filter(c => c.dataset.nuiActive) : []; }
             const s1 = sec("sel");
             if (s1) {
                 const body = s1.querySelector("[data-nui-sec-body]");
-                const has = body.children.length > 0;
+                // Sin lista (Ficha, Jornadas...) no hay nada que seleccionar.
+                const has = activeIn(s1).length > 0 && !listPanel.querySelector('[data-nui-entity-tab][data-nui-tab="' + t + '"]');
                 s1.classList.toggle("d-none", !has);
                 s1.querySelector("[data-nui-sec-title]").textContent = n === 1 ? "Con 1 " + noun[0] + " seleccionado" : "Con los " + n + " " + noun[1] + " seleccionados";
                 const hint = s1.querySelector("[data-nui-sec-hint]");
@@ -434,7 +436,6 @@
                 hint.classList.toggle("d-none", !!n);
                 body.classList.toggle("d-none", !n);
             }
-            function activeIn(s) { return s ? Array.from(s.querySelector("[data-nui-sec-body]").children).filter(c => c.dataset.nuiActive) : []; }
             // 2) Lo pulsado: el elemento marcado (si hay uno solo) o la
             // persona o máquina abierta.
             const s2 = sec("one");
