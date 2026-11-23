@@ -132,6 +132,13 @@ configurables, cada supervisor las suyas.
   periodo. En su ficha: su desglose (periodos, cambiar o borrar; ajustes),
   su saldo explicado y lo mismo solo para él. Desaparecen las vistas
   «Vacaciones» y «Saldo» (pasan a columnas) y «Desglose» (a su ficha).
+- Bajas y ausencias (23/11). Lista, con los marcados: nueva baja médica
+  (inicio, motivo, parte de baja) y registrar una ausencia (del… al…,
+  tipo; los tipos, en Empresa › Vacaciones). Columnas para elegir: de
+  baja ahora, desde cuándo, días de baja en el año, próxima ausencia. En
+  su ficha: sus bajas (dar el alta con fecha y parte, o borrar) y sus
+  ausencias (cambiar o borrar), y lo mismo solo para él. Las vistas
+  «Salud» y «Ausencias» desaparecen (a su ficha y a columnas).
 
 ## Comunes a las vistas
 - ✅ Listados con filtros comunes, periodo rápido y fechas, filtros propios,
