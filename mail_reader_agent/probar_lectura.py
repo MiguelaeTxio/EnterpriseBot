@@ -4,8 +4,9 @@
 Prueba en seco (S156, PC de Miguel Angel): pide una carpeta de Outlook,
 lee los correos de los ultimos dias como lo hara el agente y escribe en
 pantalla y en `prueba_lectura.txt` (carpeta de datos del agente) lo que
-ha leido de cada uno. No sube nada al cubo. Al final comprueba que el
-numero de no leidos de la carpeta no ha cambiado.
+ha leido de cada uno. No sube nada al cubo. De cada correo apunta si
+estaba sin leer antes de leerlo y lo vuelve a comprobar despues, y al
+final compara el numero de no leidos de la carpeta.
 """
 import datetime
 import os
@@ -53,6 +54,7 @@ def main():
                 if received < cutoff:
                     break
                 count += 1
+                unread_item_before = bool(item.UnRead)
                 key, message_id = _mail_key(item)
                 names = [item.Attachments.Item(i).FileName
                          for i in range(1, item.Attachments.Count + 1)]
@@ -67,6 +69,12 @@ def main():
                 say("    Cuerpo: %d caracteres | huella %s | %s" % (
                     len(item.Body or ""), key,
                     "Message-ID" if message_id else "EntryID"))
+                unread_item_after = bool(item.UnRead)
+                say("    Sin leer antes: %s, después: %s -> %s" % (
+                    "sí" if unread_item_before else "no",
+                    "sí" if unread_item_after else "no",
+                    "SIN CAMBIOS" if unread_item_before == unread_item_after
+                    else "HA CAMBIADO"))
             item = items.GetNext()
         unread_after = folder.UnReadItemCount
         say("Correos leídos de los últimos %d días: %d" % (
