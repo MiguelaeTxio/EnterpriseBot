@@ -1479,7 +1479,6 @@ def _per_lists():
             actions=_person_actions, prepare=_prepare_fichaje,
             default_cols=FICHAJE_DEFAULT_COLS,
             col_templates={
-                "Horarios y fichaje": FICHAJE_DEFAULT_COLS,
                 "Informe de alta en el fichaje": ALTA_REPORT_COLS,
             },
             extras=[
