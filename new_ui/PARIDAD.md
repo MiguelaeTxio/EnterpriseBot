@@ -178,8 +178,9 @@ configurables, cada supervisor las suyas.
   Hecho el 23/11 (Centros de gasto › Seguridad, migración
   document_explorer 0230): número de serie y las tres fechas en la
   entrega, lista con la próxima fecha y aviso a 30 días, entregar,
-  cambiar fechas y quitar. ⬜ Pendiente: que esas fechas salgan también
-  en Empresa › Avisos.
+  cambiar fechas y quitar. Y en Empresa › Documentación ›
+  Extintores y botiquines (los de todos, primero los que antes vencen,
+  filtro «Vence»).
 - Repostajes (23/11). Lista, con los marcados: preguntar por WhatsApp
   al chófer por un repostaje dudoso (plantilla). Columnas: repostajes en
   el periodo, litros. En su ficha: sus repostajes con vehículo y

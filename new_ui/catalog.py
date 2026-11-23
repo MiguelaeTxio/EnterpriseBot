@@ -57,6 +57,8 @@ TAB_NOUNS = {
         "solicitudes": ("solicitud", "solicitudes", "f"),
         "horarios": ("trabajador", "trabajadores"),
         "nominas": ("nómina", "nóminas", "f"),
+        "avisos_seguridad": ("extintor o botiquín",
+                             "extintores o botiquines"),
         "epis": ("entrega de EPI", "entregas de EPI", "f"),
         "requisitos": ("trabajador", "trabajadores"),
     },
@@ -104,7 +106,8 @@ TAB_NOUNS = {
 # Una vista que no esté en ningún grupo va sola, con su nombre.
 TAB_GROUPS = {
     "doc": [
-        ("Documentación", ("lista_requisitos", "avisos", "dosieres")),
+        ("Documentación", ("lista_requisitos", "avisos", "avisos_seguridad",
+                           "dosieres")),
         ("Circulares", ("plantillas_circular", "circulares")),
         ("Firmas", ("firmas",)),
         ("Seguros", ("seguros",)),
@@ -226,6 +229,7 @@ SECTIONS = OrderedDict([
     ("doc", ("Empresa", "bi-building", [
         ("lista_requisitos", "Requisitos"),
         ("avisos", "Avisos"),
+        ("avisos_seguridad", "Extintores y botiquines"),
         ("dosieres", "Dosieres"),
         ("plantillas_circular", "Plantillas"),
         ("circulares", "Enviadas"),

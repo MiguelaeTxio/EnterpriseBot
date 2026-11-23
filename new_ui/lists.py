@@ -2224,7 +2224,7 @@ MACHINE_THEME_COLUMNS = {
 }
 
 
-def _safety_records_def():
+def _safety_records_def(order=("-delivery_date",)):
     """
     En la ficha de un centro de gasto, Seguridad: sus extintores y
     botiquines (S163, 23/11).
@@ -2252,7 +2252,7 @@ def _safety_records_def():
             Col("proxima", "Próxima fecha", lambda r: _next_safety_date(
                 r, ("expiry_date", "review_date", "retimbrado_date"))),
         ], "delivery_date", search=("serial_number", "epi__label"),
-        default_order=("-delivery_date",),
+        default_order=order,
         note="Periodo: fecha de entrega.")
     base = definition.queryset
     definition.queryset = lambda company: base(company).filter(safety_q())
@@ -2357,6 +2357,10 @@ def list_def(section, tab):
         for key in MACHINE_THEME_COLUMNS:
             _CACHE["cdg"][key] = _theme_machine_list(key)
         _CACHE["cdg"]["seguridad_reg"] = _safety_records_def()
+        # Empresa › Documentación › Avisos de seguridad: los de todos los
+        # centros de gasto, primero los que antes vencen.
+        _CACHE["doc"]["avisos_seguridad"] = _safety_records_def(
+            order=("expiry_date", "review_date", "retimbrado_date"))
         _CACHE["per"]["pedidos"] = _CACHE["doc"]["pedir"]
         _CACHE["per"]["circulares_rec"] = _CACHE["doc"]["circulares"]
     return _CACHE.get(section, {}).get(tab)
