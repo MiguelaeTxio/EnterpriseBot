@@ -51,7 +51,8 @@ from new_ui.state import apply_list_navigation
 from new_ui.state import get_key as get_saved_state_key
 from new_ui.state import save_keys as _save_keys
 from new_ui.catalog import (
-    ENTITY_TABS, FICHA, PERMISSIONS, SECTIONS, all_view_keys, label_of,
+    ENTITY_TABS, FICHA, PERMISSIONS, SECTIONS, TAB_NOUNS, all_view_keys,
+    label_of,
 )
 from new_ui.filters import (
     period_context, period_range, sort_headers, sort_rows,
@@ -293,6 +294,7 @@ def _section_context(company_user, section):
         "opts": filter_options(section, company_user.company, company_user),
         "tabs_cols": tabs_cols,
         "entity_tabs": ENTITY_TABS.get(section, ()),
+        "tab_nouns": TAB_NOUNS.get(section, {}),
         # Acciones › De la vista (new_ui/actions/<sección>.html).
         "circular_families": DocumentTypeCatalog.FAMILY_CHOICES,
         "circular_domains": [

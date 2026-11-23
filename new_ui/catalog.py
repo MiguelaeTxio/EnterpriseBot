@@ -32,6 +32,46 @@ FICHA = "ficha"
 # con ella elegida. "QR" (S163): la página del QR del centro de gasto.
 ENTITY_TABS = {"per": ("ficha", "jornadas", "desglose_vacaciones"),
                "cdg": ("ficha", "qr")}
+# S163 (Miguel Ángel, 23/11: "¿qué es una fila?"): cómo se llama lo que
+# hay en cada listado, para que el panel Acciones diga «Con los 3
+# trabajadores seleccionados» o «Con el DNI de...», nunca «fila».
+TAB_NOUNS = {
+    "per": {
+        "general": ("trabajador", "trabajadores"),
+        "documentos": ("documento", "documentos"),
+        "laboral": ("documento", "documentos"),
+        "partes": ("parte", "partes"),
+        "fichajes": ("fichaje", "fichajes"),
+        "repostajes": ("repostaje", "repostajes"),
+        "vacaciones": ("periodo de vacaciones", "periodos de vacaciones"),
+        "saldo_vacaciones": ("trabajador", "trabajadores"),
+        "salud": ("baja", "bajas"),
+        "ausencias": ("ausencia", "ausencias"),
+        "solicitudes": ("solicitud", "solicitudes"),
+        "horarios": ("trabajador", "trabajadores"),
+        "lista_horarios": ("horario", "horarios"),
+        "tipos_fichaje": ("tipo de fichaje", "tipos de fichaje"),
+        "nominas": ("nómina", "nóminas"),
+        "epis": ("entrega de EPI", "entregas de EPI"),
+        "catalogo_epis": ("EPI", "EPIs"),
+        "requisitos": ("requisito", "requisitos"),
+    },
+    "cdg": {
+        "general": ("centro de gasto", "centros de gasto"),
+        "documentos": ("documento", "documentos"),
+        "especificaciones": ("centro de gasto", "centros de gasto"),
+        "avisos": ("documento", "documentos"),
+        "revisiones": ("revisión", "revisiones"),
+        "lecturas": ("lectura", "lecturas"),
+        "repostajes": ("repostaje", "repostajes"),
+        "accesorios": ("accesorio", "accesorios"),
+        "taller": ("parte de taller", "partes de taller"),
+        "averias": ("avería", "averías"),
+        "libro": ("anotación del libro", "anotaciones del libro"),
+        "equipos": ("equipo", "equipos"),
+    },
+}
+
 SECTIONS = OrderedDict([
     ("doc", ("Documentos", "bi-folder2-open", [
         ("bandeja", "Bandeja de entrada"),

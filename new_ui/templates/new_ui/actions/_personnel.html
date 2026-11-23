@@ -46,11 +46,11 @@ new_ui/views_personnel.py.
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:person_terminate' %}" class="mt-3">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-person-dash me-1"></i>Baja y reactivar (los marcados)</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-person-dash me-1"></i>Dar de baja o reactivar</div>
         <div class="d-flex flex-wrap gap-1">
-            <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Dar de baja (rescisión de contrato, con fecha de hoy) a los marcados? Su documentación pasa a inactivos y su acceso al panel se desactiva.">Dar de baja hoy</button>
-            <button type="submit" formaction="{% url 'new_ui:person_reactivate' %}" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Deshacer la baja de los marcados (conservan su fecha de alta)?">Deshacer la baja</button>
-            <button type="submit" formaction="{% url 'new_ui:person_reactivate' %}" name="rehire" value="1" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Recontratar a los marcados con fecha de alta de hoy?">Recontratar hoy</button>
+            <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Dar de baja (rescisión de contrato, con fecha de hoy) a los seleccionados? Su documentación pasa a inactivos y su acceso al panel se desactiva.">Dar de baja hoy</button>
+            <button type="submit" formaction="{% url 'new_ui:person_reactivate' %}" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Deshacer la baja de los seleccionados (conservan su fecha de alta)?">Deshacer la baja</button>
+            <button type="submit" formaction="{% url 'new_ui:person_reactivate' %}" name="rehire" value="1" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Recontratar a los seleccionados con fecha de alta de hoy?">Recontratar hoy</button>
         </div>
         <p class="small text-muted mt-1 mb-0">Baja = rescisión de contrato (no es una baja médica). Para ver a los de baja, en el filtro «Estado» elige inactivos.</p>
     </form>

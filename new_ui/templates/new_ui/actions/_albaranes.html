@@ -1,13 +1,21 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_albaranes.html -- S163: cargar albaranes (PDF o fotos) cotejados con los fichajes por la IA, de la persona abierta o de varios; la subida va archivo a archivo y la lectura en segundo plano. Vista: new_ui/views_albaranes.py; JS: new_ui.js (data-nui-albaranes). #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_albaranes.html -- S163: cargar albaranes (PDF o fotos) cotejados con los fichajes por la IA: de esta persona o de varios a la vez; la subida va archivo a archivo y la lectura en segundo plano. Vista: new_ui/views_albaranes.py; JS: new_ui.js (data-nui-albaranes). #}
 <div class="d-none" data-nui-actions-for="jornadas fichajes general">
-    <div class="border-top pt-2 mt-2" data-nui-albaranes data-start="{% url 'new_ui:albaran_start' %}" data-base="{% url 'new_ui:albaran_start' %}" data-batches="{% url 'new_ui:albaran_batches' %}">
-        <input type="hidden" value="" data-nui-scope-input data-nui-alb-person>
-        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-text me-1"></i>Cargar albaranes</div>
+    <div class="mb-3" data-nui-albaranes data-mode="person" data-nui-for="one" data-start="{% url 'new_ui:albaran_start' %}" data-base="{% url 'new_ui:albaran_start' %}" data-batches="{% url 'new_ui:albaran_batches' %}">
+        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-text me-1"></i>Cargar sus albaranes</div>
         <p class="small text-muted mb-1">La IA lee cada albarán, compara el día con sus fichajes y corrige solo lo que se aparta más que la cortesía de su horario («corregido por IA» a tu nombre); el visado lo da después el supervisor. Solo quien ficha por tipos.</p>
-        <div class="small mb-1">
-            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="nui_alb_mode" value="person" checked> De la persona abierta</label>
-            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="nui_alb_mode" value="many"> De varios (cada uno al trabajador de su nombre, entre los marcados o, sin marcados, entre todos los que fichan por tipos)</label>
+        <div class="d-flex flex-wrap align-items-center gap-1 mb-1 small">
+            <label class="text-muted">Carpeta</label><input type="file" class="form-control form-control-sm" style="max-width: 15rem;" webkitdirectory directory multiple data-nui-alb-folder>
+            <label class="text-muted">o archivos</label><input type="file" class="form-control form-control-sm" style="max-width: 15rem;" multiple accept=".pdf,.jpg,.jpeg,.png" data-nui-alb-files>
+            <button type="button" class="btn btn-sm btn-primary" disabled data-nui-alb-go>Subir y leer</button>
         </div>
+        <div class="progress mb-1 d-none" style="height: .5rem;" data-nui-alb-progress><div class="progress-bar" style="width: 0%;"></div></div>
+        <div class="small" data-nui-alb-status></div>
+        <ul class="small mb-0 ps-3" data-nui-alb-notes></ul>
+        <div data-nui-alb-batches></div>
+    </div>
+    <div class="mb-3" data-nui-albaranes data-mode="many" data-nui-for="new" data-start="{% url 'new_ui:albaran_start' %}" data-base="{% url 'new_ui:albaran_start' %}" data-batches="{% url 'new_ui:albaran_batches' %}">
+        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-text me-1"></i>Cargar albaranes de varios trabajadores</div>
+        <p class="small text-muted mb-1">Cada albarán va al trabajador de su nombre (entre los seleccionados o, si no hay, entre todos los que fichan por tipos). La IA lee cada albarán, compara el día con sus fichajes y corrige solo lo que se aparta más que la cortesía de su horario («corregido por IA» a tu nombre); el visado lo da después el supervisor. Solo quien ficha por tipos.</p>
         <div class="d-flex flex-wrap align-items-center gap-1 mb-1 small">
             <label class="text-muted">Carpeta</label><input type="file" class="form-control form-control-sm" style="max-width: 15rem;" webkitdirectory directory multiple data-nui-alb-folder>
             <label class="text-muted">o archivos</label><input type="file" class="form-control form-control-sm" style="max-width: 15rem;" multiple accept=".pdf,.jpg,.jpeg,.png" data-nui-alb-files>

@@ -1,14 +1,14 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_epis.html #}
 {% comment %}
-S163. EPIs (Personal): entregar a los marcados (General) o a la persona
+S163. EPIs (Personal): entregar a los seleccionados (General) o a la persona
 abierta (EPIs), lotes y fichas técnicas (Catálogo de EPIs). Sin
 desplegables. Vista: new_ui/views_epis.py.
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="general epis">
-    <form data-nui-action-form action="{% url 'new_ui:epi_deliver' %}" class="mt-3" data-nui-epi-form>
+    <form data-nui-action-form action="{% url 'new_ui:epi_deliver' %}" class="mt-3" data-nui-epi-form data-nui-for="general:sel epis:one">
         {% csrf_token %}
         <input type="hidden" name="person_ids" value="" data-nui-scope-input>
-        <div class="small fw-semibold mb-1"><i class="bi bi-cone-striped me-1"></i>Entregar EPIs <span class="fw-normal text-muted">(en General, a los marcados; en EPIs, a la persona abierta)</span></div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-cone-striped me-1"></i>Entregar EPIs</div>
         {% if epi_batches %}
         <div class="d-flex flex-wrap gap-1 small mb-1">
             <span class="text-muted">Lote:</span>
@@ -26,19 +26,19 @@ desplegables. Vista: new_ui/views_epis.py.
         </div>
         <div class="d-flex flex-wrap align-items-center gap-1">
             <input type="date" name="delivery_date" value="{{ nui_today }}" class="form-control form-control-sm" style="width: 10rem;" aria-label="Fecha de entrega" required>
-            <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Registrar la entrega de los EPIs marcados? Se genera su documento de entrega y se avisa por WhatsApp."><i class="bi bi-box-seam me-1"></i>Entregar</button>
+            <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Registrar la entrega de los EPIs seleccionados? Se genera su documento de entrega y se avisa por WhatsApp."><i class="bi bi-box-seam me-1"></i>Entregar</button>
         </div>
     </form>
 </div>
 <div class="d-none" data-nui-actions-for="catalogo_epis">
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:epi_sheet_upload' %}" class="mb-3">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-arrow-up me-1"></i>Ficha técnica o manual del EPI marcado</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-arrow-up me-1"></i>Ficha técnica o manual del EPI seleccionado</div>
         <div class="d-flex flex-wrap gap-1">
             <input type="file" name="file" required class="form-control form-control-sm" style="max-width: 18rem;" aria-label="Ficha técnica">
             <button type="submit" class="btn btn-sm btn-success">Subir</button>
         </div>
-        <p class="small text-muted mt-1 mb-0">Se añade (nunca sustituye): un EPI puede tener ficha técnica y declaración de conformidad. Se ven en «Esta fila».</p>
+        <p class="small text-muted mt-1 mb-0">Se añade (nunca sustituye): un EPI puede tener ficha técnica y declaración de conformidad. Se ven en su menú (botón derecho sobre el EPI).</p>
     </form>
     <form data-nui-action-form action="{% url 'new_ui:epi_batch_save' %}" id="nui-epi-batch-form">
         {% csrf_token %}

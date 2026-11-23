@@ -1,12 +1,12 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_requests.html -- S163: solicitudes de los trabajadores: las marcadas (aprobar, denegar, justificante válido) y el detalle de una («Gestionar» de su fila). Vista: new_ui/views_requests.py. #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_requests.html -- S163: solicitudes de los trabajadores: las seleccionadas (aprobar, denegar, justificante válido) y el detalle de una («Gestionar» de su fila). Vista: new_ui/views_requests.py. #}
 <div class="d-none" data-nui-actions-for="solicitudes">
-    <div class="mb-3" data-nui-fragment-box><p class="small text-muted mb-0">«Gestionar» en una solicitud (Esta fila o su botón derecho) la abre aquí con sus acciones.</p></div>
+    <div class="mb-3" data-nui-fragment-box data-nui-for="one"></div>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:request_mass' %}">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-check2-all me-1"></i>Las marcadas</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-check2-all me-1"></i>Aprobar, denegar o validar el justificante</div>
         <textarea name="response" class="form-control form-control-sm mb-1" rows="2" placeholder="Motivo (para denegar)"></textarea>
         <button type="submit" name="action" value="approve" class="btn btn-sm btn-success">Aprobar</button>
-        <button type="submit" name="action" value="deny" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Denegar las marcadas?">Denegar</button>
+        <button type="submit" name="action" value="deny" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Denegar las seleccionadas?">Denegar</button>
         <button type="submit" name="action" value="proof_valid" class="btn btn-sm btn-outline-success">Justificante válido</button>
         <p class="small text-muted mb-0 mt-1">Una a una: las que no se pueden se dicen con su motivo.</p>
     </form>

@@ -1,16 +1,16 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_documents.html #}
 {% comment %}
 S163. Documentos de una persona o máquina (Acciones › De Documentos):
-subir o actualizar, cambiar el tipo y mandar a la papelera los marcados,
+subir o actualizar, cambiar el tipo y mandar a la papelera los seleccionados,
 y Separar (desde «Esta fila»). Descargar e Historial van en «Esta fila».
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="documentos">
-    <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" id="nui-upload-form" class="mb-3" data-nui-reset-after>
+    <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" id="nui-upload-form" class="mb-3" data-nui-reset-after data-nui-for="one">
         {% csrf_token %}
         <input type="hidden" name="domain" value="{{ nui_doc_domain }}">
         <input type="hidden" name="subject_pk" value="" data-nui-clear>
-        <div class="small fw-semibold mb-1"><i class="bi bi-upload me-1"></i><span data-nui-upload-title data-default="Subir documentos">Subir documentos</span></div>
-        <div class="small text-muted mb-1" data-nui-upload-who data-default="De: la ficha abierta (elige una persona o máquina, o usa «Actualizar» en una fila).">De: la ficha abierta (elige una persona o máquina, o usa «Actualizar» en una fila).</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-upload me-1"></i><span data-nui-upload-title data-default="Añadir un documento">Añadir un documento</span></div>
+        <div class="small text-muted mb-1" data-nui-upload-who data-default="Elige qué documento es y luego el archivo.">Elige qué documento es y luego el archivo.</div>
         {% include "new_ui/actions/_type_picker.html" %}
         <input type="file" name="file" multiple required class="form-control form-control-sm mb-1" aria-label="Archivos">
         <div class="row g-1 small mb-1">
@@ -22,17 +22,17 @@ y Separar (desde «Esta fila»). Descargar e Historial van en «Esta fila».
     </form>
     <form data-nui-action-form data-nui-needs-selection data-nui-download data-nui-no-refresh action="{% url 'new_ui:document_zip' %}" class="mb-2">
         {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-zip me-1"></i>Descargar los marcados (ZIP)</button>
+        <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-zip me-1"></i>Descargar en un ZIP</button>
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:document_change_type' %}" class="mb-2">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-arrow-left-right me-1"></i>Cambiar el tipo de los marcados</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-arrow-left-right me-1"></i>Cambiar el tipo</div>
         {% include "new_ui/actions/_type_picker.html" %}
         <button type="submit" class="btn btn-sm btn-primary">Cambiar tipo</button>
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:document_trash' %}" class="mb-3">
         {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Mandar a la papelera los documentos marcados? Se pueden recuperar desde la papelera."><i class="bi bi-trash me-1"></i>Mandar los marcados a la papelera</button>
+        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Mandar a la papelera los documentos seleccionados? Se pueden recuperar desde la papelera."><i class="bi bi-trash me-1"></i>Mandar a la papelera</button>
     </form>
-    <div id="nui-split-box" data-url="{% url 'new_ui:document_split' 0 %}"></div>
+    <div id="nui-split-box" data-nui-for="one" data-url="{% url 'new_ui:document_split' 0 %}"></div>
 </div>

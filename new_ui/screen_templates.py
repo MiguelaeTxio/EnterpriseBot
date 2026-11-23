@@ -130,8 +130,10 @@ class ScreenTemplateBlockView(SuperuserRequiredMixin, View):
                  if k]
         checked = set(default["columns"] if default
                       else panel or [k for k, _l in columns])
+        key = "".join(c for c in request.GET.get("key", "") if c.isalnum())
         return render(request, "new_ui/_screen_tpl_block.html", {
             "screen": screen,
+            "radio_name": "nui_tpl_%s_%s" % (screen, key),
             "templates": templates,
             "default_pk": default["pk"] if default else "",
             "columns": [(k, label, k in checked) for k, label in columns],

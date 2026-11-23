@@ -4,7 +4,7 @@ S163. Acciones › «De la vista» en Documentos: lo que se hace en cada
 vista (no solo se lista). Un bloque por vista (data-nui-actions-for);
 new_ui.js enseña el de la vista abierta. Formularios:
 - data-nui-action-form: se envían sin salir de la vista; con
-  data-nui-needs-selection llevan los marcados (selected=...) y el
+  data-nui-needs-selection llevan los seleccionados (selected=...) y el
   listado se repinta con el resultado.
 - sin esa marca: envío normal (p. ej. crear y pasar a editar).
 {% endcomment %}
@@ -28,7 +28,7 @@ new_ui.js enseña el de la vista abierta. Formularios:
         </div>
         <button type="submit" class="btn btn-sm btn-success mt-1"><i class="bi bi-pencil-square me-1"></i>Crear y escribir su contenido</button>
     </form>
-    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Las plantillas marcadas <span class="fw-normal text-muted">(vista «Plantillas de circular»)</span></div>
+    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Las plantillas seleccionadas <span class="fw-normal text-muted">(vista «Plantillas de circular»)</span></div>
     <div class="d-flex flex-wrap gap-1">
         <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:circulars_bulk_signature' %}">
             {% csrf_token %}<input type="hidden" name="action" value="sign">
@@ -39,7 +39,7 @@ new_ui.js enseña el de la vista abierta. Formularios:
             <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Sin firma</button>
         </form>
     </div>
-    <p class="small text-muted mt-2 mb-0">Editar, generar para una persona y descargar en PDF o Word: marca una sola plantilla y usa «Esta fila».</p>
+    <p class="small text-muted mt-2 mb-0">Editar, generar para una persona y descargar en PDF o Word: marca una sola plantilla: salen arriba, en «Con …».</p>
 </div>
 <div class="d-none" data-nui-actions-for="dosieres">
     {# S163: plantillas de dosier (antes, página aparte de la interfaz antigua). #}
@@ -84,11 +84,11 @@ new_ui.js enseña el de la vista abierta. Formularios:
             {% endfor %}
         </div>
         <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar plantilla</button>
-        <p class="small text-muted mt-1 mb-2">Al usarla siempre va el documento vigente de cada tipo, y el formato se elige en ese momento (Personal o Centros de gasto › General). Para modificar una: márcala y «Esta fila» › Modificar.</p>
+        <p class="small text-muted mt-1 mb-2">Al usarla siempre va el documento vigente de cada tipo, y el formato se elige en ese momento (Personal o Centros de gasto › General). Para modificar una: márcala y pulsa «Modificar» arriba, en «Con …».</p>
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:dossier_template_delete' %}">
         {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las plantillas marcadas? Los documentos no se tocan."><i class="bi bi-trash me-1"></i>Borrar las marcadas</button>
+        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las plantillas seleccionadas? Los documentos no se tocan."><i class="bi bi-trash me-1"></i>Borrar las seleccionadas</button>
     </form>
 </div>
 <div class="d-none" data-nui-actions-for="lista_requisitos">
@@ -132,13 +132,13 @@ new_ui.js enseña el de la vista abierta. Formularios:
         </div>
         {% endfor %}
         <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar requisito</button>
-        <p class="small text-muted mt-1 mb-2">Los documentos marcados son obligatorios: disparan los avisos de falta y de caducidad. Con clases de permiso marcadas, «Carnet de conducir» solo avisa si falta. Para modificar uno: márcalo y «Esta fila» › Modificar. Se asignan en Personal y Centros de gasto.</p>
+        <p class="small text-muted mt-1 mb-2">Los documentos que marques son obligatorios: disparan los avisos de falta y de caducidad. Con clases de permiso marcadas, «Carnet de conducir» solo avisa si falta. Para modificar uno: márcalo y pulsa «Modificar» arriba, en «Con …». Se asignan en Personal y Centros de gasto.</p>
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:requirement_bulk' %}" class="d-flex flex-wrap gap-1 mb-2">
         {% csrf_token %}
-        <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success">Activar los marcados</button>
+        <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success">Activar los seleccionados</button>
         <button type="submit" name="action" value="deactivate" class="btn btn-sm btn-outline-secondary">Desactivar (no avisan)</button>
-        <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar los requisitos marcados? Quien los tenga se queda sin ellos."><i class="bi bi-trash me-1"></i>Borrar</button>
+        <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar los requisitos seleccionados? Quien los tenga se queda sin ellos."><i class="bi bi-trash me-1"></i>Borrar</button>
     </form>
     <form data-nui-action-form action="{% url 'new_ui:requirement_type_category' %}">
         {% csrf_token %}
@@ -158,10 +158,10 @@ new_ui.js enseña el de la vista abierta. Formularios:
     </form>
 </div>
 <div class="d-none" data-nui-actions-for="pedir">
-    {# S163: cancelar peticiones de documentos marcadas. Se piden desde Personal › General. #}
+    {# S163: cancelar peticiones de documentos seleccionadas. Se piden desde Personal › General. #}
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:doc_request_cancel_rows' %}">
         {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Cancelar las peticiones marcadas?">Cancelar las peticiones marcadas</button>
+        <button type="submit" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Cancelar las peticiones seleccionadas?">Cancelar las peticiones seleccionadas</button>
         <p class="small text-muted mt-1 mb-0">Para pedir documentos: Personal › General, marca a los trabajadores y Acciones › Pedir documentos. Si se cancela el activo, se envía el siguiente de su cola.</p>
     </form>
 </div>

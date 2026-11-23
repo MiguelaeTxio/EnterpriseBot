@@ -3,7 +3,7 @@
     <form data-nui-action-form action="{% url 'new_ui:medical_add' %}" class="mb-3">
         {% csrf_token %}
         <input type="hidden" name="person_pk" value="" data-nui-scope-input>
-        <div class="small fw-semibold mb-1"><i class="bi bi-bandaid me-1"></i>Nueva baja de la persona abierta</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-bandaid me-1"></i>Nueva baja médica</div>
         <div class="row g-1 small mb-1">
             <div class="col-6"><label class="text-muted d-block">Inicio *</label><input type="date" name="date_start" class="form-control form-control-sm" required></div>
             <div class="col-6"><label class="text-muted d-block">Alta (si ya la tiene)</label><input type="date" name="date_end" class="form-control form-control-sm"></div>
@@ -15,11 +15,11 @@
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:medical_rows' %}">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1">Las bajas marcadas</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-check2-square me-1"></i>Dar el alta o borrar</div>
         <div class="d-flex flex-wrap align-items-center gap-1">
             <input type="date" name="date_end" class="form-control form-control-sm" style="width: 10rem;" aria-label="Fecha de alta">
             <button type="submit" name="action" value="close" class="btn btn-sm btn-outline-success">Darles el alta ese día</button>
-            <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las bajas marcadas (registradas por error)?">Borrar</button>
+            <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las bajas seleccionadas (registradas por error)?">Borrar</button>
         </div>
         <p class="small text-muted mt-1 mb-0">Una baja abierta deja al trabajador de baja: no le llegan los recordatorios de fichaje.</p>
     </form>

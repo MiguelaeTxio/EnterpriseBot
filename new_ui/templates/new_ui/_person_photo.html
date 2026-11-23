@@ -30,7 +30,7 @@ automático y subir otra. Vista: new_ui/views_photos.py.
     </div>
 </div>
 {% else %}
-<p class="small text-muted mb-1">No tiene foto. Súbela, o en Documentos marca su DNI y «Esta fila» › Sacar la foto de aquí.</p>
+<p class="small text-muted mb-1">No tiene foto. Súbela, o en Documentos marca su DNI y pulsa «Sacar la foto de aquí».</p>
 <form data-nui-action-form action="{% url 'new_ui:person_photo_action' person.pk %}" class="mb-1">
     {% csrf_token %}<button type="submit" name="action" value="automatic" class="btn btn-sm btn-outline-secondary">Buscarla en sus documentos (modo automático)</button>
 </form>

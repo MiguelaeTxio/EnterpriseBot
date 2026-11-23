@@ -340,20 +340,142 @@
         }
         function pane(t) { return listPanel.querySelector('.nui-list-pane[data-tab="' + (t || tab()) + '"]'); }
         let groups = null;
-        // Acciones › De la vista: el bloque de la vista abierta.
-        function paintViewActions(t) {
-            const blocks = root.querySelectorAll("[data-nui-actions-for]");
-            let any = false;
-            blocks.forEach(function (b) {
-                const on = b.dataset.nuiActionsFor.split(" ").indexOf(t) !== -1;
-                b.classList.toggle("d-none", !on);
-                any = any || on;
+        // S163 (Miguel Ángel, 23/11): el panel Acciones en tres apartados,
+        // según sobre quién se actúa: 1) «Con los N <cosas> seleccionados»,
+        // 2) «Con <lo pulsado>» (el documento marcado o la persona abierta)
+        // y 3) «Nuevo y ajustes». Cada trozo de las plantillas de acciones
+        // (hijo de un [data-nui-actions-for]) dice el suyo con data-nui-for
+        // ("sel", "one", "new" o, por vista, "general:sel epis:one"); sin
+        // decirlo: "sel" si lleva data-nui-needs-selection, "one" si usa la
+        // persona abierta (data-nui-scope-input) y si no, "new".
+        const nouns = json("nui-tab-nouns", {});
+        const pieces = [];
+        root.querySelectorAll("[data-nui-actions-stage] [data-nui-actions-for]").forEach(function (block) {
+            const tabs = block.dataset.nuiActionsFor.split(" ").filter(Boolean);
+            Array.from(block.children).forEach(function (child) {
+                pieces.push({el: child, tabs: tabs, order: pieces.length});
             });
-            const none = root.querySelector("[data-nui-actions-none]");
-            if (none) none.classList.toggle("d-none", any);
-            const label = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + t + '"]');
+        });
+        function groupOf(piece, t) {
+            const spec = piece.el.dataset.nuiFor || "";
+            if (spec.indexOf(":") !== -1) {
+                const hit = spec.split(" ").map(s => s.split(":")).find(p => p[0] === t);
+                if (hit) return hit[1];
+            } else if (spec) {
+                return spec;
+            }
+            if (piece.el.matches("[data-nui-needs-selection]") || piece.el.querySelector("[data-nui-needs-selection]")) return "sel";
+            if (piece.el.querySelector("[data-nui-scope-input]")) return "one";
+            return "new";
+        }
+        // Cada acción se ve plegada en su título (que dice qué hace); al
+        // pulsarlo se abre. Las que no tienen título propio van abiertas.
+        pieces.forEach(function (piece) {
+            const title = Array.from(piece.el.children).find(c => c.classList && c.classList.contains("fw-semibold"))
+                || (piece.el.tagName !== "FORM" && piece.el.firstElementChild && piece.el.firstElementChild.tagName === "FORM"
+                    ? Array.from(piece.el.firstElementChild.children).find(c => c.classList && c.classList.contains("fw-semibold")) : null);
+            if (!title) return;
+            piece.el.classList.add("nui-piece");
+            title.classList.add("nui-piece-title");
+            title.setAttribute("role", "button");
+            title.setAttribute("tabindex", "0");
+        });
+        root.addEventListener("click", function (ev) {
+            const title = ev.target.closest(".nui-piece-title");
+            if (!title) return;
+            title.closest(".nui-piece").classList.toggle("nui-open");
+        });
+        root.addEventListener("keydown", function (ev) {
+            const title = ev.target.closest && ev.target.closest(".nui-piece-title");
+            if (!title || (ev.key !== "Enter" && ev.key !== " ")) return;
+            ev.preventDefault();
+            title.closest(".nui-piece").classList.toggle("nui-open");
+        });
+        function sec(name) { return root.querySelector('[data-nui-sec="' + name + '"]'); }
+        function nounOf(t) { return nouns[t] || (section === "cdg" ? ["centro de gasto", "centros de gasto"] : ["trabajador", "trabajadores"]); }
+        function paintViewActions(t) {
+            t = t || tab();
+            const shown = {sel: 0, one: 0, new: 0};
+            const bodies = {sel: sec("sel"), one: sec("one"), new: sec("new")};
+            pieces.forEach(function (piece) {
+                const on = piece.tabs.indexOf(t) !== -1;
+                piece.el.dataset.nuiActive = on ? "1" : "";
+                if (!on) { piece.el.classList.add("d-none"); return; }
+                const g = groupOf(piece, t);
+                const body = bodies[g] && bodies[g].querySelector("[data-nui-sec-body]");
+                if (!body) return;
+                body.appendChild(piece.el);
+                piece.el.dataset.nuiGroup = g;
+                piece.el.classList.remove("d-none");
+                shown[g]++;
+            });
+            // El orden de las plantillas dentro de cada apartado.
+            ["sel", "one", "new"].forEach(function (g) {
+                const body = bodies[g] && bodies[g].querySelector("[data-nui-sec-body]");
+                if (!body) return;
+                pieces.filter(p => p.el.parentNode === body).sort((x, y) => x.order - y.order).forEach(p => body.appendChild(p.el));
+            });
+            paintSections();
+        }
+        function paintSections() {
+            const t = tab();
+            const map = sel();
+            const n = map.size;
+            const noun = nounOf(t);
+            // 1) Los seleccionados.
+            const s1 = sec("sel");
+            if (s1) {
+                const body = s1.querySelector("[data-nui-sec-body]");
+                const has = body.children.length > 0;
+                s1.classList.toggle("d-none", !has);
+                s1.querySelector("[data-nui-sec-title]").textContent = n === 1 ? "Con 1 " + noun[0] + " seleccionado" : "Con los " + n + " " + noun[1] + " seleccionados";
+                const hint = s1.querySelector("[data-nui-sec-hint]");
+                hint.textContent = n ? "" : "Marca con la casilla los " + noun[1] + " de la lista para hacer aquí lo mismo con todos a la vez.";
+                hint.classList.toggle("d-none", !!n);
+                body.classList.toggle("d-none", !n);
+            }
+            function activeIn(s) { return s ? Array.from(s.querySelector("[data-nui-sec-body]").children).filter(c => c.dataset.nuiActive) : []; }
+            // 2) Lo pulsado: el elemento marcado (si hay uno solo) o la
+            // persona o máquina abierta.
+            const s2 = sec("one");
+            if (s2) {
+                const listBox = pane();
+                const mark = n === 1 && listBox ? listBox.querySelector('.nui-rowmark[value="' + CSS.escape(Array.from(map.keys())[0]) + '"]') : null;
+                const rowActions = document.getElementById("nui-row-actions");
+                const hasRow = !!(rowActions && rowActions.children.length && !rowActions.querySelector("[data-nui-empty]"));
+                const scoped = !!(scope && scope.pk) && section !== "doc";
+                // Lo de esta persona, con ella abierta; «Actualizar» de un
+                // documento o «Gestionar» de una solicitud lo enseñan sin
+                // abrirla (data-nui-forced).
+                let forced = "";
+                activeIn(s2).forEach(function (c) {
+                    const visible = scoped || !!c.dataset.nuiForced;
+                    c.classList.toggle("d-none", !visible);
+                    if (!scoped && c.dataset.nuiForced) forced = c.dataset.nuiForced;
+                });
+                const entity = document.getElementById("nui-entity-actions");
+                if (entity) entity.classList.toggle("d-none", !scoped);
+                let who = "";
+                if (hasRow && mark) who = mark.dataset.label || "";
+                else if (scoped) who = scope.label || "";
+                else if (forced) who = forced;
+                const title = s2.querySelector("[data-nui-sec-title]");
+                const hint = s2.querySelector("[data-nui-sec-hint]");
+                if (who) {
+                    title.textContent = "Con " + who;
+                    hint.textContent = "";
+                } else {
+                    const person = section === "cdg" ? "un centro de gasto" : "un trabajador";
+                    title.textContent = section === "cdg" ? "Con un centro de gasto" : "Con un trabajador";
+                    hint.textContent = "Pulsa el nombre de " + person + " en la lista (o marca un solo " + noun[0] + ") para ver aquí lo que puedes hacer con él.";
+                }
+                hint.classList.toggle("d-none", !!who);
+            }
+            // 3) Nuevo y ajustes.
+            const s3 = sec("new");
+            if (s3) s3.classList.toggle("d-none", !activeIn(s3).length);
             const tabButton = document.getElementById("nui-view-actions-tab");
-            if (tabButton) tabButton.textContent = "De " + (label ? label.textContent.trim() : "la vista");
+            if (tabButton) tabButton.textContent = "Acciones";
         }
         listPanel.addEventListener("nui:tab", function (ev) { paintViewActions(ev.detail); });
         // Plantillas de columnas de las exportaciones de pantalla: el bloque
@@ -437,7 +559,7 @@
             if (submitter && submitter.name) body.append(submitter.name, submitter.value);
             if (f.hasAttribute("data-nui-needs-selection")) {
                 const ids = Array.from(sel().keys());
-                if (!ids.length) { result("Marca primero en el listado las filas a las que aplicarlo.", true); return; }
+                if (!ids.length) { result("Marca primero con la casilla, en la lista de abajo, a quién aplicarlo.", true); return; }
                 ids.forEach(id => body.append("selected", id));
                 if (f.hasAttribute("data-nui-with-tab")) body.append("tab", tab());
             }
@@ -485,6 +607,7 @@
                         f.reset();
                         f.querySelectorAll("[data-nui-clear]").forEach(i => { i.value = ""; });
                         f.querySelectorAll("[data-default]").forEach(el => { el.textContent = el.dataset.default; });
+                        if (f.dataset.nuiForced) { delete f.dataset.nuiForced; paintSections(); }
                     }
                     load();
                 })
@@ -644,6 +767,9 @@
                 const who = decodeURIComponent(parts[5] || "");
                 uploadForm.querySelector("[data-nui-upload-title]").textContent = "Actualizar " + typeLabel;
                 uploadForm.querySelector("[data-nui-upload-who]").textContent = "De: " + who + " (la versión nueva sustituye a la anterior).";
+                uploadForm.dataset.nuiForced = who;
+                uploadForm.classList.add("nui-open");
+                paintSections();
                 goToActions(uploadForm);
                 return;
             }
@@ -658,6 +784,9 @@
                 const box = document.querySelector('[data-nui-actions-for~="' + tab() + '"] [data-nui-fragment-box]');
                 if (!box) return;
                 box.dataset.current = decodeURIComponent(parts[1]);
+                const row = link.closest("tr") && link.closest("tr").querySelector(".nui-rowmark");
+                box.dataset.nuiForced = (row && row.dataset.label) || "lo elegido";
+                paintSections();
                 loadFragment(box);
                 goToActions(box);
                 return;
@@ -666,6 +795,9 @@
                 const box = document.getElementById("nui-split-box");
                 if (!box) return;
                 box.innerHTML = '<p class="small text-muted mb-0">Cargando las páginas…</p>';
+                const row = link.closest("tr") && link.closest("tr").querySelector(".nui-rowmark");
+                box.dataset.nuiForced = (row && row.dataset.label) || "este documento";
+                paintSections();
                 goToActions(box);
                 fetch(box.dataset.url.replace("/0/", "/" + parts[1] + "/"), {credentials: "same-origin"})
                     .then(r => r.ok ? r.text() : Promise.reject(new Error("No se ha podido abrir el documento.")))
@@ -924,16 +1056,10 @@
             // «Ver su ficha» no se repite aquí: es el botón derecho.
             const items = mark ? Array.from(mark.closest("tr").querySelectorAll("[data-nui-row-actions] .dropdown-item")).filter(i => !i.hasAttribute("data-nui-scope")) : [];
             if (!items.length) {
-                const p = document.createElement("p");
-                p.className = "small text-muted mb-0";
-                p.textContent = map.size === 1 ? "Esa fila no tiene acciones propias (su ficha y su menú: botón derecho sobre ella)." : "Marca una sola fila del listado para ver aquí sus acciones.";
-                box.appendChild(p);
+                box.setAttribute("data-nui-empty", "");
                 return;
             }
-            const title = document.createElement("div");
-            title.className = "small fw-semibold mb-1";
-            title.textContent = mark.dataset.label || "";
-            box.appendChild(title);
+            box.removeAttribute("data-nui-empty");
             const wrap = document.createElement("div");
             wrap.className = "d-flex flex-wrap gap-1";
             items.forEach(function (original) {
@@ -950,6 +1076,7 @@
             const map = sel();
             paintSelectionList(map, function (pk) { map.delete(pk); persistSelection(); syncChecks(); });
             paintRowActions();
+            paintSections();
             const idsInput = document.getElementById("nui-selected-ids");
             if (idsInput) idsInput.value = Array.from(map.keys()).join(",");
             if (groups) groups.refresh();
@@ -1155,6 +1282,7 @@
             save(values);
             paintScope();
             document.dispatchEvent(new CustomEvent("nui:scope"));
+            paintSections();
             // Con una persona o máquina sola se abre su ficha (o la pestaña
             // pedida desde el menú); al quitarla, se vuelve a "General".
             const now = tab();
@@ -1177,10 +1305,6 @@
             if (!(scope && scope.pk)) {
                 p.textContent = "Pulsa " + (section === "cdg" ? "un centro de gasto" : "una persona") + " en el listado para ver aquí sus acciones.";
             } else {
-                const title = document.createElement("div");
-                title.className = "small fw-semibold mb-1";
-                title.textContent = scope.label;
-                box.appendChild(title);
                 const panelUrl = section === "per" ? urls.photoPanel : (section === "cdg" ? urls.machinePanel : "");
                 if (panelUrl) {
                     // S163: sus acciones que no son un listado (foto para
@@ -1282,7 +1406,7 @@
             let files = [], uploading = false, watching = null, listTimer = null;
             function note(text, cls) { const li = document.createElement("li"); if (cls) li.className = cls; li.textContent = text; notes.appendChild(li); }
             function progress(done, total) { q("progress").classList.remove("d-none"); bar.style.width = Math.round(done * 100 / Math.max(total, 1)) + "%"; }
-            function mode() { return (box.querySelector('[name="nui_alb_mode"]:checked') || {}).value || "person"; }
+            function mode() { return box.dataset.mode || "person"; }
             function loadList() {
                 clearTimeout(listTimer);
                 const personPk = (mode() === "person" && scope && scope.pk) ? scope.pk : "";
@@ -1302,7 +1426,6 @@
             }
             folder.addEventListener("change", function () { loose.value = ""; pick(folder); });
             loose.addEventListener("change", function () { folder.value = ""; pick(loose); });
-            box.addEventListener("change", function (ev) { if (ev.target.name === "nui_alb_mode") loadList(); });
             async function post(url, body) {
                 const r = await fetch(url, {method: "POST", credentials: "same-origin", headers: {"X-CSRFToken": csrf(), "Accept": "application/json"}, body: body});
                 const data = await r.json().catch(() => ({error: "El servidor no ha respondido bien (puede estar reiniciándose). Inténtalo de nuevo en un minuto."}));

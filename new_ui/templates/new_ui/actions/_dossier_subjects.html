@@ -3,15 +3,15 @@
 S163. Dosieres en Personal y Centros de gasto (Acciones › De la vista),
 copiados de la interfaz antigua (selección de documentos de la ficha,
 plantillas y correo conjunto). Sin desplegables: botones de opción.
-- «Documentos»: dosier con los documentos marcados.
-- «General»: dosier de las personas o máquinas marcadas con una
+- «Documentos»: dosier con los documentos seleccionados.
+- «General»: dosier de las personas o máquinas seleccionadas con una
   plantilla, y comprobar a quién le falta algo de ella.
 Variables: noun ("persona" / "máquina"), section ("per" / "cdg").
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="documentos">
     <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_documents' %}">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Dosier con los documentos marcados</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Juntarlos en un dosier</div>
         <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Cómo">
             {% for code, label in dossier_formats %}
             <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="format" value="{{ code }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>
@@ -27,7 +27,7 @@ Variables: noun ("persona" / "máquina"), section ("per" / "cdg").
 <div class="d-none" data-nui-actions-for="general">
     <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_apply' section %}">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Dosier de las {{ noun }}s marcadas</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Dosier de su documentación</div>
         {% if dossier_templates %}
         <div class="small text-muted">Plantilla:</div>
         <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Plantilla">

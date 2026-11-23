@@ -7,7 +7,7 @@ Horarios y ajustes de Fichajes). Sin desplegables: botones de opción.
 (#nui-edit:<formulario>:<pk>, new_ui.js).
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="horarios fichajes">
-    <div class="small fw-semibold mb-1"><i class="bi bi-people me-1"></i>A los trabajadores marcados</div>
+    <div class="small fw-semibold mb-1"><i class="bi bi-people me-1"></i>Horario, fichaje y recordatorios</div>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:worker_clock' %}" class="mb-2">
         {% csrf_token %}<input type="hidden" name="action" value="schedule">
         <div class="small text-muted">Horario propio:</div>
@@ -105,11 +105,11 @@ Horarios y ajustes de Fichajes). Sin desplegables: botones de opción.
             <input type="number" min="0" name="tolerance_minutes" id="nui-sched-tol" value="15" class="form-control form-control-sm" style="width: 6rem;">
         </div>
         <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar horario</button>
-        <p class="small text-muted mt-1 mb-2">Para modificar uno: márcalo y «Esta fila» › Modificar. Se asignan en la vista «Horarios».</p>
+        <p class="small text-muted mt-1 mb-2">Para modificar uno: márcalo y pulsa «Modificar» arriba, en «Con …». Se asignan en la vista «Horarios».</p>
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:schedule_delete' %}">
         {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar los horarios marcados? A quien los tenga le tocará el de su sección o el de por defecto."><i class="bi bi-trash me-1"></i>Borrar los marcados</button>
+        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar los horarios seleccionados? A quien los tenga le tocará el de su sección o el de por defecto."><i class="bi bi-trash me-1"></i>Borrar los seleccionados</button>
     </form>
 </div>
 

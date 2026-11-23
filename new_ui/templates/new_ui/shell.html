@@ -63,6 +63,15 @@ new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
 .nui-viewbar .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .8rem; border: 1px solid #0d6efd; color: #0d6efd; background: #fff; }
 .nui-viewbar .btn.active { background: #0d6efd; color: #fff; font-weight: 600; }
 /* S163: botón de pantalla completa de cada panel. */
+/* S163 (23/11): cada acción plegada en su título; al pulsarlo se abre. */
+.nui-sec-title { font-size: .85rem; color: #0d6efd; }
+.nui-piece { margin: 0 0 .35rem !important; padding-bottom: .3rem; border-bottom: 1px solid #f1f3f5; }
+.nui-piece-title { cursor: pointer; margin-bottom: 0 !important; }
+.nui-piece-title::before { content: "\25B8"; display: inline-block; width: 1em; color: #6c757d; }
+.nui-piece.nui-open .nui-piece-title::before { content: "\25BE"; }
+.nui-piece.nui-open .nui-piece-title { margin-bottom: .25rem !important; }
+.nui-piece:not(.nui-open) > :not(.nui-piece-title):not(:has(.nui-piece-title)) { display: none !important; }
+.nui-piece:not(.nui-open) > :has(.nui-piece-title) > :not(.nui-piece-title) { display: none !important; }
 .nui-max-btn { margin-left: auto; align-self: center; border: 0; background: none; color: #6c757d; padding: 0 4px; line-height: 1; font-size: .95rem; }
 .nui-head .ms-auto ~ .nui-max-btn { margin-left: 6px; }
 .nui-max-btn:hover, .nui-max-btn:focus-visible { color: #0d6efd; outline: none; }
@@ -175,18 +184,34 @@ body.nui-dragging { user-select: none; }
             {% include "new_ui/permisos/_actions_panel.html" %}
             {% else %}
             <div class="nui-tabs nav" role="tablist">
-                <button type="button" class="nav-link" data-nui-tab="vista" role="tab" id="nui-view-actions-tab">De la vista</button>
-                <button type="button" class="nav-link" data-nui-tab="fila" role="tab">Esta fila</button>
+                <button type="button" class="nav-link" data-nui-tab="vista" role="tab" id="nui-view-actions-tab">Acciones</button>
                 <button type="button" class="nav-link" data-nui-tab="exportar" role="tab">Exportar</button>
-                {% if section != "doc" %}<button type="button" class="nav-link" data-nui-tab="uno" role="tab">{% if section == "cdg" %}Del centro de gasto{% else %}Del trabajador{% endif %}</button>{% endif %}
             </div>
             <div class="nui-body">
                 <div data-nui-pane="vista">
-                    {% with "new_ui/actions/"|add:section|add:".html" as actions_template %}{% include actions_template %}{% endwith %}
-                    <p class="small text-muted mb-0 d-none" data-nui-actions-none>Esta vista todavía no tiene acciones propias aquí.</p>
+                    {# S163 (23/11): tres apartados según sobre quién se actúa: los seleccionados, lo pulsado y lo que no depende de nadie. new_ui.js reparte aquí las acciones de la vista (data-nui-for). #}
+                    <section class="mb-3" data-nui-sec="sel">
+                        <h6 class="nui-sec-title fw-semibold border-bottom pb-1 mb-2" data-nui-sec-title></h6>
+                        <p class="small text-muted mb-2" data-nui-sec-hint></p>
+                        <div data-nui-sec-body></div>
+                    </section>
+                    <section class="mb-3" data-nui-sec="one">
+                        <h6 class="nui-sec-title fw-semibold border-bottom pb-1 mb-2" data-nui-sec-title></h6>
+                        <p class="small text-muted mb-2" data-nui-sec-hint></p>
+                        <div id="nui-row-actions" class="mb-2"></div>
+                        {% if section != "doc" %}<div id="nui-entity-actions" class="mb-2"></div>{% endif %}
+                        <div data-nui-sec-body></div>
+                    </section>
+                    <section class="mb-3" data-nui-sec="new">
+                        <h6 class="nui-sec-title fw-semibold border-bottom pb-1 mb-2">Nuevo y ajustes</h6>
+                        <div data-nui-sec-body></div>
+                    </section>
+                    <div class="d-none" data-nui-actions-stage>
+                        {% with "new_ui/actions/"|add:section|add:".html" as actions_template %}{% include actions_template %}{% endwith %}
+                    </div>
                 </div>
                 <div data-nui-pane="exportar" class="d-none">
-                    <div class="small text-muted mb-1">Exportar el listado abierto (los marcados o, si no hay ninguno, todo lo filtrado):</div>
+                    <div class="small text-muted mb-1">Exportar la lista de abajo (los seleccionados o, si no hay ninguno, todo lo que sale con los filtros):</div>
                     <div class="small mb-1" data-nui-split>
                         <span class="text-muted">Separar en hojas por:</span>
                         <span data-nui-split-options></span>
@@ -198,12 +223,6 @@ body.nui-dragging { user-select: none; }
                         <button type="button" class="btn btn-sm btn-outline-success" data-nui-export="print"><i class="bi bi-printer me-1"></i>Imprimir</button>
                     </div>
                 </div>
-                <div data-nui-pane="fila" class="d-none"><div id="nui-row-actions"></div></div>
-                {% if section != "doc" %}
-                <div data-nui-pane="uno" class="d-none">
-                    <div id="nui-entity-actions"></div>
-                </div>
-                {% endif %}
                 <div class="alert small py-1 px-2 mt-2 mb-0 d-none" id="nui-result" role="status"></div>
             </div>
             {% endif %}
@@ -223,7 +242,7 @@ body.nui-dragging { user-select: none; }
             </div>
             <div class="nui-head">
                 <strong id="nui-list-title"></strong>
-                {% if section != "permisos" %}<span class="ms-auto small text-muted" data-nui-total-box><span data-nui-total>…</span> filas</span>{% endif %}
+                {% if section != "permisos" %}<span class="ms-auto small text-muted" data-nui-total-box><span data-nui-total>…</span> en la lista</span>{% endif %}
             </div>
             <div class="nui-body flush" id="nui-lists">
                 {% if section == "permisos" %}
@@ -257,6 +276,7 @@ body.nui-dragging { user-select: none; }
 {{ selections|json_script:"nui-selections" }}
 {{ col_templates|json_script:"nui-coltpl" }}
 {{ scope|json_script:"nui-scope" }}
+{{ tab_nouns|json_script:"nui-tab-nouns" }}
 <script id="nui-urls" type="application/json">{"list": "{% url 'new_ui:list' %}", "export": "{% url 'new_ui:export' %}", "card": "{% url 'new_ui:card' %}", "menu": "{% url 'new_ui:menu' %}", "groupSave": "{% if section == 'cdg' %}{% url 'new_ui:group_save' 'maquinas' %}{% else %}{% url 'new_ui:group_save' 'personas' %}{% endif %}", "groupUpdate": "{% if section == 'cdg' %}{% url 'new_ui:group_update' 'maquinas' 0 %}{% else %}{% url 'new_ui:group_update' 'personas' 0 %}{% endif %}", "photoPanel": "{% url 'new_ui:person_photo_panel' 0 %}", "machinePanel": "{% url 'new_ui:machine_panel' 0 %}", "groupDelete": "{% if section == 'cdg' %}{% url 'new_ui:group_delete' 'maquinas' 0 %}{% else %}{% url 'new_ui:group_delete' 'personas' 0 %}{% endif %}"}</script>
 {% endif %}
 {% endblock %}

@@ -1,11 +1,11 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_refuels.html -- S163: repostajes del surtidor (GasoGes): unidad, preguntar y contador de los vehículos de los marcados. Vista: new_ui/views_refuels.py. #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_refuels.html -- S163: repostajes del surtidor (GasoGes): unidad, preguntar y contador de los vehículos de los seleccionados. Vista: new_ui/views_refuels.py. #}
 <div class="d-none" data-nui-actions-for="repostajes">
-    <p class="small text-muted mb-2">Se aplica a los vehículos (y, si se indica, a los chóferes) de los repostajes marcados.</p>
+    <p class="small text-muted mb-2">Se aplica a los vehículos (y, si se indica, a los chóferes) de los repostajes seleccionados.</p>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:refuel_unit' %}" class="mb-2">
         {% csrf_token %}
         <div class="small fw-semibold mb-1">El vehículo apunta</div>
-        <button type="submit" name="unit" value="KM" class="btn btn-sm btn-outline-primary" data-nui-confirm="¿Los vehículos de los marcados apuntan kilómetros? Se rehacen sus lecturas.">Kilómetros</button>
-        <button type="submit" name="unit" value="HOURS" class="btn btn-sm btn-outline-primary" data-nui-confirm="¿Los vehículos de los marcados apuntan horas? Se rehacen sus lecturas.">Horas</button>
+        <button type="submit" name="unit" value="KM" class="btn btn-sm btn-outline-primary" data-nui-confirm="¿Los vehículos de los seleccionados apuntan kilómetros? Se rehacen sus lecturas.">Kilómetros</button>
+        <button type="submit" name="unit" value="HOURS" class="btn btn-sm btn-outline-primary" data-nui-confirm="¿Los vehículos de los seleccionados apuntan horas? Se rehacen sus lecturas.">Horas</button>
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:refuel_ask' %}" class="mb-2">
         {% csrf_token %}<input type="hidden" name="who" value="vehicle">
@@ -24,8 +24,8 @@
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:refuel_meter' %}">
         {% csrf_token %}
         <div class="small fw-semibold mb-1">Contador</div>
-        <button type="submit" name="broken" value="1" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Marcar averiado el contador de los vehículos de los marcados? Sus repostajes dejan de dar lectura.">Averiado</button>
+        <button type="submit" name="broken" value="1" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Marcar averiado el contador de los vehículos de los seleccionados? Sus repostajes dejan de dar lectura.">Averiado</button>
         <button type="submit" name="broken" value="0" class="btn btn-sm btn-outline-success">Reparado</button>
     </form>
-    <p class="small text-muted mt-2 mb-0">Se pregunta solo si el chófer y el vehículo lo tienen marcado.</p>
+    <p class="small text-muted mt-2 mb-0">Se pregunta solo si el chófer y el vehículo lo tienen seleccionado.</p>
 </div>

@@ -1901,13 +1901,21 @@ def rows_for(definition, rows, columns):
             cells.append({"key": col.key, "value": "" if value is None
                           else value, "css": col.css,
                           "entity": col.entity})
+        # S163 (23/11): lo que se nombra en Acciones («Con el DNI de
+        # ...»): la persona o máquina si la fila es ella; si no, el primer
+        # dato de la fila y de quién es.
+        item = label
+        if entity is not None and entity is not row:
+            first = next((c["value"] for c in cells
+                          if not c["entity"] and c["value"] != ""), "")
+            item = "%s de %s" % (first, label) if first else label
         out.append({
             "pk": row.pk,
             "cells": cells,
             "entity_kind": definition.entity if entity is not None else "",
             "entity_pk": entity.pk if entity is not None else "",
             "entity_label": label,
-            "label": label or (cells[0]["value"] if cells else ""),
+            "label": item or (cells[0]["value"] if cells else ""),
             "actions": definition.actions(row),
         })
     return out

@@ -25,7 +25,7 @@ Acciones › Esta fila al marcarla, y en su botón derecho.
             {% for cell in row.cells %}
             {% if cell.entity and row.entity_pk %}
             <td class="{{ cell.css }} fw-semibold" {% if row.entity_kind == "machine" %}data-machine-pk="{{ row.entity_pk }}"{% else %}data-person-pk="{{ row.entity_pk }}"{% endif %}>
-                <a href="#" data-nui-scope="{{ row.entity_pk }}" data-nui-scope-label="{{ row.entity_label }}" title="Sus filas de esta vista (botón derecho: su menú)">{{ cell.value|default:"—" }}</a>
+                <a href="#" data-nui-scope="{{ row.entity_pk }}" data-nui-scope-label="{{ row.entity_label }}" title="Ver solo lo suyo en esta lista (botón derecho: su menú)">{{ cell.value|default:"—" }}</a>
             </td>
             {% else %}
             <td class="{{ cell.css }}">{{ cell.value|default:"—" }}</td>
