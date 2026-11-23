@@ -48,6 +48,7 @@ Protocolo Setup-First (Conforme a SDK 1.69.0):
 
 import asyncio
 import base64
+import collections
 import json
 import logging
 import math
@@ -219,7 +220,18 @@ TWILIO_OUTPUT_SAMPLE_RATE = 8000  # Hz — Twilio expects 8kHz mu-law back
 # voces) la voz del llamante estaba en 2800-5000 de mediana y el ruido cortó
 # dos veces a Alia con 300; con 1000 y 25 frames no la habría cortado. Quien
 # hable muy bajo puede no detectarse y tendrá que repetirlo más alto.
-SILENCE_THRESHOLD_RMS = 1000
+# S155 (23/11, llamada real de las 07:05 con altavoz): con 1000 y 25 frames
+# seguidos no se detectó al llamante (voz de 500-900 de media, picos de
+# 2500): la voz sube y baja entre sílabas y nunca encadenó 25 frames. Ahora
+# 600, con ventana deslizante (SPEECH_WINDOW_FRAMES); simulado sobre esa
+# llamada: detecta al empezar a hablar y no salta con los picos sueltos.
+SILENCE_THRESHOLD_RMS = 600
+
+# S155 (23/11): umbral para cerrar el turno, más bajo que el de abrirlo
+# (histéresis). Con 600 también para cerrar, la misma llamada se partía en
+# tres turnos: la voz baja de 600 más de 600 ms entre frases. Con 300 (el
+# valor de antes del 18/11 para el silencio) queda en un solo turno.
+SILENCE_END_THRESHOLD_RMS = 300
 
 # Number of consecutive silent frames required to close an activity window.
 # At Twilio's 8kHz mu-law encoding, each media event carries ~20ms of audio,
@@ -249,7 +261,10 @@ SILENCE_FRAMES_TO_END_ACTIVITY = 30
 # espurias que provocaban auto-interrupciones de Gemini.
 # S155: subido de 15 (~300ms) a 25 (~500ms) por el ruido de fondo (ver
 # SILENCE_THRESHOLD_RMS).
-SPEECH_FRAMES_TO_START_ACTIVITY = 25
+# S155 (23/11): ya no son frames seguidos sino SPEECH_FRAMES_TO_START_ACTIVITY
+# de los últimos SPEECH_WINDOW_FRAMES (18 de 30, ~600 ms).
+SPEECH_FRAMES_TO_START_ACTIVITY = 18
+SPEECH_WINDOW_FRAMES = 30
 
 
 # Fallback voice name used when build_live_config() fails to load the dynamic
@@ -1701,6 +1716,9 @@ class VoiceOrchestrationService:
         # - silence_frame_count: frames por debajo del umbral desde la última
         # voz.
         speech_frame_count: int = 0
+        # S155: ventana deslizante de los últimos frames (True = voz).
+        speech_window: collections.deque = collections.deque(
+            maxlen=SPEECH_WINDOW_FRAMES)
         silence_frame_count: int = 0
 
         try:
@@ -1747,6 +1765,7 @@ class VoiceOrchestrationService:
                                 "[GEMINI-TX] Error al enviar activity_end "
                                 f"por timeout: {ae_exc}")
                         is_speaking = False
+                        speech_window.clear()
                         speech_frame_count = 0
                         silence_frame_count = 0
                     continue
@@ -1774,11 +1793,18 @@ class VoiceOrchestrationService:
                 # -----------------------------------------------------------
                 # ACTIVITY STATE MACHINE / MÁQUINA DE ESTADOS DE ACTIVIDAD
                 # -----------------------------------------------------------
-                if rms >= SILENCE_THRESHOLD_RMS:
+                speech_window.append(rms >= SILENCE_THRESHOLD_RMS)
+                # S155: abrir turno con SILENCE_THRESHOLD_RMS; una vez
+                # abierto, solo cuenta como silencio lo que baja de
+                # SILENCE_END_THRESHOLD_RMS.
+                voice_threshold = (
+                    SILENCE_END_THRESHOLD_RMS if is_speaking
+                    else SILENCE_THRESHOLD_RMS)
+                if rms >= voice_threshold:
                     # Frame with speech energy detected.
                     # Frame con energía de voz detectada.
                     silence_frame_count = 0
-                    speech_frame_count += 1
+                    speech_frame_count = sum(speech_window)
 
                     if (
                         not is_speaking
@@ -1876,6 +1902,7 @@ class VoiceOrchestrationService:
                                 "[GEMINI-TX] Error al enviar activity_end: "
                                 f"{ae_exc}")
                         is_speaking = False
+                        speech_window.clear()
                         silence_frame_count = 0
 
                 # -----------------------------------------------------------
