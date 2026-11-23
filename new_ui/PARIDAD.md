@@ -74,8 +74,9 @@ uno a uno):
   documentos no: allí los ponemos nosotros).
 
 Hilera de Personal acordada (23/11): General · Documentación ·
-Comunicaciones · Fichaje · Vacaciones · Bajas y ausencias · Partes y
-repostajes · Nóminas · EPIs · Horas y pagos. Cada tema, pendiente de
+Comunicaciones · Fichaje · Vacaciones · Bajas y ausencias · Partes ·
+Repostajes · Nóminas · EPIs · Horas y pagos (Partes y Repostajes,
+separados: son dos cosas distintas). Cada tema, pendiente de
 repasar uno a uno.
 
 **Horas y pagos** (función nueva, 23/11; hoy solo existe para los partes
@@ -94,8 +95,8 @@ digitales de Taller y Taller Huelva, en un Excel con el precio a mano):
 **Lista y ficha (23/11).** La lista de trabajadores es para hacer cosas
 a muchos a la vez; todo lo de uno solo, en su ficha. La ficha tiene sus
 propias pestañas con los mismos temas (Datos, Documentación,
-Comunicaciones, Fichaje, Vacaciones, Bajas y ausencias, Partes y
-repostajes, Nóminas, EPIs, Horas y pagos) y las mismas acciones, ya
+Comunicaciones, Fichaje, Vacaciones, Bajas y ausencias, Partes,
+Repostajes, Nóminas, EPIs, Horas y pagos) y las mismas acciones, ya
 solo para él. El clic en un trabajador abre su ficha en el tema que
 estaba elegido arriba (General → Datos). Columnas de cada tema:
 configurables, cada supervisor las suyas.
