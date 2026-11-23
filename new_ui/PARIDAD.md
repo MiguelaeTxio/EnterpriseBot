@@ -118,14 +118,14 @@ configurables, cada supervisor las suyas.
   jornada: comida, insertar, km, números de albarán), más lo mismo que
   en la lista solo para él (registro con membrete, sus albaranes). La
   bolsa de horas pasa a Horas y pagos.
-- Vacaciones (23/11). Días: unas **vacaciones por defecto** de la
-  empresa (Empresa › Vacaciones) y, para quien haga falta, **días
-  propios** de cada trabajador, que mandan sobre las de por defecto; no
-  por sección (herencia del SIME) ni por grupo de selección (las
-  secciones reales). Lista, con los marcados: registrar vacaciones,
-  poner días propios (o volver a los de por defecto), importar saldos de
-  partida. Columnas para elegir: días que le tocan (y si son propios o
-  por defecto), disfrutados, pendientes, del año anterior, próximo
+- Vacaciones (23/11). Días en tres niveles: **empresa** (Empresa ›
+  Vacaciones), **grupo de selección** (las secciones reales; la sección
+  es herencia del SIME y no cuenta) e **individual**. Manda el más
+  concreto: si el trabajador no tiene los suyos, los de su grupo; si el
+  grupo no tiene, los de la empresa. Lista, con los marcados: registrar
+  vacaciones, poner días propios (o quitarlos), importar saldos de
+  partida; los días de un grupo, al elegirlo en Grupos de selección. Columnas para elegir: días que le tocan (y de dónde: propios,
+  grupo o empresa), disfrutados, pendientes, del año anterior, próximo
   periodo. En su ficha: su desglose (periodos, cambiar o borrar; ajustes),
   su saldo explicado y lo mismo solo para él. Desaparecen las vistas
   «Vacaciones» y «Saldo» (pasan a columnas) y «Desglose» (a su ficha).
