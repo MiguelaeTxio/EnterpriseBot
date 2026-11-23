@@ -1,0 +1,36 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_vacations.html -- S163: acciones del Saldo de vacaciones (registrar a los marcados, sección desde una fecha, importar saldos, reglas y tipos de ausencia). Vista: new_ui/views_vacations.py. #}
+<div class="d-none" data-nui-actions-for="saldo_vacaciones">
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_register' %}" class="mb-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-airplane me-1"></i>Registrar vacaciones a los marcados</div>
+        <div class="d-flex flex-wrap align-items-center gap-1 small">
+            <span class="text-muted">Del</span><input type="date" name="date_start" class="form-control form-control-sm" style="width: 10rem;" required>
+            <span class="text-muted">al</span><input type="date" name="date_end" class="form-control form-control-sm" style="width: 10rem;" required>
+            <button type="submit" class="btn btn-sm btn-primary">Registrar</button>
+        </div>
+        <p class="small text-muted mb-0">El mismo periodo a cada uno (con su tarea automática si tiene cuenta del panel). Cambiar o borrar un periodo: en su desglose.</p>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_section_assign' %}" class="mb-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-diagram-3 me-1"></i>Sección de los marcados desde una fecha</div>
+        <div class="small mb-1">{% for s in vac_sections %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="section_id" value="{{ s.pk }}" required> {{ s.name }}</label>{% endfor %}</div>
+        <div class="d-flex flex-wrap align-items-center gap-1 small">
+            <span class="text-muted">Desde</span><input type="date" name="valid_from" value="{{ vac_today|date:'Y-m-d' }}" class="form-control form-control-sm" style="width: 10rem;" required>
+            <button type="submit" class="btn btn-sm btn-primary">Asignar</button>
+        </div>
+        <p class="small text-muted mb-0">Decide qué regla de vacaciones le toca.</p>
+    </form>
+    <div class="mb-3">
+        <div class="small fw-semibold mb-1"><i class="bi bi-upload me-1"></i>Importar saldos de partida</div>
+        <div class="small mb-1">Plantilla: {% for y in vac_years %}<a href="{% url 'new_ui:vacation_import_template' %}?year={{ y }}" class="me-2">{{ y }}</a>{% endfor %}</div>
+        <form data-nui-action-form action="{% url 'new_ui:vacation_import_upload' %}" enctype="multipart/form-data" data-nui-reset-after class="d-flex flex-wrap align-items-center gap-1 small">
+            {% csrf_token %}
+            <input type="file" name="file" accept=".xlsx" class="form-control form-control-sm" style="max-width: 18rem;" required>
+            <button type="submit" class="btn btn-sm btn-outline-primary">Cargar la plantilla rellenada</button>
+        </form>
+    </div>
+    <details>
+        <summary class="small fw-semibold"><i class="bi bi-gear me-1"></i>Reglas por sección y tipos de ausencia</summary>
+        <div class="mt-1" data-nui-vacset data-url="{% url 'new_ui:vacation_setup_block' %}"><p class="small text-muted mb-0">Cargando…</p></div>
+    </details>
+</div>

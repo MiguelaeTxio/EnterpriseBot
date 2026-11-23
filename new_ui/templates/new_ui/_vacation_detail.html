@@ -1,0 +1,106 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_vacation_detail.html -- S163: Personal › Desglose de vacaciones de la persona abierta (copia de panel/templates/panel/vacation_balance/_detail.html): cifras, avisos, tramos, periodos, ausencias, ajustes, días libres e historial de secciones, con sus acciones. Vista: new_ui/views_vacations.py. #}
+<div class="nui-ficha p-2 small">
+    <div data-nui-pane-result></div>
+    <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
+        <span class="fw-semibold me-2">{{ person_label }} <span class="text-muted fw-normal">{{ person.dni }}</span></span>
+        {% for y in years %}<button type="button" class="btn btn-sm py-0 {% if y == year %}btn-primary{% else %}btn-outline-primary{% endif %}" data-nui-card-param="vac_year" data-value="{{ y }}">{{ y }}</button>{% endfor %}
+    </div>
+    <div class="row g-3">
+        <div class="col-12 col-xl-5">
+            <table class="table table-sm mb-2"><tbody>
+                <tr><td>Corresponden en {{ year }}</td><td class="text-end">{{ balance.entitled|floatformat:"-1" }}</td></tr>
+                <tr><td>Ajustes manuales</td><td class="text-end">{{ balance.manual|floatformat:"-1" }}</td></tr>
+                {% if balance.free_days %}<tr><td>Días libres por horas acumuladas</td><td class="text-end">{{ balance.free_days|floatformat:"-1" }}</td></tr>{% endif %}
+                <tr><td>Del año anterior{% if balance.carryover_from_import %} <span class="text-muted">(importado)</span>{% endif %}{% if balance.carryover_deadline %}<div class="text-muted">Plazo para gastarlos: {{ balance.carryover_deadline|date:"d/m/Y" }}</div>{% endif %}</td><td class="text-end">{{ balance.carryover|floatformat:"-1" }}</td></tr>
+                {% if balance.carryover_lost %}<tr class="text-danger"><td>Perdidos por plazo vencido</td><td class="text-end">-{{ balance.carryover_lost|floatformat:"-1" }}</td></tr>{% endif %}
+                <tr><td>Consumidos<div class="text-muted">Periodos {{ balance.taken_periods|floatformat:"-1" }}{% if balance.taken_opening %} · saldo de partida {{ balance.taken_opening|floatformat:"-1" }}{% endif %}{% if balance.taken_from_carryover %} · {{ balance.taken_from_carryover|floatformat:"-1" }} del año anterior{% endif %}</div></td><td class="text-end">-{{ balance.taken|floatformat:"-1" }}</td></tr>
+                <tr class="fw-bold{% if balance.is_negative %} text-danger{% endif %}"><td>Pendientes</td><td class="text-end">{{ balance.pending|floatformat:"-1" }}</td></tr>
+            </tbody></table>
+            {% for warning in balance.warnings %}<div class="text-warning-emphasis"><i class="bi bi-info-circle me-1"></i>{{ warning }}</div>{% endfor %}
+            <div class="fw-semibold mt-2">Tramos del año</div>
+            {% if balance.segments %}
+            <table class="table table-sm mb-2"><thead><tr><th>Desde</th><th>Hasta</th><th>Sección · regla</th><th class="text-end">Días</th></tr></thead><tbody>
+                {% for segment in balance.segments %}<tr><td>{{ segment.date_from|date:"d/m" }}</td><td>{{ segment.date_to|date:"d/m" }}</td><td>{{ segment.section_name }} · {% if segment.rule %}{{ segment.rule.days_per_year|floatformat:"-1" }} {{ segment.rule.get_day_kind_display|lower }}/año{% else %}<span class="text-danger">sin regla</span>{% endif %}</td><td class="text-end">{{ segment.entitled|floatformat:"-2" }}</td></tr>{% endfor %}
+            </tbody></table>
+            {% else %}<div class="text-muted mb-2">No estuvo de alta ningún día de {{ year }}.</div>{% endif %}
+            <div class="fw-semibold">Historial de secciones</div>
+            {% for a in assignments %}
+            <form data-nui-pane-form action="{% url 'new_ui:vacation_detail_action' person.pk %}" class="d-flex align-items-center gap-2 border-bottom py-1" data-nui-confirm="¿Borrar la asignación a {{ a.section.name }} desde {{ a.valid_from|date:'d/m/Y' }}?">
+                {% csrf_token %}<input type="hidden" name="what" value="assignment_remove"><input type="hidden" name="assignment" value="{{ a.pk }}"><input type="hidden" name="year" value="{{ year }}">
+                <div class="flex-grow-1">{{ a.section.name }} <span class="text-muted">desde {{ a.valid_from|date:"d/m/Y" }}</span></div>
+                <button type="submit" class="btn btn-sm btn-link text-danger py-0" title="Borrar asignación"><i class="bi bi-trash"></i></button>
+            </form>
+            {% empty %}<div class="text-muted">Sin sección asignada: se le aplica la regla general de la empresa. Se asigna en Saldo de vacaciones › Acciones.</div>{% endfor %}
+        </div>
+        <div class="col-12 col-xl-7">
+            <div class="fw-semibold">Periodos de vacaciones</div>
+            {% for use in balance.period_uses %}
+            <div class="d-flex flex-wrap align-items-center gap-1 border-bottom py-1">
+                <form data-nui-pane-form action="{% url 'new_ui:vacation_detail_action' person.pk %}" class="d-flex flex-wrap align-items-center gap-1">
+                    {% csrf_token %}<input type="hidden" name="what" value="period_edit"><input type="hidden" name="period" value="{{ use.period.pk }}"><input type="hidden" name="year" value="{{ year }}">
+                    <input type="date" name="date_start" value="{{ use.period.date_start|date:'Y-m-d' }}" class="form-control form-control-sm" style="width: 10rem;" aria-label="Del">
+                    <input type="date" name="date_end" value="{{ use.period.date_end|date:'Y-m-d' }}" class="form-control form-control-sm" style="width: 10rem;" aria-label="Al">
+                    <span>gasta {{ use.days|floatformat:"-1" }}{% if use.medical_days %} <span class="text-muted">({{ use.medical_days|floatformat:"-1" }} de baja, no se gastan)</span>{% endif %}</span>
+                    <button type="submit" class="btn btn-sm btn-outline-primary py-0" title="Guardar las fechas"><i class="bi bi-check-lg"></i></button>
+                </form>
+                <form data-nui-pane-form action="{% url 'new_ui:vacation_detail_action' person.pk %}" data-nui-confirm="¿Borrar las vacaciones del {{ use.period.date_start|date:'d/m/Y' }} al {{ use.period.date_end|date:'d/m/Y' }}?">
+                    {% csrf_token %}<input type="hidden" name="what" value="period_remove"><input type="hidden" name="period" value="{{ use.period.pk }}"><input type="hidden" name="year" value="{{ year }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Borrar periodo"><i class="bi bi-trash"></i></button>
+                </form>
+            </div>
+            {% empty %}<div class="text-muted mb-2">Ninguno en {{ year }}. Se registran en Saldo de vacaciones › Acciones (a los marcados).</div>{% endfor %}
+
+            <div class="fw-semibold mt-2">Ausencias de {{ year }}</div>
+            {% for absence in absences %}
+            <form data-nui-pane-form action="{% url 'new_ui:vacation_detail_action' person.pk %}" class="d-flex align-items-start gap-2 border-bottom py-1" data-nui-confirm="¿Borrar la ausencia ({{ absence.category.label }}, {{ absence.date_start|date:'d/m/Y' }} a {{ absence.date_end|date:'d/m/Y' }})?">
+                {% csrf_token %}<input type="hidden" name="what" value="absence_remove"><input type="hidden" name="absence" value="{{ absence.pk }}"><input type="hidden" name="year" value="{{ year }}">
+                <div class="flex-grow-1"><span class="fw-semibold">{{ absence.category.label }}</span> · {{ absence.date_start|date:"d/m/Y" }}{% if absence.date_end != absence.date_start %} a {{ absence.date_end|date:"d/m/Y" }}{% endif %}{% if absence.time_from %} ({{ absence.time_from|time:"H:i" }}–{{ absence.time_to|time:"H:i" }}){% endif %}{% if absence.note %}<div class="text-muted">{{ absence.note }}</div>{% endif %}<div class="text-muted">Registrada {{ absence.created_at|date:"d/m/Y H:i" }}{% if absence.created_by %} · {{ absence.created_by.user.get_full_name|default:absence.created_by.user.username }}{% endif %}</div></div>
+                <button type="submit" class="btn btn-sm btn-link text-danger py-0" title="Borrar ausencia"><i class="bi bi-trash"></i></button>
+            </form>
+            {% empty %}<div class="text-muted mb-1">Ninguna en {{ year }}.</div>{% endfor %}
+            <form data-nui-pane-form action="{% url 'new_ui:vacation_detail_action' person.pk %}" class="border rounded p-2 my-2">
+                {% csrf_token %}<input type="hidden" name="what" value="absence_add"><input type="hidden" name="year" value="{{ year }}">
+                <div class="fw-semibold mb-1">Registrar ausencia</div>
+                <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el tipo…" aria-label="Buscar tipo de ausencia" data-nui-filter-list>
+                <div class="border rounded px-2 py-1 mb-1" style="max-height: 7rem; overflow-y: auto;" data-nui-filter-target>
+                    {% for category in absence_categories %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="category_id" value="{{ category.pk }}" required> <span class="form-check-label">{{ category.label }}{% if category.requires_note %} <span class="text-muted">(con nota)</span>{% endif %}</span></label>{% endfor %}
+                </div>
+                <div class="d-flex flex-wrap gap-1 mb-1 align-items-center">
+                    <input type="date" name="date_start" class="form-control form-control-sm" style="width: 10rem;" required aria-label="Desde">
+                    <input type="date" name="date_end" class="form-control form-control-sm" style="width: 10rem;" required aria-label="Hasta">
+                    <span class="text-muted">Horas (opcional)</span>
+                    <input type="time" name="time_from" class="form-control form-control-sm" style="width: 7rem;" aria-label="Sale a las">
+                    <input type="time" name="time_to" class="form-control form-control-sm" style="width: 7rem;" aria-label="Vuelve a las">
+                </div>
+                <input name="note" class="form-control form-control-sm mb-1" placeholder="Nota (obligatoria si el tipo lo indica)">
+                <button type="submit" class="btn btn-sm btn-primary">Registrar ausencia</button>
+            </form>
+
+            <div class="fw-semibold">Ajustes de {{ year }}</div>
+            {% for adjustment in balance.adjustments %}
+            <form data-nui-pane-form action="{% url 'new_ui:vacation_detail_action' person.pk %}" class="d-flex align-items-start gap-2 border-bottom py-1" data-nui-confirm="¿Borrar este ajuste ({{ adjustment.days|floatformat:'-1' }} días, {{ adjustment.get_kind_display|lower }})?">
+                {% csrf_token %}<input type="hidden" name="what" value="adjust_remove"><input type="hidden" name="adjustment" value="{{ adjustment.pk }}"><input type="hidden" name="year" value="{{ year }}">
+                <div class="flex-grow-1"><span class="fw-semibold">{{ adjustment.days|floatformat:"-1" }}</span> · {{ adjustment.get_kind_display }}{% if adjustment.reason %}<div class="text-muted">{{ adjustment.reason }}</div>{% endif %}<div class="text-muted">{{ adjustment.created_at|date:"d/m/Y H:i" }}{% if adjustment.created_by %} · {{ adjustment.created_by.user.get_full_name|default:adjustment.created_by.user.username }}{% endif %}</div></div>
+                <button type="submit" class="btn btn-sm btn-link text-danger py-0" title="Borrar ajuste"><i class="bi bi-trash"></i></button>
+            </form>
+            {% empty %}<div class="text-muted mb-1">Ninguno.</div>{% endfor %}
+            <form data-nui-pane-form action="{% url 'new_ui:vacation_detail_action' person.pk %}" class="border rounded p-2 my-2 d-flex flex-wrap align-items-center gap-1">
+                {% csrf_token %}<input type="hidden" name="what" value="adjust_add"><input type="hidden" name="year" value="{{ year }}">
+                <span class="fw-semibold">Ajuste manual en {{ year }}</span>
+                <input name="days" class="form-control form-control-sm" style="width: 5rem;" placeholder="Días" required title="Positivo suma días, negativo los resta (p. ej. -1).">
+                <input name="reason" class="form-control form-control-sm" style="max-width: 18rem;" placeholder="Motivo (obligatorio)" required>
+                <button type="submit" class="btn btn-sm btn-primary">Registrar ajuste</button>
+            </form>
+            {% if bag_label %}
+            <form data-nui-pane-form action="{% url 'new_ui:vacation_detail_action' person.pk %}" class="border rounded p-2 mb-2 d-flex flex-wrap align-items-center gap-1" data-nui-free-days>
+                {% csrf_token %}<input type="hidden" name="what" value="free_days"><input type="hidden" name="year" value="{{ year }}">
+                <span class="fw-semibold">Días libres por horas acumuladas</span> <span class="text-muted">(tiene {{ bag_label }} h)</span>
+                <input name="days" class="form-control form-control-sm" style="width: 5rem;" placeholder="Días" required title="Días libres que se suman al saldo de {{ year }}.">
+                <input name="hours" class="form-control form-control-sm" style="width: 6rem;" placeholder="Horas" required title="Horas que se restan de la bolsa (8:00 por día si no se cambia).">
+                <input name="reason" class="form-control form-control-sm" style="max-width: 16rem;" placeholder="Motivo (obligatorio)" required>
+                <button type="submit" class="btn btn-sm btn-primary">Dar días libres</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>

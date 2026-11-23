@@ -42,6 +42,7 @@ from new_ui.views_access import access_context
 from new_ui.views_medical import medical_context
 from new_ui.views_epis import epis_context
 from new_ui.views_accessories import accessories_context
+from new_ui.views_vacations import vacations_context
 from new_ui.views_logbook import logbook_context
 from new_ui.views_machines import machines_context
 from new_ui.mixins import SuperuserRequiredMixin
@@ -311,6 +312,7 @@ def _section_context(company_user, section):
         **machines_context(section, company_user.company),
         **(logbook_context() if section == "cdg" else {}),
         **accessories_context(section),
+        **vacations_context(section, company_user.company),
         "selections": selections,
         # S163: plantillas de columnas de cada vista (como las plantillas
         # de exportación antiguas de Personal).
@@ -640,6 +642,11 @@ class NewUiListView(SuperuserRequiredMixin, View):
             from new_ui.views_onboarding import render_report
 
             return render_report(request)
+        if (section, tab) == ("per", "saldo_vacaciones") and _check_view(
+                request, section, tab):
+            from new_ui.views_vacations import render_balance
+
+            return render_balance(request)
         definition = list_def(section, tab)
         if definition is None or not _check_view(request, section, tab):
             return HttpResponseBadRequest("Listado no disponible.")
@@ -1100,6 +1107,14 @@ class NewUiCardView(SuperuserRequiredMixin, View):
                 return HttpResponseBadRequest("No existe.")
             return render(request, "new_ui/_qr.html",
                           _machine_qr_context(request, machine))
+        if section == "per" and tab == "desglose_vacaciones":
+            from new_ui.views_vacations import render_detail
+
+            person = PersonIdentity.objects.filter(pk=int(pk)).select_related(
+                "company_user__base", "company_user__company").first()
+            if person is None:
+                return HttpResponseBadRequest("No existe.")
+            return render_detail(request, person)
         if section == "per" and tab == "jornadas":
             from new_ui.views_clock import render_jornadas
 

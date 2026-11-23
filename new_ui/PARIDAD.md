@@ -76,8 +76,8 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
   le toca y de dónde le viene
 
 ## Vacaciones y ausencias
-- ⬜ Saldo, detalle, registrar, editar/borrar periodo, ausencia (crear,
-  borrar), asignar sección, ajustes, días libres, reglas, importar
+- ✅ (S163) Personal › Saldo de vacaciones (año y sección como botones, filtros comunes, orden): registrar a los marcados, sección desde una fecha, importar saldos (plantilla y carga), reglas por sección (crear, borrar) y tipos de ausencia (crear, modificar, activar/desactivar)
+- ✅ (S163) Personal › Desglose de vacaciones (persona abierta, por año): tramos, periodos (cambiar fechas, borrar), ausencias (registrar con horas, borrar), ajustes, días libres por horas acumuladas e historial de secciones (borrar)
 
 ## Pedir documentos y solicitudes
 - ✅ (S163) Pedir documentos (pedir, cancelar; cancelar peticiones marcadas) · ⬜ pedir al trabajador desde avisos

@@ -13,7 +13,7 @@ from django.urls import path
 
 from new_ui import (
     clock_export, screen_templates, views_clock_settings,
-    views_onboarding, views_accessories, views_albaranes, views_clock,
+    views_onboarding, views_vacations, views_accessories, views_albaranes, views_clock,
     views_crews,
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
@@ -49,6 +49,23 @@ urlpatterns = [
          name="reading_add"),
     path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
          name="service_rows_delete"),
+    # Vacaciones y ausencias (S163).
+    path("vacaciones/registrar/",
+         views_vacations.VacationRegisterView.as_view(),
+         name="vacation_register"),
+    path("vacaciones/seccion/", views_vacations.SectionAssignView.as_view(),
+         name="vacation_section_assign"),
+    path("persona/<int:pk>/vacaciones/",
+         views_vacations.VacationDetailActionView.as_view(),
+         name="vacation_detail_action"),
+    path("vacaciones/ajustes/", views_vacations.VacationSetupBlockView
+         .as_view(), name="vacation_setup_block"),
+    path("vacaciones/ajustes/guardar/", views_vacations.VacationSetupSaveView
+         .as_view(), name="vacation_setup_save"),
+    path("vacaciones/plantilla/", views_vacations.VacationImportTemplateView
+         .as_view(), name="vacation_import_template"),
+    path("vacaciones/importar/", views_vacations.VacationImportUploadView
+         .as_view(), name="vacation_import_upload"),
     # Ajustes de fichaje de la empresa y visado en masa (S163).
     path("fichajes/ajustes/", views_clock_settings.ClockSettingsBlockView
          .as_view(), name="clock_settings_block"),

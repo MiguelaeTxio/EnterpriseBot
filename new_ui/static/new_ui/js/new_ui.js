@@ -379,6 +379,26 @@
             });
         }
         loadClockSettings();
+        // Reglas por sección y tipos de ausencia (Saldo de vacaciones).
+        function loadVacationSetup() {
+            document.querySelectorAll("[data-nui-vacset]").forEach(function (box) {
+                fetch(box.dataset.url, {credentials: "same-origin"})
+                    .then(r => r.ok ? r.text() : Promise.reject(r.status))
+                    .then(function (html) { box.innerHTML = html; })
+                    .catch(function () { box.innerHTML = '<p class="small text-danger mb-0">No se ha podido cargar.</p>'; });
+            });
+        }
+        loadVacationSetup();
+        // Días libres por horas: 8:00 por día mientras no se toquen las horas.
+        document.addEventListener("input", function (ev) {
+            const f = ev.target.closest("[data-nui-free-days]");
+            if (!f) return;
+            const hours = f.querySelector('[name="hours"]');
+            if (ev.target === hours) { hours.dataset.touched = "1"; return; }
+            if (ev.target.name !== "days" || hours.dataset.touched) return;
+            const n = parseInt(ev.target.value, 10);
+            if (n > 0) hours.value = (n * 8) + ":00";
+        });
         document.addEventListener("change", function (ev) {
             const radio = ev.target.closest("[data-nui-tpl-radio]");
             if (!radio) return;
@@ -453,6 +473,7 @@
                     if (data.scope && (section === "per" || section === "cdg")) setScope(data.scope);
                     if (f.hasAttribute("data-nui-tpl-reload")) loadScreenTpl();
                     if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
+                    if (f.hasAttribute("data-nui-vacset-reload")) loadVacationSetup();
                     // Formularios de un solo uso (subir): vuelven a empezar.
                     if (f.hasAttribute("data-nui-reset-after")) {
                         f.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
@@ -1040,7 +1061,17 @@
             const sort = ev.target.closest("[data-nui-sort]");
             if (sort) { ev.preventDefault(); sorts[tab()] = sort.dataset.nuiSort; load(); return; }
             const pick = ev.target.closest("[data-nui-scope]");
-            if (pick) { ev.preventDefault(); setScope({pk: pick.dataset.nuiScope, label: pick.dataset.nuiScopeLabel}); }
+            if (pick) {
+                ev.preventDefault();
+                // Con data-nui-scope-tab se abre esa pestaña de la persona
+                // (con data-nui-scope-extra: sus parámetros, p. ej. el año).
+                if (pick.dataset.nuiScopeTab) {
+                    let extra = {};
+                    try { extra = JSON.parse(pick.dataset.nuiScopeExtra || "{}"); } catch (e) { extra = {}; }
+                    cardView = {pk: pick.dataset.nuiScope, tab: pick.dataset.nuiScopeTab, extra: extra};
+                }
+                setScope({pk: pick.dataset.nuiScope, label: pick.dataset.nuiScopeLabel}, pick.dataset.nuiScopeTab);
+            }
         });
         const clear = document.getElementById("nui-sel-clear");
         if (clear) clear.addEventListener("click", function () { sel().clear(); persistSelection(); syncChecks(); });
@@ -1373,9 +1404,17 @@
         lists.addEventListener("click", function (ev) {
             const view = ev.target.closest("[data-nui-card-view]");
             const day = ev.target.closest("[data-nui-card-day]");
-            if (!view && !day) return;
+            const param = ev.target.closest("[data-nui-card-param]");
+            if (!view && !day && !param) return;
             ev.preventDefault();
-            cardView = {pk: scope && scope.pk, tab: tab(), extra: view ? {vista: view.dataset.nuiCardView} : {vista: "jornadas", dia: day.dataset.nuiCardDay}};
+            if (param) {
+                const same = cardView.pk === (scope && scope.pk) && cardView.tab === tab();
+                const extra = Object.assign({}, same ? cardView.extra : {});
+                extra[param.dataset.nuiCardParam] = param.dataset.value;
+                cardView = {pk: scope && scope.pk, tab: tab(), extra: extra};
+            } else {
+                cardView = {pk: scope && scope.pk, tab: tab(), extra: view ? {vista: view.dataset.nuiCardView} : {vista: "jornadas", dia: day.dataset.nuiCardDay}};
+            }
             loadCard();
         });
         function loadCard() {
