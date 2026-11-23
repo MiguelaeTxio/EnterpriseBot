@@ -158,6 +158,18 @@ configurables, cada supervisor las suyas.
   sin parte. En su ficha: el listado de sus partes y, en cada uno, el
   documento del parte (ver, sin editar). Lo mismo en Centros de gasto:
   los partes de cada máquina.
+- EPIs (23/11). Lista, con los marcados: entregar EPIs (uno a uno o un
+  lote, con fecha y documento de entrega). Columnas: última entrega, EPIs
+  entregados, pendientes de revisión periódica. En su ficha: sus entregas
+  (qué, cuándo, para qué centro de gasto si es el caso; documento e
+  historial) y entregar solo a él. Catálogo, lotes y fichas, en Empresa.
+  Ampliación: los EPIs incluyen botiquines y **extintores** (nuevo). Los
+  botiquines y extintores suelen ir para un centro de gasto (una
+  dependencia o una máquina) y se entregan a una persona concreta
+  (p. ej. «a Antonio el guarda, este botiquín para estas dependencias»):
+  la entrega dice a quién y para qué centro de gasto. Los extintores
+  llevan fecha de caducidad, que hay que tener marcada (pendiente de
+  concretar con Miguel Ángel).
 - Repostajes (23/11). Lista, con los marcados: preguntar por WhatsApp
   al chófer por un repostaje dudoso (plantilla). Columnas: repostajes en
   el periodo, litros. En su ficha: sus repostajes con vehículo y
