@@ -5,7 +5,7 @@ S163. Acceso al panel, reenviar el alta, base y empresa de los seleccionados
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="general">
     <div class="mt-3" id="nui-access" data-preview-url="{% url 'new_ui:access_preview' %}" data-create-url="{% url 'new_ui:access_create' %}">
-        <div class="small fw-semibold mb-1"><i class="bi bi-key me-1"></i>Acceso al panel (fichaje)</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-key me-1"></i>Darles acceso para fichar (usuario y contraseña)</div>
         <div class="d-flex flex-wrap gap-1 mb-1">
             <button type="button" class="btn btn-sm btn-outline-primary" data-nui-access-preview>Preparar el acceso de los seleccionados</button>
             <button type="button" class="btn btn-sm btn-success d-none" data-nui-access-create>Crear los usuarios</button>
@@ -20,7 +20,7 @@ S163. Acceso al panel, reenviar el alta, base y empresa de los seleccionados
     </div>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:mass_base' %}" class="mt-3">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-geo-alt me-1"></i>Base (de su usuario del panel)</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-geo-alt me-1"></i>Cambiar su base de trabajo</div>
         <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Base">
             {% for b in nui_bases %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="base_id" value="{{ b.pk }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ b.name }}</span></label>{% endfor %}
             <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="base_id" value=""> <span class="form-check-label">Sin base</span></label>
@@ -29,11 +29,11 @@ S163. Acceso al panel, reenviar el alta, base y empresa de los seleccionados
     </form>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:mass_employer' %}" class="mt-3">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-building me-1"></i>Empresa</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-building me-1"></i>Cambiar de empresa</div>
         <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Empresa">
             {% for slug, label in nui_employers %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="employer" value="{{ slug }}" required> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
         </div>
         <button type="submit" class="btn btn-sm btn-primary" data-nui-confirm="¿Cambiar la empresa de los seleccionados? Si están activos, su documentación pasa a la carpeta de esa empresa.">Poner empresa</button>
-        <span class="small text-muted ms-1">La sección desde una fecha está en la vista Horarios.</span>
+        <span class="small text-muted ms-1">La sección desde una fecha está en la pestaña Horarios.</span>
     </form>
 </div>

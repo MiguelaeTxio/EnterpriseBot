@@ -457,20 +457,23 @@
                 const entity = document.getElementById("nui-entity-actions");
                 if (entity) entity.classList.toggle("d-none", !scoped);
                 let who = "";
-                if (hasRow && mark) who = mark.dataset.label || "";
+                if (mark && (hasRow || !scoped)) who = mark.dataset.label || "";
                 else if (scoped) who = scope.label || "";
                 else if (forced) who = forced;
                 const title = s2.querySelector("[data-nui-sec-title]");
                 const hint = s2.querySelector("[data-nui-sec-hint]");
                 if (who) {
                     title.textContent = "Con " + who;
-                    hint.textContent = "";
+                    // Marcado uno solo sin abrirlo: lo suyo sale al abrirlo.
+                    const closed = mark && !hasRow && !scoped && !forced;
+                    hint.textContent = closed ? "Pulsa su nombre en la lista para ver aquí todo lo suyo (o usa las acciones de «Con 1 … seleccionado»)." : "";
+                    hint.classList.toggle("d-none", !closed);
                 } else {
                     const person = section === "cdg" ? "un centro de gasto" : "un trabajador";
                     title.textContent = section === "cdg" ? "Con un centro de gasto" : "Con un trabajador";
                     hint.textContent = "Pulsa el nombre de " + person + " en la lista (o marca un solo " + noun[0] + ") para ver aquí lo que puedes hacer con él.";
+                    hint.classList.remove("d-none");
                 }
-                hint.classList.toggle("d-none", !!who);
             }
             // 3) Nuevo y ajustes.
             const s3 = sec("new");
