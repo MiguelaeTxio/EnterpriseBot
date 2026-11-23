@@ -18,6 +18,61 @@ documento maestro) y se pone en su sitio:
 
 Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 
+## Diseño acordado (S163, 23/11) — manda sobre lo de abajo
+
+Miguel Ángel, tras ver el panel por apartados: las pestañas de arriba no
+son «otra vista» cada una; son **temas**. Lo que se *crea y configura* para
+toda la empresa va en **Empresa** (antes «Documentos», la clave sigue
+siendo `doc`); lo que se *hace a* trabajadores o máquinas va en
+**Personal** y **Centros de gasto**, como acciones. Ninguna vista que en
+realidad sea una acción (fuera «Horarios», «Alta en el fichaje»...).
+Permisos, aparte.
+
+**Regla del tema (Personal y Centros de gasto).** Filtros y grupos de
+selección, como están, para todo. La lista de abajo es siempre la de
+trabajadores (o máquinas). El tema elegido arriba decide tres cosas:
+1. las columnas de la lista (Fichaje: horario, ficha, recordatorios,
+   tipos de fichaje, alta en el fichaje...);
+2. las acciones del panel, para uno o para los marcados (sin pestañas
+   propias en el panel);
+3. a dónde lleva el **clic izquierdo** en un trabajador: General → su
+   Ficha; Fichaje → su control de fichaje (pestaña *Fichajes*: todos sus
+   fichajes, las correcciones con un filtro; pestaña *Calendario*: por
+   meses, pulsar un día abre la jornada para cambiarla, como en la
+   antigua); Documentación → sus documentos; Vacaciones → su desglose;
+   Bajas → sus bajas; EPIs → sus entregas; Comunicaciones → lo que se le
+   ha pedido y las circulares recibidas. El botón derecho sigue siendo el
+   menú propio de la app.
+
+**Empresa** (cerrada el 23/11; se retocará al usarla):
+1. Documentación: Requisitos de documentación, Avisos, Dosieres.
+2. Circulares: crear y modificar plantillas; enviadas y quién las leyó
+   (el envío, desde Personal).
+3. Firmas.
+4. Seguros.
+5. Fichaje: Tipos de fichaje, Horarios (crear y modificar), Ajustes de
+   fichaje de la empresa.
+6. Vacaciones: reglas por sección y tipos de ausencia.
+7. EPIs: catálogo (lotes y fichas técnicas).
+
+Fuera: Bandeja de entrada (los documentos entran por el agente de H28 y
+desde cada ficha) y Calendario (eran las ausencias, repetidas de
+Personal). Se quedan en la interfaz antigua, sin pasar de momento:
+Usuarios del panel y secciones y Ajustes de la empresa (Administración),
+Plantillas de exportación de partes (Taller), Puestos de trabajo y Obras.
+
+**Personal** (lo ya decidido; el resto de temas, pendiente de repasar
+uno a uno):
+- Fichaje: asignar horario, tipos de fichaje, recordatorios, ficha o no
+  ficha, alta en el fichaje (crear usuario, reenviar), visar días,
+  registro de jornada, albaranes.
+- Comunicaciones (todo lo que va por WhatsApp, un mismo «Enviar por
+  WhatsApp»): pedir documentos y enviar una circular.
+- Nóminas, tema aparte (permiso especial).
+- Documentación: poner o quitar requisitos (varios a la vez) y dosier de
+  los marcados eligiendo qué lleva. Lo mismo en Centros de gasto (pedir
+  documentos no: allí los ponemos nosotros).
+
 ## Comunes a las vistas
 - ✅ Listados con filtros comunes, periodo rápido y fechas, filtros propios,
   columnas, orden múltiple, selección, grupos de selección, exportar.
