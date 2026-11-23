@@ -168,8 +168,13 @@ configurables, cada supervisor las suyas.
   dependencia o una máquina) y se entregan a una persona concreta
   (p. ej. «a Antonio el guarda, este botiquín para estas dependencias»):
   la entrega dice a quién y para qué centro de gasto. Los extintores
-  llevan fecha de caducidad, que hay que tener marcada (pendiente de
-  concretar con Miguel Ángel).
+  llevan tres fechas, todas posibles y ninguna obligada (la práctica
+  dirá cuáles se usan): caducidad, revisión periódica y retimbrado; y su
+  número de serie (importante; algunos van asignados por matrícula). Los
+  botiquines, al menos una fecha de revisión (las empresas de
+  prevención suelen dar uno por sección y año; sin confirmar). Avisos de
+  esas fechas en Empresa › Avisos y en el centro de gasto (antelación
+  por defecto, 30 días).
 - Repostajes (23/11). Lista, con los marcados: preguntar por WhatsApp
   al chófer por un repostaje dudoso (plantilla). Columnas: repostajes en
   el periodo, litros. En su ficha: sus repostajes con vehículo y
