@@ -2786,3 +2786,146 @@ class ClockDayAiCheck(models.Model):
 
     def __str__(self) -> str:
         return "%s %s" % (self.company_user_id, self.day)
+
+
+# ---------------------------------------------------------------------------
+# Horas y pagos (S163, 23/11)
+# ---------------------------------------------------------------------------
+class PaySettings(models.Model):
+    """
+    What is paid of the hours, per company (Empresa › Horas y pagos).
+
+    ---
+
+    Qué se paga de las horas, por empresa (S163, 23/11, Miguel Ángel:
+    "tenemos que dejar que el supervisor pueda configurar todo"). Por
+    cada clase de hora (la jornada, cada tipo de fichaje que no cuenta
+    como jornada y las horas de parte), si no se paga, se pagan todas o
+    solo las que pasan de la jornada del día; el tope mensual de esas
+    horas extra (lo que pasa, a la bolsa) y la jornada de los partes.
+    """
+
+    company = models.OneToOneField(
+        Company, on_delete=models.CASCADE, related_name="pay_settings",
+        verbose_name="Empresa",
+    )
+    # {clave de la clase de hora: "none" | "all" | "over"}.
+    modes = models.JSONField(default=dict, blank=True,
+                             verbose_name="Qué se paga")
+    monthly_cap_minutes = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Tope mensual de horas extra",
+        help_text="Minutos de horas extra al mes que se pagan; lo que "
+                  "pasa va a la bolsa. Vacío = sin tope.",
+    )
+    parte_day_minutes = models.PositiveIntegerField(
+        default=480, verbose_name="Jornada de los partes (minutos)",
+        help_text="Lo que pasa de esto en un día de parte es hora extra.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Ajustes de horas y pagos"
+        verbose_name_plural = "Ajustes de horas y pagos"
+
+    def __str__(self) -> str:
+        return "Horas y pagos de %s" % self.company_id
+
+
+class PayWorker(models.Model):
+    """
+    Where a worker's hours come from and their prices per hour class.
+
+    ---
+
+    De dónde salen las horas de un trabajador (automático: del parte si
+    hace partes ese día, si no del fichaje; o siempre del fichaje; o
+    siempre del parte) y sus precios por clase de hora, normal y en
+    festivo o domingo: {clave: [precio, precio festivo]}.
+    """
+
+    class Source(models.TextChoices):
+        AUTO = "AUTO", "Automático (parte si lo hay, si no fichaje)"
+        CLOCK = "CLOCK", "Fichaje"
+        PARTE = "PARTE", "Parte"
+
+    company_user = models.OneToOneField(
+        CompanyUser, on_delete=models.CASCADE, related_name="pay_worker",
+        verbose_name="Trabajador",
+    )
+    source = models.CharField(max_length=5, choices=Source.choices,
+                              default=Source.AUTO,
+                              verbose_name="De dónde salen sus horas")
+    prices = models.JSONField(default=dict, blank=True,
+                              verbose_name="Precios por clase de hora")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Horas y pagos de un trabajador"
+        verbose_name_plural = "Horas y pagos de los trabajadores"
+
+    def __str__(self) -> str:
+        return "Horas y pagos de %s" % self.company_user_id
+
+
+class PayPeriod(models.Model):
+    """
+    A paid (closed) period of some workers: its lines are frozen.
+
+    ---
+
+    Un periodo liquidado: sus líneas quedan guardadas tal cual y no se
+    vuelven a calcular (Miguel Ángel: "una vez que está liquidado, se
+    quedarían bloqueadas").
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE,
+                                related_name="pay_periods",
+                                verbose_name="Empresa")
+    date_from = models.DateField(verbose_name="Desde")
+    date_to = models.DateField(verbose_name="Hasta")
+    closed_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Liquidado por")
+    closed_at = models.DateTimeField(auto_now_add=True,
+                                     verbose_name="Liquidado el")
+
+    class Meta:
+        verbose_name = "Periodo liquidado"
+        verbose_name_plural = "Periodos liquidados"
+        ordering = ["-date_from", "-pk"]
+
+    def __str__(self) -> str:
+        return "%s a %s" % (self.date_from, self.date_to)
+
+
+class PayLine(models.Model):
+    """One worker's hour class in a paid period (hours, prices, amount)."""
+
+    period = models.ForeignKey(PayPeriod, on_delete=models.CASCADE,
+                               related_name="lines",
+                               verbose_name="Periodo")
+    company_user = models.ForeignKey(
+        CompanyUser, on_delete=models.CASCADE, related_name="pay_lines",
+        verbose_name="Trabajador")
+    key = models.CharField(max_length=60, verbose_name="Clase de hora")
+    label = models.CharField(max_length=120, verbose_name="Nombre")
+    hours = models.DecimalField(max_digits=8, decimal_places=2, default=0,
+                                verbose_name="Horas")
+    holiday_hours = models.DecimalField(max_digits=8, decimal_places=2,
+                                        default=0,
+                                        verbose_name="Horas en festivo")
+    price = models.DecimalField(max_digits=8, decimal_places=2, default=0,
+                                verbose_name="Precio")
+    holiday_price = models.DecimalField(max_digits=8, decimal_places=2,
+                                        default=0,
+                                        verbose_name="Precio festivo")
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                 verbose_name="Importe")
+
+    class Meta:
+        verbose_name = "Línea de liquidación"
+        verbose_name_plural = "Líneas de liquidación"
+        ordering = ["company_user_id", "key"]
+
+    def __str__(self) -> str:
+        return "%s %s %s" % (self.period_id, self.company_user_id, self.key)
