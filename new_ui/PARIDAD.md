@@ -105,9 +105,26 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ (S163) Revisiones: nueva, borrar, estado del plan («Del centro de gasto») · ✅ revisiones que faltan · ⬜ plan en masa, guardar fila
 - ✅ (S163) Lecturas de contador: nueva, borrar (vista Lecturas)
 - ✅ (S163) Libro historial: generar, externo («Del centro de gasto»)
-- ✅ (S163) Taller: partes, averías y libro (vistas Taller, Averías y Libro historial; Excel con Exportar), libros en ZIP (Documentos › Descargar los marcados), revisiones del libro (escaneo, reconstruir, a firma, quitar) y revisiones que faltan («Del centro de gasto» y página aparte)
+- ✅ (S163) Taller: listados de partes, averías y libro (vistas Taller, Averías y Libro historial; Excel con Exportar), libros en ZIP (Documentos › Descargar los marcados), revisiones del libro (escaneo, reconstruir, a firma, quitar) y revisiones que faltan («Del centro de gasto» y página aparte)
+- ⬜ Partes de trabajo del taller: subir el escaneo, modificar el parte y
+  sus líneas (guardar, insertar, ordenar, recuperar, borrar), fotos de
+  tareas, revisión de partes, duplicados, borradores, exportar (también
+  con plantillas y la del administrador), historial, periodos de trabajo
+  (cerrar, bloquear)
+- ⬜ Avisos por máquina (reglas de cada centro de gasto) y analítica de la
+  máquina
 - ✅ (S163) Especificaciones: exportar (Exportar común, como todas las vistas)
 - ✅ (S163) Repostajes: unidad, preguntar (vehículo y, en Personal, chófer), contador; exportar con plantillas (Exportar y Columnas comunes)
 - ✅ (S163) Accesorios de elevación: alta (con certificado), estado (retirar/reactivar), revisión, entrega, devolución y otro certificado
   (uno y en masa), certificado, tipos y modelos
 - ✅ (S163) Equipos: nuevo (máquina abierta + personas), terminar y borrar los marcados; exportar con el Exportar común
+
+## No recogido hasta ahora (repaso S163, 23/11)
+- ⬜ Puestos de trabajo: gestionar, crear, modificar, activar/borrar en
+  masa, categoría por tipo; puesto en masa a los marcados (Personal)
+- ⬜ Obras: lista y borrar
+- ⬜ Usuarios del panel: lista, crear, modificar, borrar en masa, quitar
+  de una sección; secciones (lista, crear, modificar, rol por defecto)
+- ⬜ Ajustes de la empresa
+- ⬜ Plantillas de exportación de partes (lista, crear, modificar, borrar)
+
