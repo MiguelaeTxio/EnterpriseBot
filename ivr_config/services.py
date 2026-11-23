@@ -1086,6 +1086,15 @@ def build_live_config(
         system_instruction_parts.append(
             "\n\nDISPONIBILIDAD ACTUAL DE SECCIONES:\n"
             + schedule_context.strip()
+            # S155 (llamada real del 23/11 a las 07:29: asunto de seguro e
+            # ITV, Documentación cerrada, enrutado a Proveedores porque
+            # estaba abierta).
+            + "\n\nREGLA DE ENRUTAMIENTO: elige la sección SOLO por el "
+            "asunto del llamante, según la tabla de identificadores, "
+            "aunque esté fuera de horario. Nunca elijas otra sección porque "
+            "esté abierta. Si la sección que corresponde está fuera de "
+            "horario, pásale igualmente a ella con route_to_section: allí se "
+            "le informa del horario y se toma nota."
         )
         logger.debug("[CONFIG] Bloque de contexto de horarios de secciones añadido.")
 
