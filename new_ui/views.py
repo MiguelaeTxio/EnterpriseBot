@@ -338,15 +338,24 @@ def _asset_version():
     reciente), para pedirlo como "?v=..." y que el navegador no use una
     copia vieja tras desplegar (S163: se vio servir el JS anterior).
     """
+    import hashlib
     import os
 
-    folder = os.path.join(os.path.dirname(__file__), "static", "new_ui",
-                          "js")
+    # S163 (23/11): por contenido, no por fecha: tras un despliegue la
+    # fecha no cambió y el navegador siguió con el JS anterior.
+    folder = os.path.join(os.path.dirname(__file__), "static", "new_ui")
+    digest = hashlib.md5()
     try:
-        return str(int(max(os.path.getmtime(os.path.join(folder, name))
-                           for name in os.listdir(folder))))
-    except (OSError, ValueError):
+        for sub in ("js", "css"):
+            path = os.path.join(folder, sub)
+            if not os.path.isdir(path):
+                continue
+            for name in sorted(os.listdir(path)):
+                with open(os.path.join(path, name), "rb") as handle:
+                    digest.update(handle.read())
+    except OSError:
         return "1"
+    return digest.hexdigest()[:10]
 
 
 class NewUiView(SuperuserRequiredMixin, View):
