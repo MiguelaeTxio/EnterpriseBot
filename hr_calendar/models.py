@@ -1965,6 +1965,69 @@ class ClockDayReview(models.Model):
         return "%s %s" % (self.company_user_id, self.day)
 
 
+class ClockAttempt(models.Model):
+    """
+    A press the clock-in page did not save, with why (S149).
+
+    ---
+
+    Intento de fichar que la página del fichaje no guardó, con el
+    motivo y lo que tenía en pantalla (H24, S149, Miguel Ángel, 23/11,
+    Antonio Fontalba: "intentó fichar a la hora de salida [...] y no lo
+    dejó"; "que la app avise al servidor cada vez que no deja fichar y
+    por qué"). Lo manda el móvil (si no hay cobertura, al volver).
+    """
+
+    class Reason(models.TextChoices):
+        TOO_SOON = "TOO_SOON", "Menos de 2 minutos desde el anterior"
+        NO_GPS = "NO_GPS", "Sin permiso de ubicación"
+        CANCELLED = "CANCELLED", "Pulsó y dijo «No» en la confirmación"
+        SAVE_ERROR = "SAVE_ERROR", "No se pudo guardar en el móvil"
+        REJECTED = "REJECTED", "El servidor no lo admitió"
+
+    company_user = models.ForeignKey(
+        CompanyUser, on_delete=models.CASCADE,
+        related_name="clock_attempts", verbose_name="Trabajador",
+    )
+    client_id = models.CharField(
+        max_length=64, unique=True, verbose_name="Id del móvil",
+    )
+    attempted_at = models.DateTimeField(verbose_name="Pulsado (móvil)")
+    received_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Recibido",
+    )
+    reason = models.CharField(
+        max_length=12, choices=Reason.choices, verbose_name="Motivo",
+    )
+    kind = models.CharField(
+        max_length=4, blank=True, default="",
+        verbose_name="Lo que iba a fichar",
+    )
+    message = models.CharField(
+        max_length=500, blank=True, default="",
+        verbose_name="Mensaje que vio",
+    )
+    screen = models.CharField(
+        max_length=500, blank=True, default="",
+        verbose_name="Lo que tenía en pantalla",
+    )
+    user_agent = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Navegador",
+    )
+
+    class Meta:
+        verbose_name = "Intento de fichar no guardado"
+        verbose_name_plural = "Intentos de fichar no guardados"
+        indexes = [
+            models.Index(fields=("company_user", "attempted_at"),
+                         name="clockattempt_user_at"),
+        ]
+
+    def __str__(self) -> str:
+        return "%s %s %s" % (self.company_user_id, self.attempted_at,
+                             self.reason)
+
+
 class ClockDayHold(models.Model):
     """
     A worker's day set aside to review later (S149).

@@ -424,6 +424,33 @@ def _group_by_day(rows):
     return groups
 
 
+def _attempts_by_day(person, date_from, date_to):
+    """
+    {day: [ClockAttempt]} of the worker between the dates.
+    ---
+    Intentos de fichar que el móvil no guardó, por día (S149, Antonio
+    Fontalba: "intentó fichar [...] y no lo dejó").
+    """
+    from hr_calendar.models import ClockAttempt
+
+    if person.company_user_id is None:
+        return {}
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(
+        datetime.datetime.combine(date_from, datetime.time.min), tz)
+    end = timezone.make_aware(
+        datetime.datetime.combine(
+            date_to + datetime.timedelta(days=1), datetime.time.min), tz)
+    result = {}
+    for item in ClockAttempt.objects.filter(
+            company_user_id=person.company_user_id,
+            attempted_at__gte=start, attempted_at__lt=end,
+    ).order_by("attempted_at"):
+        result.setdefault(
+            timezone.localtime(item.attempted_at).date(), []).append(item)
+    return result
+
+
 def _context(request, person):
     """
     Context of the list: filtered and sorted rows plus the totals.
@@ -468,8 +495,11 @@ def _context(request, person):
     from panel.views_clock_albaranes import albaranes_by_day, uses_albaranes
 
     albaranes = albaranes_by_day(person, date_from, date_to)
+    attempts = _attempts_by_day(person, date_from, date_to)
     for row in rows:
         row["albaranes"] = albaranes.get(row["day"], [])
+        # S149: intentos de fichar que el móvil no guardó.
+        row["attempts"] = attempts.get(row["day"], [])
     report = data["report"]
     calendar = {}
     if view == VIEW_CALENDAR:

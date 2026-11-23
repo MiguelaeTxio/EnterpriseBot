@@ -653,6 +653,54 @@ def receive(request):
     return JsonResponse(data)
 
 
+@csrf_exempt
+@require_POST
+def attempt(request):
+    """
+    POST (JSON): a press the page did not save, with why. 200 also when
+    it was already stored (the phone retries until it gets a 200).
+    ---
+    POST (JSON): un intento de fichar que la página no guardó, con el
+    motivo (S149, Antonio Fontalba: "no lo dejó"). 200 también si ya
+    estaba guardado: el móvil lo reintenta hasta recibir un 200.
+    """
+    from hr_calendar.models import ClockAttempt
+
+    company_user = trusted_device_user(request)
+    if company_user is None:
+        return _untrusted_response(request)
+    if len(request.body) > MAX_BODY:
+        return JsonResponse({"error": "Petición demasiado grande."},
+                            status=400)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return JsonResponse({"error": "Datos no válidos."}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "Datos no válidos."}, status=400)
+    client_id = str(payload.get("id") or "")[:64]
+    attempted_at = parse_datetime(str(payload.get("attempted_at") or ""))
+    reason = str(payload.get("reason") or "")
+    if (not client_id or attempted_at is None
+            or reason not in ClockAttempt.Reason.values):
+        return JsonResponse({"error": "Datos no válidos."}, status=400)
+    if timezone.is_naive(attempted_at):
+        attempted_at = timezone.make_aware(attempted_at)
+    ClockAttempt.objects.get_or_create(
+        client_id=client_id,
+        defaults={
+            "company_user": company_user,
+            "attempted_at": attempted_at,
+            "reason": reason,
+            "kind": str(payload.get("kind") or "")[:4],
+            "message": str(payload.get("message") or "")[:500],
+            "screen": str(payload.get("screen") or "")[:500],
+            "user_agent": request.META.get("HTTP_USER_AGENT", "")[:255],
+        },
+    )
+    return JsonResponse({"ok": True})
+
+
 @never_cache
 @require_GET
 def status(request):

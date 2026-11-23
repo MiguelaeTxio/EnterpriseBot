@@ -21,6 +21,8 @@ urlpatterns = [
     path("manifest.json", clockin.manifest, name="manifest"),
     path("enviar/", clockin.receive, name="receive"),
     path("estado/", clockin.status, name="status"),
+    # S149: intentos de fichar que el móvil no guardó, y por qué.
+    path("intento/", clockin.attempt, name="attempt"),
     # S143: qué avisos recibe el trabajador (casillas).
     path("avisos/", clockin.reminder_choices_view, name="reminders"),
     # S143: horario propio para los avisos (horario abierto).

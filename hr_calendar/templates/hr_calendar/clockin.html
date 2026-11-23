@@ -280,6 +280,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
     const SYNC_TAG = "fichaje-enviar";
     const SEND_URL = "/fichaje/enviar/";
     const STATUS_URL = "/fichaje/estado/";
+    // S149 (Antonio Fontalba, 20/11: "no lo dejó"): intentos no guardados.
+    const ATTEMPT_URL = "/fichaje/intento/";
     const KEEP_DAYS = 31;
     const LABELS = {IN: "Entrada", OUT: "Salida", CHG: "Cambio de tipo"};
     // S141: con tipo de fichaje, "Entrada · Presencia".
@@ -313,7 +315,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
         net.textContent = navigator.onLine ? "con conexión" : "sin conexión";
         net.className = "net " + (navigator.onLine ? "on" : "off");
     }
-    window.addEventListener("online", function () { updateNet(); refreshStatus(); sendPending("PAGE"); });
+    window.addEventListener("online", function () { updateNet(); refreshStatus(); sendPending("PAGE"); flushAttempts(); });
     window.addEventListener("offline", updateNet);
     updateNet();
 
@@ -717,7 +719,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
     }
     function guardedPress(type) {
         allRecords().then(function (records) {
-            return confirmQuick(records, type && type.id ? type : null).then(function (ok) { if (ok) press(type); });
+            const screen = screenText();
+            return confirmQuick(records, type && type.id ? type : null).then(function (ok) {
+                if (ok) press(type);
+                else reportAttempt("CANCELLED", decideKind(records), document.getElementById("out-confirm-q").textContent, screen);
+            });
         });
     }
     // S141: fichaje por tipos. Con la jornada cerrada, un botón por tipo
@@ -937,7 +943,12 @@ responsable corregirá la salida (clock_report.forgotten_after).
                                 return putRecord(record).then(function () { return false; });
                             }
                             record.error = data.error || ("Error " + response.status);
-                            if (response.status === 400) record.rejected = true;
+                            if (response.status === 400) {
+                                record.rejected = true;
+                                // S149: también queda en el servidor.
+                                reportAttempt("REJECTED", record.kind, record.error,
+                                              "Pulsado a las " + new Date(record.pressed_at).toLocaleTimeString("es-ES"));
+                            }
                             if (response.status === 401) store("fichaje-no-confianza", data);
                             return putRecord(record).then(function () { return response.status === 401; });
                         });
@@ -987,6 +998,49 @@ responsable corregirá la salida (clock_report.forgotten_after).
             }, {enableHighAccuracy: true, timeout: 30000, maximumAge: 0});
         });
     }
+    // S149: cada vez que no se ficha, se avisa al servidor del motivo y
+    // de lo que había en pantalla (sin cobertura, al volver).
+    function screenText() {
+        const parts = [
+            document.getElementById("btn-fichar").classList.contains("hidden") ? "" : "Botón: " + document.getElementById("btn-fichar").textContent,
+            document.getElementById("status").textContent,
+            document.getElementById("last").textContent,
+        ];
+        return parts.filter(function (t) { return t && t.trim(); }).join(" | ").slice(0, 500);
+    }
+    function flushAttempts() {
+        const queue = load("fichaje-intentos") || [];
+        if (!queue.length || !navigator.onLine) return Promise.resolve();
+        return queue.reduce(function (chain, item) {
+            return chain.then(function (kept) {
+                return fetch(ATTEMPT_URL, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(item),
+                }).then(function (response) {
+                    // 400: no vale reintentarlo; otro error, se reintenta.
+                    if (!response.ok && response.status !== 400) kept.push(item);
+                    return kept;
+                }).catch(function () { kept.push(item); return kept; });
+            });
+        }, Promise.resolve([])).then(function (kept) {
+            store("fichaje-intentos", kept.length ? kept : null);
+        });
+    }
+    function reportAttempt(reason, kind, message, screen) {
+        const queue = load("fichaje-intentos") || [];
+        queue.push({
+            id: newId(new Date()),
+            attempted_at: new Date().toISOString(),
+            reason: reason,
+            kind: kind || "",
+            message: (message || "").slice(0, 500),
+            screen: screen != null ? screen : screenText(),
+        });
+        store("fichaje-intentos", queue.slice(-50));
+        flushAttempts();
+    }
     function newId(date) {
         if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
         return date.getTime() + "-" + Math.random().toString(36).slice(2, 12);
@@ -1020,6 +1074,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
         const chosen = type && type.id ? type : null;
         const claimNow = chosen ? null : pendingClaim;
         pendingClaim = null;
+        // S149: lo que había en pantalla al pulsar, por si no se ficha.
+        const screenAtPress = screenText();
         setPressing(true);
         let decided = null;
         setStatus("Fichaje a las " + pressedAt.toLocaleTimeString("es-ES") + ". Buscando la ubicación…", "wait");
@@ -1069,6 +1125,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
             if (record.lat == null && (record.gps_error === "permiso denegado" || record.gps_error === "este navegador no da ubicación")) {
                 showGpsHelp(true);
                 setStatus("No se ha fichado: hace falta la ubicación (GPS). En el recuadro rojo tienes cómo darla.", "err");
+                reportAttempt("NO_GPS", record.kind, record.gps_error, screenAtPress);
                 return;
             }
             showGpsHelp(false);
@@ -1082,9 +1139,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
         }).catch(function (err) {
             if (err && err.tooSoon) {
                 setStatus("No se ha fichado: " + err.message, "err");
+                reportAttempt("TOO_SOON", decided, err.message, screenAtPress);
                 return;
             }
             setStatus("No se ha podido guardar: " + err, "err");
+            reportAttempt("SAVE_ERROR", decided, String(err), screenAtPress);
         }).finally(function () {
             setPressing(false);
             render();
@@ -1093,7 +1152,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
 
     document.getElementById("btn-fichar").addEventListener("click", function () {
         allRecords().then(function (records) {
-            return confirmOut(records).then(function (ok) { if (ok) guardedPress(null); });
+            const screen = screenText();
+            return confirmOut(records).then(function (ok) {
+                if (ok) guardedPress(null);
+                else reportAttempt("CANCELLED", "OUT", document.getElementById("out-confirm-q").textContent, screen);
+            });
         });
     });
     document.getElementById("btn-send").addEventListener("click", function () {
@@ -1119,7 +1182,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
 
     showWho();
     render().then(refreshStatus).then(function () { return sendPending("PAGE"); });
-    setInterval(function () { sendPending("PAGE"); }, 30000);
+    setInterval(function () { sendPending("PAGE"); flushAttempts(); }, 30000);
+    flushAttempts();
 }());
 </script>
 </body>
