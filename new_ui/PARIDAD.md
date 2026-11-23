@@ -73,6 +73,24 @@ uno a uno):
   los marcados eligiendo qué lleva. Lo mismo en Centros de gasto (pedir
   documentos no: allí los ponemos nosotros).
 
+Hilera de Personal acordada (23/11): General · Documentación ·
+Comunicaciones · Fichaje · Vacaciones · Bajas y ausencias · Partes y
+repostajes · Nóminas · EPIs · Horas y pagos. Cada tema, pendiente de
+repasar uno a uno.
+
+**Horas y pagos** (función nueva, 23/11; hoy solo existe para los partes
+digitales de Taller y Taller Huelva, en un Excel con el precio a mano):
+- Horas extra. Lo que se paga lo decide el supervisor: qué tipos de hora
+  (trabajo efectivo, presencia, desplazamiento y cualquier otro tipo).
+- Precio por trabajador y por tipo de hora; festivo y domingo, con el
+  precio que indique el supervisor.
+- Horas de los partes digitales para quien los hace y de los fichajes
+  para todos los demás.
+- Lista: totales por trabajador del periodo a liquidar; clic → su cómputo
+  del periodo (día a día, de dónde sale cada hora, total a pagar).
+- La bolsa de horas se gestiona aquí.
+- Un periodo liquidado queda bloqueado.
+
 ## Comunes a las vistas
 - ✅ Listados con filtros comunes, periodo rápido y fechas, filtros propios,
   columnas, orden múltiple, selección, grupos de selección, exportar.
