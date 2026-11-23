@@ -107,6 +107,17 @@ configurables, cada supervisor las suyas.
   supervisor desde su móvil).
 - General (lista, con los marcados): baja o reactivar, empresa, base,
   volver a sacar la foto; nuevo: alta de un trabajador.
+- Fichaje (23/11). Lista, con los marcados: asignar horario, tipos de
+  fichaje, recordatorios, ficha o no ficha, alta en el fichaje (usuario
+  y contraseña o reenviar el alta), visar días con incidencias, registro
+  de jornada en Excel (con plantillas de columnas) y cargar albaranes de
+  varios. Columnas para elegir: horario, ficha, recordatorios, tipos,
+  usuario, alta enviada, último fichaje, días sin visar. En su ficha:
+  Fichajes (lista con periodo y filtro «solo corregidos»; corregir,
+  anular, revisar, con motivos) y Calendario (el mes; un día abre la
+  jornada: comida, insertar, km, números de albarán), más lo mismo que
+  en la lista solo para él (registro con membrete, sus albaranes). La
+  bolsa de horas pasa a Horas y pagos.
 
 ## Comunes a las vistas
 - ✅ Listados con filtros comunes, periodo rápido y fechas, filtros propios,
