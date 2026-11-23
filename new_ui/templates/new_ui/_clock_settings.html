@@ -1,0 +1,30 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_clock_settings.html -- S163: ajustes de fichaje de la empresa (recordatorios, tope de horas extra, secciones). Se pide aparte y se repinta tras cada cambio. Vista: new_ui/views_clock_settings.py. #}
+<div class="small">
+    <form data-nui-action-form data-nui-no-refresh data-nui-clockset-reload action="{% url 'new_ui:clock_settings_save' %}" class="d-flex flex-wrap align-items-center gap-1 mb-1">
+        {% csrf_token %}<input type="hidden" name="what" value="reminders">
+        <span>Recordatorios de fichaje de la empresa: <strong class="{% if reminders_on %}text-success{% else %}text-danger{% endif %}">{{ reminders_on|yesno:"activados,desactivados" }}</strong></span>
+        {% if reminders_on %}<button type="submit" name="enabled" value="0" class="btn btn-sm btn-outline-danger py-0" data-nui-confirm="¿Desactivar el envío de recordatorios de toda la empresa?">Desactivar</button>{% else %}<button type="submit" name="enabled" value="1" class="btn btn-sm btn-outline-success py-0">Activar</button>{% endif %}
+    </form>
+    <form data-nui-action-form data-nui-no-refresh data-nui-clockset-reload action="{% url 'new_ui:clock_settings_save' %}" class="d-flex flex-wrap align-items-center gap-1 mb-2">
+        {% csrf_token %}<input type="hidden" name="what" value="cap">
+        <span>Tope de horas extra al mes</span>
+        <input name="hours" value="{{ overtime_cap }}" class="form-control form-control-sm" style="width: 5rem;" aria-label="Tope de horas extra al mes">
+        <button type="submit" class="btn btn-sm btn-outline-primary py-0">Guardar</button>
+        <span class="text-muted">lo que pasa va a horas acumuladas; 0, sin tope</span>
+    </form>
+    {% if section_settings %}
+    <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Sección</th><th>Ficha con la plataforma</th><th>Cómo ficha</th><th>«No he parado para comer»</th></tr></thead>
+        <tbody>
+        {% for item in section_settings %}
+        <tr>
+            <td>{{ item.section.name }}</td>
+            <td><form data-nui-action-form data-nui-no-refresh data-nui-clockset-reload action="{% url 'new_ui:clock_settings_save' %}">{% csrf_token %}<input type="hidden" name="what" value="section"><input type="hidden" name="section_id" value="{{ item.section.pk }}"><div class="btn-group btn-group-sm"><button type="submit" name="clocks" value="1" class="btn py-0 {% if item.clocks %}btn-success{% else %}btn-outline-secondary{% endif %}">Ficha</button><button type="submit" name="clocks" value="0" class="btn py-0 {% if not item.clocks %}btn-secondary{% else %}btn-outline-secondary{% endif %}">No ficha</button></div></form></td>
+            <td><form data-nui-action-form data-nui-no-refresh data-nui-clockset-reload action="{% url 'new_ui:clock_settings_save' %}">{% csrf_token %}<input type="hidden" name="what" value="section"><input type="hidden" name="section_id" value="{{ item.section.pk }}"><div class="btn-group btn-group-sm"><button type="submit" name="uses_types" value="1" class="btn py-0 {% if item.uses_types %}btn-primary{% else %}btn-outline-secondary{% endif %}">Por tipos</button><button type="submit" name="uses_types" value="0" class="btn py-0 {% if not item.uses_types %}btn-primary{% else %}btn-outline-secondary{% endif %}">Botón único</button></div></form></td>
+            <td><form data-nui-action-form data-nui-no-refresh data-nui-clockset-reload action="{% url 'new_ui:clock_settings_save' %}">{% csrf_token %}<input type="hidden" name="what" value="section"><input type="hidden" name="section_id" value="{{ item.section.pk }}"><div class="btn-group btn-group-sm"><button type="submit" name="meal_check" value="1" class="btn py-0 {% if item.meal_check %}btn-primary{% else %}btn-outline-secondary{% endif %}">La ve</button><button type="submit" name="meal_check" value="0" class="btn py-0 {% if not item.meal_check %}btn-primary{% else %}btn-outline-secondary{% endif %}">No la ve</button></div></form></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>

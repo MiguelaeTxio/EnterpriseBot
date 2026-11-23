@@ -369,6 +369,16 @@
             });
         }
         loadScreenTpl();
+        // Ajustes de fichaje de la empresa: se piden aparte y se repintan.
+        function loadClockSettings() {
+            document.querySelectorAll("[data-nui-clockset]").forEach(function (box) {
+                fetch(box.dataset.url, {credentials: "same-origin"})
+                    .then(r => r.ok ? r.text() : Promise.reject(r.status))
+                    .then(function (html) { box.innerHTML = html; })
+                    .catch(function () { box.innerHTML = '<p class="small text-danger mb-0">No se ha podido cargar.</p>'; });
+            });
+        }
+        loadClockSettings();
         document.addEventListener("change", function (ev) {
             const radio = ev.target.closest("[data-nui-tpl-radio]");
             if (!radio) return;
@@ -409,6 +419,7 @@
                 const ids = Array.from(sel().keys());
                 if (!ids.length) { result("Marca primero en el listado las filas a las que aplicarlo.", true); return; }
                 ids.forEach(id => body.append("selected", id));
+                if (f.hasAttribute("data-nui-with-tab")) body.append("tab", tab());
             }
             const url = (submitter && submitter.getAttribute("formaction")) || f.getAttribute("action");
             if (f.hasAttribute("data-nui-docuten")) {
@@ -441,6 +452,7 @@
                     // Alta: la vista se queda con la persona nueva.
                     if (data.scope && (section === "per" || section === "cdg")) setScope(data.scope);
                     if (f.hasAttribute("data-nui-tpl-reload")) loadScreenTpl();
+                    if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
                     // Formularios de un solo uso (subir): vuelven a empezar.
                     if (f.hasAttribute("data-nui-reset-after")) {
                         f.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());

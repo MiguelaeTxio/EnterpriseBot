@@ -12,7 +12,8 @@ interfaz antigua.
 from django.urls import path
 
 from new_ui import (
-    clock_export, screen_templates, views_onboarding, views_accessories, views_albaranes, views_clock,
+    clock_export, screen_templates, views_clock_settings,
+    views_onboarding, views_accessories, views_albaranes, views_clock,
     views_crews,
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
@@ -48,6 +49,13 @@ urlpatterns = [
          name="reading_add"),
     path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
          name="service_rows_delete"),
+    # Ajustes de fichaje de la empresa y visado en masa (S163).
+    path("fichajes/ajustes/", views_clock_settings.ClockSettingsBlockView
+         .as_view(), name="clock_settings_block"),
+    path("fichajes/ajustes/guardar/", views_clock_settings
+         .ClockSettingsSaveView.as_view(), name="clock_settings_save"),
+    path("fichajes/visado/", views_clock_settings.MassReviewView.as_view(),
+         name="clock_mass_review"),
     # Albaranes cotejados con los fichajes (S163).
     path("albaranes/carga/", views_albaranes.AlbaranStartView.as_view(),
          name="albaran_start"),

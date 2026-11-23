@@ -69,7 +69,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ (S163) Informe del alta en el fichaje (Personal › Alta en el fichaje: resumen por situación que filtra, sección, buscador común) y su exportación a Excel, PDF o HTML con plantillas de columnas (las mismas que la antigua)
 - ✅ (S163) Trabajadores que fichan, recordatorios, ficha desde, tipo de
   fichaje de cada uno, sección desde una fecha (Personal › Horarios o
-  Fichajes › Acciones) · ⬜ tope de horas extra, ajustes de sección
+  Fichajes › Acciones) · ✅ (S163) tope de horas extra, recordatorios de la empresa, ajustes de cada sección (ficha, por tipos, casilla de comida) y visado en masa de los marcados (Personal › Acciones)
 - ✅ (S163) Tipos de fichaje: crear y modificar (Personal › Tipos de fichaje)
 - ✅ (S163) Horarios: crear, modificar, borrar (Personal › Lista de
   horarios), asignar o quitar a los marcados; vista Horarios con el que
