@@ -81,6 +81,8 @@ TAB_NOUNS = {
         "mantenimiento": ("centro de gasto", "centros de gasto"),
         "taller_maq": ("centro de gasto", "centros de gasto"),
         "repostajes_maq": ("centro de gasto", "centros de gasto"),
+        "seguridad": ("centro de gasto", "centros de gasto"),
+        "seguridad_reg": ("extintor o botiquín", "extintores o botiquines"),
         "documentos": ("documento", "documentos"),
         "especificaciones": ("centro de gasto", "centros de gasto"),
         "avisos": ("documento", "documentos"),
@@ -120,6 +122,7 @@ TAB_GROUPS = {
         ("Repostajes", ("repostajes_maq", "repostajes")),
         ("Accesorios", ("accesorios",)),
         ("Equipos", ("equipos",)),
+        ("Seguridad", ("seguridad", "seguridad_reg")),
     ],
     # Personal (23/11): cada tema, su lista de trabajadores (para muchos)
     # y lo de uno solo, en su ficha (VIEW_MODES).
@@ -143,9 +146,10 @@ TAB_GROUPS = {
 VIEW_MODES = {
     "cdg": {
         "all": ("general", "documentacion", "mantenimiento", "taller_maq",
-                "repostajes_maq"),
+                "repostajes_maq", "seguridad"),
         "one": ("ficha", "qr", "documentos", "avisos", "revisiones",
-                "lecturas", "taller", "averias", "libro", "repostajes"),
+                "lecturas", "taller", "averias", "libro", "repostajes",
+                "seguridad_reg"),
     },
     "per": {
         "all": ("general", "requisitos", "comunicaciones", "horarios",
@@ -280,6 +284,8 @@ SECTIONS = OrderedDict([
         ("repostajes", "Repostajes"),
         ("accesorios", "Accesorios"),
         ("equipos", "Equipos"),
+        ("seguridad", "Seguridad"),
+        ("seguridad_reg", "Extintores y botiquines"),
     ])),
     (PERMISSIONS, ("Permisos", "bi-shield-lock", [
         ("usuarios", "Usuarios"),

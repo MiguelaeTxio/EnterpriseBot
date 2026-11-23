@@ -2143,6 +2143,42 @@ def _annotate_repostajes_maq(qs, start, end):
                                  None, Max("supplied_at")))
 
 
+def _annotate_seguridad(qs, start, end):
+    from django.db.models import Min
+    from new_ui.views_safety import safety_q
+
+    rows = apps.get_model("document_explorer.EpiDelivery").objects.filter(
+        safety_q(), destination_machine=OuterRef("pk"))
+
+    def first(field):
+        return Subquery(rows.exclude(**{field: None}).order_by().values(
+            "destination_machine").annotate(v=Min(field)).values("v")[:1])
+
+    return qs.annotate(
+        nui_ext=_count("document_explorer.EpiDelivery",
+                       "destination_machine", "", None, None, extra={
+                           "epi__label__icontains": "extint"}),
+        nui_bot=_count("document_explorer.EpiDelivery",
+                       "destination_machine", "", None, None, extra={
+                           "epi__label__icontains": "botiqu"}),
+        nui_cad=first("expiry_date"), nui_revi=first("review_date"),
+        nui_ret=first("retimbrado_date"))
+
+
+def _next_safety_date(row, names=("nui_cad", "nui_revi", "nui_ret")):
+    """La fecha más cercana de las tres, con aviso si vence en 30 días."""
+    from new_ui.views_safety import WARN_DAYS
+
+    dates = [d for d in (getattr(row, n, None) for n in names) if d]
+    if not dates:
+        return ""
+    soonest = min(dates)
+    days = (soonest - timezone.localdate()).days
+    mark = (" (vencida)" if days < 0 else
+            " (en %d días)" % days if days <= WARN_DAYS else "")
+    return fmt_date(soonest) + mark
+
+
 # Centros de gasto: tema -> (anotar, [columnas], nota, de entrada).
 MACHINE_THEME_COLUMNS = {
     "documentacion": (None, [], "", ["codigo", "familia", "matricula",
@@ -2167,6 +2203,14 @@ MACHINE_THEME_COLUMNS = {
             lambda m: fmt_date(m.nui_lib_last), "nui_lib_last"),
     ], "Periodo: partes y averías de esas fechas.",
         ["codigo", "familia", "estado"]),
+    "seguridad": (_annotate_seguridad, [
+        Col("extintores", "Extintores", lambda m: m.nui_ext or "",
+            "nui_ext", "text-end"),
+        Col("botiquines", "Botiquines", lambda m: m.nui_bot or "",
+            "nui_bot", "text-end"),
+        Col("proxima", "Próxima fecha", _next_safety_date),
+    ], "Extintores y botiquines entregados para cada centro de gasto.",
+        ["codigo", "familia", "matricula", "estado"]),
     "repostajes_maq": (_annotate_repostajes_maq, [
         Col("repostajes", "Repostajes en el periodo",
             lambda m: m.nui_rep or "", "nui_rep", "text-end"),
@@ -2178,6 +2222,52 @@ MACHINE_THEME_COLUMNS = {
     ], "Periodo: repostajes de esas fechas.",
         ["codigo", "familia", "matricula", "estado"]),
 }
+
+
+def _safety_records_def():
+    """
+    En la ficha de un centro de gasto, Seguridad: sus extintores y
+    botiquines (S163, 23/11).
+    """
+    from new_ui.views_safety import WARN_DAYS, safety_q
+
+    definition = _machine_fk_def(
+        "Seguridad", "document_explorer.EpiDelivery", ("epi", "person"),
+        "destination_machine", [
+            Col("tipo", "Qué", lambda r: r.epi.label, "epi__label"),
+            Col("serie", "Nº de serie o matrícula",
+                lambda r: r.serial_number, "serial_number"),
+            Col("a_quien", "Entregado a", lambda r: person_name(r.person),
+                "person__first_surname"),
+            Col("entrega", "Entrega", lambda r: fmt_date(r.delivery_date),
+                "delivery_date", "text-nowrap"),
+            Col("caducidad", "Caducidad", lambda r: fmt_date(r.expiry_date),
+                "expiry_date", "text-nowrap"),
+            Col("revision", "Próxima revisión",
+                lambda r: fmt_date(r.review_date), "review_date",
+                "text-nowrap"),
+            Col("retimbrado", "Retimbrado",
+                lambda r: fmt_date(r.retimbrado_date), "retimbrado_date",
+                "text-nowrap"),
+            Col("proxima", "Próxima fecha", lambda r: _next_safety_date(
+                r, ("expiry_date", "review_date", "retimbrado_date"))),
+        ], "delivery_date", search=("serial_number", "epi__label"),
+        default_order=("-delivery_date",),
+        note="Periodo: fecha de entrega.")
+    base = definition.queryset
+    definition.queryset = lambda company: base(company).filter(safety_q())
+
+    def soon(qs, value):
+        limit = timezone.localdate() + datetime.timedelta(days=WARN_DAYS)
+        near = (Q(expiry_date__lte=limit) | Q(review_date__lte=limit)
+                | Q(retimbrado_date__lte=limit))
+        return qs.filter(near) if value == "si" else qs.exclude(near)
+
+    definition.extras.append(Extra(
+        "vence", "Vence", lambda company: [
+            ("si", "En 30 días o ya vencido"), ("no", "Más adelante")],
+        apply=soon))
+    return definition
 
 
 def _theme_machine_list(key):
@@ -2266,6 +2356,7 @@ def list_def(section, tab):
         # tenía Documentos, ya solo de esa persona).
         for key in MACHINE_THEME_COLUMNS:
             _CACHE["cdg"][key] = _theme_machine_list(key)
+        _CACHE["cdg"]["seguridad_reg"] = _safety_records_def()
         _CACHE["per"]["pedidos"] = _CACHE["doc"]["pedir"]
         _CACHE["per"]["circulares_rec"] = _CACHE["doc"]["circulares"]
     return _CACHE.get(section, {}).get(tab)

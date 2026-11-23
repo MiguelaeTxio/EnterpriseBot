@@ -18,7 +18,7 @@ from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
     views_epis, views_machines, views_medical, views_payslips_nui,
-    views_photos,
+    views_photos, views_safety,
     views_logbook, views_refuels, views_requirements, views_schedules,
     views_service,
 )
@@ -205,6 +205,11 @@ urlpatterns = [
          name="medical_rows"),
     path("ausencias/nueva/", views_medical.AbsenceAddView.as_view(),
          name="absence_add"),
+    # Centros de gasto › Seguridad (S163, 23/11).
+    path("seguridad/entregar/", views_safety.SafetyDeliverView.as_view(),
+         name="safety_deliver"),
+    path("seguridad/marcados/", views_safety.SafetyRowsView.as_view(),
+         name="safety_rows"),
     # Empresa › Nóminas (S163, 23/11).
     path("nominas/nueva/", views_payslips_nui.PayslipNuiCreateView.as_view(),
          name="payslip_create"),
