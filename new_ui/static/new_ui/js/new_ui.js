@@ -478,6 +478,8 @@
             if (tabButton) tabButton.textContent = "Acciones";
         }
         listPanel.addEventListener("nui:tab", function (ev) { paintViewActions(ev.detail); });
+        // La pestaña inicial ya se anunció antes de llegar aquí.
+        paintViewActions();
         // Plantillas de columnas de las exportaciones de pantalla: el bloque
         // se pide aparte y se repinta al guardar o borrar una plantilla; lo
         // común (fechas, plantilla elegida, columnas) va con cada formulario
