@@ -30,7 +30,8 @@ PERMISSIONS = "permisos"
 FICHA = "ficha"
 # Pestañas de una sola persona o máquina (no son listados): solo se ven
 # con ella elegida. "QR" (S163): la página del QR del centro de gasto.
-ENTITY_TABS = {"per": ("ficha", "jornadas", "desglose_vacaciones"),
+ENTITY_TABS = {"per": ("ficha", "jornadas", "desglose_vacaciones",
+                       "pagos"),
                "cdg": ("ficha", "qr")}
 # S163 (Miguel Ángel, 23/11: "¿qué es una fila?"): cómo se llama lo que
 # hay en cada listado, para que el panel Acciones diga «Con los 3
@@ -61,6 +62,7 @@ TAB_NOUNS = {
                              "extintores o botiquines"),
         "epis": ("entrega de EPI", "entregas de EPI", "f"),
         "requisitos": ("trabajador", "trabajadores"),
+        "pagos_trab": ("trabajador", "trabajadores"),
     },
     "doc": {
         "bandeja": ("documento", "documentos"),
@@ -76,6 +78,7 @@ TAB_NOUNS = {
         "lista_horarios": ("horario", "horarios"),
         "tipos_fichaje": ("tipo de fichaje", "tipos de fichaje"),
         "catalogo_epis": ("EPI", "EPIs"),
+        "liquidaciones": ("liquidación", "liquidaciones", "f"),
     },
     "cdg": {
         "general": ("centro de gasto", "centros de gasto"),
@@ -115,6 +118,7 @@ TAB_GROUPS = {
         ("Vacaciones", ("vacaciones",)),
         ("EPIs", ("catalogo_epis",)),
         ("Nóminas", ("nominas",)),
+        ("Horas y pagos", ("pagos_config", "liquidaciones")),
     ],
     "cdg": [
         ("General", ("general", "ficha", "qr")),
@@ -140,6 +144,7 @@ TAB_GROUPS = {
         ("Partes", ("partes_trab", "partes")),
         ("Repostajes", ("repostajes_trab", "repostajes")),
         ("EPIs", ("epis_trab", "epis")),
+        ("Horas y pagos", ("pagos_trab", "pagos")),
     ],
 }
 # S163 (23/11): la lista de todos («all», sin persona abierta) o lo de
@@ -157,11 +162,11 @@ VIEW_MODES = {
     "per": {
         "all": ("general", "requisitos", "comunicaciones", "horarios",
                 "saldo_vacaciones", "bajas", "partes_trab",
-                "repostajes_trab", "epis_trab"),
+                "repostajes_trab", "epis_trab", "pagos_trab"),
         "one": ("ficha", "documentos", "laboral", "solicitudes",
                 "pedidos", "circulares_rec",
                 "fichajes", "jornadas", "desglose_vacaciones", "salud",
-                "ausencias", "partes", "repostajes", "epis"),
+                "ausencias", "partes", "repostajes", "epis", "pagos"),
     },
 }
 
@@ -240,6 +245,8 @@ SECTIONS = OrderedDict([
         ("vacaciones", "Vacaciones"),
         ("catalogo_epis", "Catálogo de EPIs"),
         ("nominas", "Nóminas"),
+        ("pagos_config", "Qué se paga"),
+        ("liquidaciones", "Liquidaciones"),
     ])),
     # S163 (23/11): por temas (TAB_GROUPS); el nombre de la lista de
     # todos es el del tema, y los de la ficha, lo suyo.
@@ -267,6 +274,8 @@ SECTIONS = OrderedDict([
         ("repostajes", "Repostajes"),
         ("epis_trab", "EPIs"),
         ("epis", "Entregas"),
+        ("pagos_trab", "Horas y pagos"),
+        ("pagos", "Cálculo"),
     ])),
     # S163 (23/11): por temas, como Personal.
     ("cdg", ("Centros de gasto", "bi-truck", [

@@ -147,6 +147,10 @@ class Result:
         self.liquidated = []
         self.prices = {}
 
+    @property
+    def source_label(self):
+        return dict(PayWorker.Source.choices).get(self.source, "")
+
     def add(self, key, seconds, holiday):
         slot = self.paid.setdefault(key, [0, 0])
         slot[1 if holiday else 0] += seconds

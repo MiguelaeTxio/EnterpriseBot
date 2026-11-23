@@ -144,44 +144,7 @@
 
     {% endif %}
     {% if bag and view == "jornadas" %}
-    <div class="row g-3">
-        <div class="col-12 col-xl-6">
-            <div class="fw-semibold small mb-1">Bolsa de horas: <span class="{% if bag.total_seconds < 0 %}text-danger{% endif %}">{{ bag.total_label }}</span></div>
-            <div class="small text-muted mb-1">Trabajado de más {{ bag.worked_label }} · movimientos {{ bag.adjust_label }} · cupo de horas extra {{ bag.cap_label }} (pagables {{ bag.extra_label }}, acumuladas {{ bag.accumulated_label }}) · desplazamiento {{ bag.travel_label }}</div>
-            {% if bag.overdue %}<div class="small text-danger mb-1">Hay horas con el plazo de compensación vencido.</div>{% endif %}
-            {% if bag.month_rows %}
-            <table class="table table-sm small mb-2">
-                <thead><tr><th>Mes</th><th class="text-end">Trabajado</th><th class="text-end">Jornada</th><th class="text-end">De más</th><th class="text-end">Cupo</th><th class="text-end">Bolsa</th></tr></thead>
-                <tbody>{% for m in bag.month_rows %}<tr><td class="text-nowrap">{{ m.month|date:"F Y"|capfirst }}</td><td class="text-end">{{ m.worked_label }}</td><td class="text-end">{{ m.required_label }}</td><td class="text-end">{{ m.excess_label }}</td><td class="text-end">{{ m.extra_label }}</td><td class="text-end">{{ m.accumulated_label }}</td></tr>{% endfor %}</tbody>
-            </table>
-            {% endif %}
-        </div>
-        <div class="col-12 col-xl-6">
-            <form data-nui-pane-form action="{% url 'new_ui:bag_movement' person.pk %}" class="border rounded p-2 mb-2 small">
-                {% csrf_token %}
-                <div class="fw-semibold mb-1">Apuntar un movimiento</div>
-                <label class="form-check form-check-inline mb-1"><input class="form-check-input" type="radio" name="sign" value="pay" checked> Pagadas o compensadas (restan)</label>
-                <label class="form-check form-check-inline mb-1"><input class="form-check-input" type="radio" name="sign" value="add"> Añadir a las acumuladas (suman)</label>
-                <div class="d-flex flex-wrap gap-1">
-                    <input name="hours" class="form-control form-control-sm" style="width: 6rem;" placeholder="h:mm" required>
-                    <input type="date" name="date" value="{{ today|date:'Y-m-d' }}" class="form-control form-control-sm" style="width: 10rem;" required>
-                    <input name="reason" maxlength="200" class="form-control form-control-sm" style="max-width: 16rem;" placeholder="Motivo" required>
-                    <button type="submit" class="btn btn-sm btn-primary">Apuntar</button>
-                </div>
-            </form>
-            <table class="table table-sm small mb-0">
-                <thead><tr><th>Fecha</th><th class="text-end">Horas</th><th>Motivo</th><th>Por</th><th></th></tr></thead>
-                <tbody>
-                {% for m in bag.rows %}
-                <tr><td class="text-nowrap">{{ m.item.date|date:"d/m/Y" }}</td><td class="text-end text-nowrap">{{ m.label }}</td><td>{{ m.item.reason }}</td><td class="text-nowrap">{{ m.item.created_by|default:"—" }}</td>
-                    <td class="text-end"><form data-nui-pane-form action="{% url 'new_ui:bag_movement' person.pk %}" data-nui-confirm="{% if m.item.vacation_adjustment_id %}¿Borrar este movimiento? También se quitan los días libres que se dieron en Vacaciones.{% else %}¿Borrar este movimiento?{% endif %}">{% csrf_token %}<input type="hidden" name="action" value="delete"><input type="hidden" name="adjustment" value="{{ m.item.pk }}"><button type="submit" class="btn btn-sm btn-link text-danger py-0" title="Borrar"><i class="bi bi-trash"></i></button></form></td></tr>
-                {% empty %}
-                <tr><td colspan="5" class="text-muted">Ningún movimiento.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+    {% include "new_ui/_bag.html" %}
     {% endif %}
 
     {% if view == "correcciones" %}

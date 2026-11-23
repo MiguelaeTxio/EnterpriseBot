@@ -42,6 +42,7 @@ from new_ui.views_access import access_context
 from new_ui.views_medical import absences_context, medical_context
 from new_ui.views_payslips_nui import payslips_context
 from new_ui.views_safety import safety_context
+from new_ui.views_pay import pay_context
 from new_ui.views_epis import epis_context
 from new_ui.views_accessories import accessories_context
 from new_ui.views_vacations import VacationSetupBlockView, vacations_context
@@ -320,6 +321,7 @@ def _section_context(company_user, section):
         **absences_context(section, company_user.company),
         **payslips_context(section, company_user),
         **safety_context(section),
+        **pay_context(section, company_user.company),
         **epis_context(section),
         **machines_context(section, company_user.company),
         **(logbook_context() if section == "cdg" else {}),
@@ -693,6 +695,12 @@ class NewUiListView(SuperuserRequiredMixin, View):
                 '<div class="p-2" data-nui-vacset data-url="%s">%s</div>' % (
                     _reverse("new_ui:vacation_setup_block"),
                     VacationSetupBlockView.as_view()(request).content.decode()))
+        if (section, tab) == ("doc", "pagos_config") and _check_view(
+                request, section, tab):
+            # S163 (23/11): Horas y pagos › Qué se paga.
+            from new_ui.views_pay import render_settings
+
+            return render_settings(request)
         if (section, tab) == ("per", "saldo_vacaciones") and _check_view(
                 request, section, tab):
             from new_ui.views_vacations import render_balance
@@ -1166,6 +1174,14 @@ class NewUiCardView(SuperuserRequiredMixin, View):
             if person is None:
                 return HttpResponseBadRequest("No existe.")
             return render_detail(request, person)
+        if section == "per" and tab == "pagos":
+            from new_ui.views_pay import render_worker
+
+            person = PersonIdentity.objects.filter(pk=int(pk)).select_related(
+                "company_user__company").first()
+            if person is None:
+                return HttpResponseBadRequest("No existe.")
+            return render_worker(request, person)
         if section == "per" and tab == "jornadas":
             from new_ui.views_clock import render_jornadas
 

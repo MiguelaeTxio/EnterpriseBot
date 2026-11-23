@@ -1,0 +1,32 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_pay_settings.html -- S163: Empresa › Horas y pagos › Qué se paga. Vista: new_ui/views_pay.py (render_settings). #}
+<div class="p-2">
+    <form data-nui-action-form action="{% url 'new_ui:pay_settings' %}" class="small" style="max-width: 60rem;">
+        {% csrf_token %}
+        <div class="fw-semibold mb-1"><i class="bi bi-cash-coin me-1"></i>Qué se paga de cada clase de hora</div>
+        <table class="table table-sm align-middle mb-2">
+            <thead class="table-light"><tr><th>Clase de hora</th>{% for value, label in modes %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+            <tbody>
+            {% for c in classes %}
+            <tr><td>{{ c.label }}</td>
+                {% for value, label in modes %}<td><input class="form-check-input" type="radio" name="mode_{{ c.key }}" value="{{ value }}" aria-label="{{ c.label }}: {{ label }}"{% if c.mode == value %} checked{% endif %}></td>{% endfor %}</tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <label class="mb-0">Tope de horas extra al mes</label>
+            <input name="cap" value="{{ cap }}" class="form-control form-control-sm" style="width: 6rem;" placeholder="sin tope">
+            <span class="text-muted">(h:mm; lo que pasa va a la bolsa, no se paga)</span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <label class="mb-0">Jornada de los partes</label>
+            <input name="parte_day" value="{{ parte_day }}" class="form-control form-control-sm" style="width: 6rem;" required>
+            <span class="text-muted">(h:mm al día; lo que pasa es hora extra)</span>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
+        <ul class="text-muted mt-2 mb-0 ps-3">
+            <li>«Solo lo que pasa de la jornada»: en los días laborables, lo que pasa de 8 h en el fichaje (o de la jornada de los partes). Si varias clases están así, se suman y el exceso se reparte entre ellas.</li>
+            <li>Fines de semana, festivos de su base, vacaciones, bajas y ausencias: todo lo que se paga va a precio de festivo.</li>
+            <li>Los precios son de cada trabajador (Personal › Horas y pagos). Lo ya liquidado no cambia.</li>
+        </ul>
+    </form>
+</div>

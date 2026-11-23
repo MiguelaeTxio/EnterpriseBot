@@ -1,0 +1,59 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_pay_worker.html -- S163: Personal › Horas y pagos › Cálculo del trabajador abierto (día a día, importe y bolsa). Vista: new_ui/views_pay.py (render_worker). #}
+<div class="nui-ficha p-2">
+    <div data-nui-pane-result></div>
+    <div class="d-flex flex-wrap align-items-baseline gap-3 mb-2 small">
+        <span class="fw-semibold">{{ date_from|date:"d/m/Y" }} – {{ date_to|date:"d/m/Y" }}</span>
+        {% if result %}
+        <span>De dónde salen sus horas: <strong>{{ result.source_label }}</strong></span>
+        <span>Horas a pagar: <strong>{{ result.normal_hours|floatformat:2 }}</strong></span>
+        <span>En festivo: <strong>{{ result.holiday_hours|floatformat:2 }}</strong></span>
+        {% if result.to_bag %}<span>A la bolsa por el tope: <strong>{{ result.bag_hours|floatformat:2 }}</strong></span>{% endif %}
+        <span>Importe: <strong>{{ result.total|floatformat:2 }} €</strong></span>
+        {% endif %}
+        <span class="text-muted">El periodo es el del filtro de arriba; sin periodo, el mes en curso hasta hoy.</span>
+    </div>
+    {% if not has_account %}<div class="alert alert-warning small py-1 px-2">No tiene cuenta del panel: no ficha ni hace partes.</div>{% endif %}
+    {% if liquidated %}<div class="alert alert-info small py-1 px-2">Ya liquidado: {% for a, b in liquidated %}{{ a|date:"d/m/Y" }}–{{ b|date:"d/m/Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}. Esos días no se cuentan aquí.</div>{% endif %}
+
+    {% if lines %}
+    <table class="table table-sm small mb-3" style="max-width: 50rem;">
+        <thead class="table-light"><tr><th>Clase de hora</th><th class="text-end">Horas</th><th class="text-end">Precio</th><th class="text-end">En festivo</th><th class="text-end">Precio festivo</th><th class="text-end">Importe</th></tr></thead>
+        <tbody>
+        {% for l in lines %}
+        <tr><td>{{ l.label }}</td><td class="text-end">{{ l.hours|floatformat:2 }}</td><td class="text-end">{% if l.price %}{{ l.price|floatformat:2 }} €{% else %}<span class="text-warning-emphasis">sin precio</span>{% endif %}</td><td class="text-end">{{ l.holiday_hours|floatformat:2 }}</td><td class="text-end">{% if l.holiday_price %}{{ l.holiday_price|floatformat:2 }} €{% elif l.holiday_hours %}<span class="text-warning-emphasis">sin precio</span>{% endif %}</td><td class="text-end text-nowrap">{{ l.amount|floatformat:2 }} €</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <div class="small fw-semibold mb-1">Día a día</div>
+    <table class="table table-sm small align-middle mb-3">
+        <thead class="table-light"><tr><th>Día</th><th>De</th><th>Horas</th><th>Se paga</th><th class="text-end">A la bolsa</th></tr></thead>
+        <tbody>
+        {% for d in days %}
+        <tr{% if d.holiday %} class="table-warning"{% endif %}>
+            <td class="text-nowrap">{{ d.day|date:"D d/m/Y"|capfirst }}{% if d.holiday %} <span class="badge text-bg-light border fw-normal">festivo</span>{% endif %}</td>
+            <td>{{ d.source }}</td>
+            <td>{% for label, value in d.hours %}<span class="text-nowrap">{{ label }} {{ value }}</span>{% if not forloop.last %} · {% endif %}{% endfor %}</td>
+            <td>{% for label, value in d.paid %}<span class="text-nowrap">{{ label }} {{ value }}</span>{% if not forloop.last %} · {% endif %}{% empty %}<span class="text-muted">nada</span>{% endfor %}</td>
+            <td class="text-end">{{ d.to_bag }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">Sin horas en el periodo.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    {% if has_account %}
+    <div class="small fw-semibold mb-1">Sus precios por hora</div>
+    <table class="table table-sm small mb-3" style="max-width: 40rem;">
+        <thead class="table-light"><tr><th>Clase de hora</th><th class="text-end">Normal</th><th class="text-end">Festivo y domingo</th></tr></thead>
+        <tbody>{% for label, normal, holiday in prices %}<tr><td>{{ label }}</td><td class="text-end">{% if normal %}{{ normal }} €{% else %}—{% endif %}</td><td class="text-end">{% if holiday %}{{ holiday }} €{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+    </table>
+    <p class="small text-muted">Cambiar precios, de dónde salen sus horas o liquidar: en el panel Acciones.</p>
+    {% endif %}
+
+    {% if bag %}
+    {% include "new_ui/_bag.html" %}
+    {% endif %}
+</div>

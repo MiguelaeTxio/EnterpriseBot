@@ -2311,6 +2311,143 @@ def _theme_person_list(key):
     return definition
 
 
+
+# --------------------------------------------------------- horas y pagos
+def _annotate_pagos(qs, start, end):
+    """El periodo del cálculo en cada fila (sin periodo, el mes en curso)."""
+    from django.db.models import DateField, Value
+
+    from new_ui.views_pay import pay_period
+
+    params = {}
+    if start:
+        params["desde"] = start.isoformat()
+    if end:
+        params["hasta"] = end.isoformat()
+    start, end = pay_period(params)
+    return qs.annotate(nui_pay_from=Value(start, DateField()),
+                       nui_pay_to=Value(end, DateField()))
+
+
+def _prepare_pagos(people):
+    from new_ui.views_pay import prepare_people
+
+    prepare_people(people)
+
+
+def _pay(attr, money=False):
+    """Valor del cálculo de Horas y pagos para una columna."""
+    def value(person):
+        result = getattr(person, "nui_pay", None)
+        if result is None:
+            return ""
+        raw = getattr(result, attr)
+        if not raw:
+            return ""
+        text = fmt_num(raw)
+        return text + " €" if money else text
+    return value
+
+
+def _pay_source(person):
+    result = getattr(person, "nui_pay", None)
+    if result is None:
+        return "Sin cuenta del panel" if not person.company_user_id else ""
+    from hr_calendar.models import PayWorker
+
+    return dict(PayWorker.Source.choices).get(result.source, "")
+
+
+def _pay_liquidated(person):
+    result = getattr(person, "nui_pay", None)
+    if result is None or not result.liquidated:
+        return ""
+    return ", ".join("%s–%s" % (fmt_date(a), fmt_date(b))
+                     for a, b, _p in result.liquidated)
+
+
+def _pay_person_list():
+    """
+    Personal › Horas y pagos: each worker's paid hours of the period.
+
+    ---
+
+    Personal › Horas y pagos (S163, 23/11): por trabajador, las horas
+    que se pagan del periodo (normales y en festivo), lo que va a la
+    bolsa por el tope y el importe con sus precios (hr_calendar/pay.py).
+    Sin periodo, el mes en curso hasta hoy.
+    """
+    definition = _person_general()
+    definition.columns = list(definition.columns) + [
+        Col("origen_horas", "De dónde salen sus horas", _pay_source),
+        Col("horas_pagadas", "Horas a pagar", _pay("normal_hours"),
+            "", "text-end"),
+        Col("horas_festivo", "Horas en festivo", _pay("holiday_hours"),
+            "", "text-end"),
+        Col("a_la_bolsa", "A la bolsa (tope)", _pay("bag_hours"), "",
+            "text-end"),
+        Col("importe", "Importe", _pay("total", money=True), "",
+            "text-end text-nowrap"),
+        Col("liquidado", "Ya liquidado", _pay_liquidated),
+    ]
+    definition.period_annotate = _annotate_pagos
+    definition.prepare = _prepare_pagos
+    definition.date_field = ""
+    definition.default_cols = ["nombre", "seccion", "origen_horas",
+                               "horas_pagadas", "horas_festivo",
+                               "a_la_bolsa", "importe", "liquidado"]
+    definition.note = ("Periodo: el del filtro; sin periodo, el mes en "
+                       "curso hasta hoy. Qué se paga, en Empresa › Horas "
+                       "y pagos.")
+    return definition
+
+
+def _pay_periods_def():
+    """
+    Empresa › Horas y pagos › Liquidaciones: the closed periods.
+
+    ---
+
+    Los periodos liquidados (bloqueados): fechas, trabajadores, importe
+    y quién lo liquidó.
+    """
+    from django.db.models import Count, Sum
+
+    from hr_calendar.models import PayPeriod
+
+    def queryset(company):
+        return PayPeriod.objects.filter(company=company).annotate(
+            nui_workers=Count("lines__company_user", distinct=True),
+            nui_amount=Sum("lines__amount")).select_related(
+            "closed_by__person_identity", "closed_by__user")
+
+    def closed_by(r):
+        cu = r.closed_by
+        if cu is None:
+            return ""
+        person = getattr(cu, "person_identity", None)
+        return person_name(person) if person else str(cu)
+
+    return ListDef(
+        "Liquidaciones", queryset, [
+            Col("desde", "Desde", lambda r: fmt_date(r.date_from),
+                "date_from", "text-nowrap"),
+            Col("hasta", "Hasta", lambda r: fmt_date(r.date_to), "date_to",
+                "text-nowrap"),
+            Col("trabajadores", "Trabajadores", lambda r: r.nui_workers,
+                "nui_workers", "text-end"),
+            Col("importe", "Importe", lambda r: fmt_num(r.nui_amount or 0)
+                + " €", "nui_amount", "text-end text-nowrap"),
+            Col("por", "Liquidado por", closed_by),
+            Col("el", "El", lambda r: fmt_datetime(r.closed_at),
+                "closed_at", "text-nowrap"),
+        ],
+        date_field="date_from", default_order=("-date_from", "-pk"),
+        actions=lambda r: [],
+        note="Periodo: el inicio de la liquidación. Sus días ya no se "
+             "vuelven a calcular; para cambiarlos, deshaz la liquidación.")
+
+
 _CACHE = {}
 
 
@@ -2361,6 +2498,9 @@ def list_def(section, tab):
         # centros de gasto, primero los que antes vencen.
         _CACHE["doc"]["avisos_seguridad"] = _safety_records_def(
             order=("expiry_date", "review_date", "retimbrado_date"))
+        # S163 (23/11): Horas y pagos.
+        _CACHE["per"]["pagos_trab"] = _pay_person_list()
+        _CACHE["doc"]["liquidaciones"] = _pay_periods_def()
         _CACHE["per"]["pedidos"] = _CACHE["doc"]["pedir"]
         _CACHE["per"]["circulares_rec"] = _CACHE["doc"]["circulares"]
     return _CACHE.get(section, {}).get(tab)
