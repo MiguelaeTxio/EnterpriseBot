@@ -45,6 +45,7 @@ HISTORY_SCREEN_KEY = "work_orders_history"
 HISTORY_FILTER_KEYS = (
     "tab", "operator_pk", "date_from", "date_to", "machine",
     "fault_category", "q", "status", "dieta", "origen", "sort_stack",
+    "group",
 )
 MAX_SORT_LEVELS = 4
 
@@ -4786,6 +4787,16 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             qs = qs.exclude(entries__has_diet=True)
         if origen:
             qs = qs.filter(source=origen)
+        # S163 (23/11): filtro «Grupo» (personas del grupo y de sus
+        # subgrupos, o «Sin grupo»), solo para quien ve a todos.
+        group = (getattr(self, "request", None) and
+                 self.request.GET.get("group", "").strip())
+        if group and is_elevated:
+            from document_explorer.models import PersonIdentity
+            from panel.person_groups import filter_by_group
+
+            people = filter_by_group(PersonIdentity.objects.all(), group)
+            qs = qs.filter(uploaded_by__person_identity__in=people)
         return qs.distinct()
 
     def _own_open_period_summary(self, company, cu):
@@ -5044,7 +5055,9 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         status = request.GET.get("status", "").strip()
         dieta = request.GET.get("dieta", "").strip()
         origen = request.GET.get("origen", "").strip()
-        from panel.person_groups import group_filter_context
+        from panel.person_groups import (
+            group_filter_context, group_filter_select_context,
+        )
 
         _VALID_SORT_COLS = frozenset(
             (
@@ -5401,6 +5414,7 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             "status": status,
             "dieta": dieta,
             "origen": origen,
+            "group": request.GET.get("group", "") if is_elevated else "",
             "sort_stack": sort_stack_str,
         }
         filters_qs = _urlencode_fq(
@@ -5453,6 +5467,8 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             "operators": operators,
             "operator_pk": operator_pk,
             **(group_filter_context(request) if is_elevated else {}),
+            # S163 (23/11): el filtro «Grupo» de Buscar y filtrar.
+            **(group_filter_select_context(request) if is_elevated else {}),
             "date_from": request.GET.get("date_from", ""),
             "date_to": request.GET.get("date_to", ""),
             "machine": machine,

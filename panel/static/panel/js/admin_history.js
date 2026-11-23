@@ -258,6 +258,8 @@
                     e.preventDefault();
                     input.value = code;
                     dropdown.style.display = "none";
+                    // S163: el filtro se aplica al elegir la máquina.
+                    input.dispatchEvent(new Event("change", {bubbles: true}));
                     /* Return dropdown to wrapper on selection.
                        Devolver dropdown al wrapper al seleccionar. */
                     if (dropdown.parentNode === document.body) {
@@ -408,10 +410,38 @@
         });
     }
 
+    // S163 (23/11, Miguel Ángel: el botón «Filtrar» daba más problemas
+    // que otra cosa): cada filtro se aplica en cuanto cambia; el
+    // buscador, al pulsar Intro o al dejar de escribir un momento.
+    function initAutoFilter() {
+        var form = document.getElementById("wo-filter-form");
+        if (!form) { return; }
+        var timer = null;
+        function go() {
+            if (timer) { clearTimeout(timer); timer = null; }
+            if (window.EbNavState) { window.EbNavState.flush(); }
+            form.submit();
+        }
+        form.addEventListener("change", function (e) {
+            var el = e.target;
+            if (el.id === "filter-period-select" && !el.value) { return; }
+            if (el.name === "q") { return; }
+            go();
+        });
+        var search = form.querySelector("[name='q']");
+        if (search) {
+            search.addEventListener("input", function () {
+                if (timer) { clearTimeout(timer); }
+                timer = setTimeout(go, 900);
+            });
+        }
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
         initSelection();
         initMachineAutocomplete();
         initPeriodFilterShortcut();
+        initAutoFilter();
     });
 
 }());

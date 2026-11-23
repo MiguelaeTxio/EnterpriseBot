@@ -528,7 +528,7 @@ screen_key work_orders_history).
 
     <div class="border rounded p-2 mb-2 bg-white" id="wo-top-panel">
         <div class="row g-2">
-            <div class="{% if is_elevated %}col-lg-4{% else %}col-12{% endif %}">
+            <div class="{% if is_elevated %}col-lg-6{% else %}col-12{% endif %}">
                 <div class="border rounded p-2 h-100">
                     {% include "panel/_filter_panel_tabs.html" with fp="wo" %}
                     <div class="eb-filter-pane" data-filter-pane="filters">
@@ -548,6 +548,10 @@ screen_key work_orders_history).
                                 <option value="{{ op.pk }}" {% if operator_pk|stringformat:"s" == op.pk|stringformat:"s" %}selected{% endif %}>{{ op.user.get_full_name|default:op.user.username }}</option>
                                 {% endfor %}
                             </select>
+                        </div>
+                        {# S163 (23/11): filtro «Grupo» (los partes de las personas del grupo y sus subgrupos), como en las demás vistas. #}
+                        <div class="col-6 col-md-4 col-xl-3 small">
+                            {% include "panel/_group_filter_select.html" with gf_id="wo-filter-group" gf_who="personas" %}
                         </div>
                         {% if period_groups %}
                         <div class="col-6 col-md-4 col-xl-3">
@@ -584,7 +588,7 @@ screen_key work_orders_history).
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-6 col-md-4 col-xl-2">
+                        <div class="col-6 col-md-4 col-xl-3">
                             <label class="form-label small fw-bold mb-0">Estado</label>
                             <select name="status" class="form-select form-select-sm">
                                 <option value="">Todos</option>
@@ -593,7 +597,7 @@ screen_key work_orders_history).
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-6 col-md-4 col-xl-2">
+                        <div class="col-6 col-md-4 col-xl-3">
                             <label class="form-label small fw-bold mb-0">Dieta</label>
                             <select name="dieta" class="form-select form-select-sm">
                                 <option value="">Todos</option>
@@ -601,7 +605,7 @@ screen_key work_orders_history).
                                 <option value="no" {% if dieta == "no" %}selected{% endif %}>Sin dieta</option>
                             </select>
                         </div>
-                        <div class="col-6 col-md-4 col-xl-2">
+                        <div class="col-6 col-md-4 col-xl-3">
                             <label class="form-label small fw-bold mb-0">Origen</label>
                             <select name="origen" class="form-select form-select-sm">
                                 <option value="">Todos</option>
@@ -611,9 +615,7 @@ screen_key work_orders_history).
                             </select>
                         </div>
                         <div class="col-12 d-flex flex-wrap align-items-center gap-2">
-                            <button type="submit" class="btn btn-primary btn-sm px-3">
-                                <i class="bi bi-funnel me-1"></i>Filtrar
-                            </button>
+                            {# S163 (23/11): sin botón «Filtrar»: cada filtro se aplica al cambiarlo (el buscador, al pulsar Intro o al dejar de escribir). #}
                             <a href="{% url 'panel:work_order_admin_history' %}?tab={{ active_tab }}" class="btn btn-outline-secondary btn-sm">
                                 <i class="bi bi-x-lg me-1"></i>Quitar filtros
                             </a>
@@ -641,7 +643,7 @@ screen_key work_orders_history).
             {% if is_elevated %}
             {# S147: "Grupos de selección", la misma columna que en Personal. #}
             {% include "panel/_person_group_filter.html" with pg_prefix="wo" pg_form="wo-filter-form" %}
-            <div class="col-lg-5">
+            <div class="col-lg-3">
                 <div class="border rounded p-2 h-100">
                     {% if active_tab == "pending" or active_tab == "reviewed" or active_tab == "history" %}
                     <div class="d-flex align-items-center gap-2 mb-1">

@@ -21,7 +21,15 @@ Contexto: panel/person_groups.group_filter_context.
 {% with sg=pg_prefix|add:"Group" %}
 {% include "panel/_selection_groups_box.html" with sg=sg sg_nodes=person_group_nodes sg_collapsed=person_groups_collapsed sg_parents=person_group_parents sg_hint="personas" %}
 <script>
-(function () {
+(function boot() {
+    // S163 (23/11): en las páginas que no llegan por htmx (Partes
+    // digitales) este código corre antes de que base.html cargue
+    // selection_groups.js; sin esperar, el recuadro no se iniciaba (no
+    // se plegaba ni guardaba grupos).
+    if (!window.EbSelectionGroups) {
+        document.addEventListener("DOMContentLoaded", boot, {once: true});
+        return;
+    }
     const prefix = "{{ pg_prefix|escapejs }}";
     const sg = "{{ sg|escapejs }}";
     const list = document.getElementById(sg + "SavedList");
