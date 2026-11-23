@@ -1,0 +1,9 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_requests_sent.html -- S163 (23/11): en la ficha del trabajador, Comunicaciones › Documentos pedidos: cancelar lo pedido (copia del bloque «pedir» de actions/doc.html). Vista: new_ui/views_notify.py. #}
+<div class="d-none" data-nui-actions-for="pedidos">
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:doc_request_cancel_rows' %}">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-x-circle me-1"></i>Cancelar lo pedido</div>
+        <button type="submit" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Cancelar las peticiones seleccionadas?">Cancelar</button>
+        <p class="small text-muted mt-1 mb-0">Si se cancela la que está activa, se le pide la siguiente que tenga en cola.</p>
+    </form>
+</div>

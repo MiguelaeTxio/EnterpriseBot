@@ -2069,6 +2069,11 @@ def list_def(section, tab):
         # de General más las del tema (THEME_COLUMNS).
         for key in THEME_COLUMNS:
             _CACHE["per"][key] = _theme_person_list(key)
+        # S163 (23/11): en la ficha, Comunicaciones: lo que se le ha
+        # pedido y las circulares que ha recibido (las mismas listas que
+        # tenía Documentos, ya solo de esa persona).
+        _CACHE["per"]["pedidos"] = _CACHE["doc"]["pedir"]
+        _CACHE["per"]["circulares_rec"] = _CACHE["doc"]["circulares"]
     return _CACHE.get(section, {}).get(tab)
 
 

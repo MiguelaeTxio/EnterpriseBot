@@ -41,6 +41,15 @@ def medical_context(section):
     return {"contingency_choices": MedicalLeavePeriod.ContingencyType.choices}
 
 
+def absences_context(section, company):
+    """Tipos de ausencia para «Registrar una ausencia» (Personal)."""
+    if section != "per":
+        return {}
+    from hr_calendar.services import absence_categories
+
+    return {"nui_absence_categories": list(absence_categories(company))}
+
+
 class MedicalLeaveAddView(SuperuserRequiredMixin, View):
     """
     POST: add a medical leave to one person (the open one).
@@ -52,11 +61,13 @@ class MedicalLeaveAddView(SuperuserRequiredMixin, View):
     """
 
     def post(self, request):
-        person = PersonIdentity.objects.filter(
-            pk=request.POST.get("person_pk") or 0).first()
-        if person is None:
-            return _error("Abre primero a la persona (pulsa su nombre en el "
-                          "listado).")
+        # S163 (23/11): a los marcados (`selected`) o a la persona abierta.
+        ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
+        if not ids and (request.POST.get("person_pk") or "").isdigit():
+            ids = [request.POST["person_pk"]]
+        people = list(PersonIdentity.objects.filter(pk__in=ids))
+        if not people:
+            return _error("Marca primero a los trabajadores.")
         date_start = _date(request.POST.get("date_start"))
         date_end = _date(request.POST.get("date_end"))
         contingency = request.POST.get("contingency_type", "")
@@ -65,12 +76,56 @@ class MedicalLeaveAddView(SuperuserRequiredMixin, View):
             return _error("Indica la fecha de inicio y el tipo.")
         if date_end is not None and date_end < date_start:
             return _error("El alta no puede ser anterior al inicio.")
-        MedicalLeavePeriod.objects.create(
-            person=person, date_start=date_start, date_end=date_end,
-            contingency_type=contingency)
-        return _ok("Baja de %s %s desde el %s." % (
-            person.given_name, person.first_surname,
-            date_start.strftime("%d/%m/%Y")))
+        for person in people:
+            MedicalLeavePeriod.objects.create(
+                person=person, date_start=date_start, date_end=date_end,
+                contingency_type=contingency)
+        if len(people) == 1:
+            return _ok("Baja de %s %s desde el %s." % (
+                people[0].given_name, people[0].first_surname,
+                date_start.strftime("%d/%m/%Y")))
+        return _ok("Baja desde el %s a %d trabajadores." % (
+            date_start.strftime("%d/%m/%Y"), len(people)))
+
+
+class AbsenceAddView(SuperuserRequiredMixin, View):
+    """
+    POST: register the same absence to the marked workers.
+
+    ---
+
+    POST (S163, 23/11): registra la misma ausencia (tipo, del… al…,
+    nota y horas opcionales) a los trabajadores marcados, con
+    hr_calendar.services.create_absence_period (como el desglose).
+    """
+
+    def post(self, request):
+        from hr_calendar.services import create_absence_period
+
+        ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
+        people = list(PersonIdentity.objects.filter(pk__in=ids))
+        if not people:
+            return _error("Marca primero a los trabajadores.")
+        date_start = _date(request.POST.get("date_start"))
+        date_end = _date(request.POST.get("date_end")) or date_start
+        if date_start is None:
+            return _error("Indica la fecha de inicio.")
+        category = request.POST.get("category_id") or ""
+        cu = request.user.company_user
+        done = 0
+        for person in people:
+            try:
+                create_absence_period(
+                    person, cu.company, cu,
+                    int(category) if category.isdigit() else 0,
+                    date_start, date_end, request.POST.get("note"))
+            except ValueError as exc:
+                return _error("%s (%d registradas antes)." % (exc, done)
+                              if done else str(exc))
+            done += 1
+        return _ok("Ausencia del %s al %s a %d trabajador(es)." % (
+            date_start.strftime("%d/%m/%Y"), date_end.strftime("%d/%m/%Y"),
+            done))
 
 
 class MedicalLeaveRowsView(SuperuserRequiredMixin, View):

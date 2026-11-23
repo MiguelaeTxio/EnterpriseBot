@@ -199,6 +199,8 @@ urlpatterns = [
          name="medical_add"),
     path("bajas/marcadas/", views_medical.MedicalLeaveRowsView.as_view(),
          name="medical_rows"),
+    path("ausencias/nueva/", views_medical.AbsenceAddView.as_view(),
+         name="absence_add"),
     # Acceso al panel, base, empresa y contrato revisado (S163).
     path("acceso/", views_access.AccessPreviewView.as_view(),
          name="access_preview"),
