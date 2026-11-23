@@ -66,7 +66,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 ## Fichajes y horarios
 - ✅ (S163) Fichajes: detalle y jornadas del trabajador (Personal › Jornadas, con el periodo del filtro; vistas Jornadas, Calendario de cuatro años y Correcciones), editar la jornada, añadir o corregir la pausa de comida (con la comida de su horario), intercalar un tipo (viendo los tramos), anular el día, visado, pendiente de revisar, kilómetros, bolsa de horas, historial de correcciones, exportar el registro de jornada con plantillas de columnas (las mismas que la antigua: elegir, guardar, modificar, borrar, por defecto, de la empresa; Excel de la persona abierta o de las marcadas: trabajadores, jornadas, pulsaciones, correcciones; membrete con uno solo)
 - ✅ (S163) Albaranes del fichaje: cargar (de la persona abierta o de varios, carpeta o archivos, lectura en segundo plano), estado, cargas recientes («Ver»), y en Jornadas cada albarán del día (ver el archivo) y la marca «Comparado/Corregido por IA» o «por el parte»
-- ⬜ Informe de alta y su exportación
+- ✅ (S163) Informe del alta en el fichaje (Personal › Alta en el fichaje: resumen por situación que filtra, sección, buscador común) y su exportación a Excel, PDF o HTML con plantillas de columnas (las mismas que la antigua)
 - ✅ (S163) Trabajadores que fichan, recordatorios, ficha desde, tipo de
   fichaje de cada uno, sección desde una fecha (Personal › Horarios o
   Fichajes › Acciones) · ⬜ tope de horas extra, ajustes de sección

@@ -1,0 +1,22 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_screen_tpl_block.html -- S163: plantillas de columnas de una exportación de pantalla (las mismas que la antigua): elegir, columnas, guardar como nueva, modificar la elegida, borrar. Va dentro de un [data-nui-tpl-shared]; se pide aparte para repintarse al guardar o borrar. Vista: new_ui/screen_templates.py. #}
+<div class="small text-muted mb-1">Plantilla de columnas</div>
+<div class="border rounded px-2 py-1 mb-1 small" style="max-height: 7rem; overflow-y: auto;">
+    <label class="form-check mb-0"><input class="form-check-input" type="radio" name="nui_tpl_{{ screen }}" value="" data-columns="{{ panel_keys }}" data-nui-tpl-radio{% if not default_pk %} checked{% endif %}> <span class="form-check-label">Vista del panel</span></label>
+    {% for t in templates %}<label class="form-check mb-0"><input class="form-check-input" type="radio" name="nui_tpl_{{ screen }}" value="{{ t.pk }}" data-columns="{{ t.columns|join:',' }}" data-nui-tpl-radio{% if t.pk == default_pk %} checked{% endif %}> <span class="form-check-label">{{ t.name }}{% if t.is_global %} <span class="text-muted">(de la empresa)</span>{% endif %}{% if t.is_default %} <span class="text-muted">(por defecto)</span>{% endif %}</span></label>{% endfor %}
+</div>
+<details class="mb-1 small">
+    <summary>Columnas ({{ columns|length }}) y guardar plantilla</summary>
+    <div class="border rounded px-2 py-1 mt-1">{% for key, label, on in columns %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" value="{{ key }}" data-nui-tpl-col{% if on %} checked{% endif %}> {{ label }}</label>{% endfor %}</div>
+    <form data-nui-action-form data-nui-no-refresh data-nui-tpl-reload data-nui-tpl-export action="{% url 'new_ui:screen_tpl_save' %}" class="d-flex flex-wrap align-items-center gap-1 my-1">
+        {% csrf_token %}<input type="hidden" name="screen" value="{{ screen }}">
+        <input name="name" maxlength="100" class="form-control form-control-sm" style="width: 12rem;" placeholder="Nombre de la plantilla">
+        <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="is_default" value="1"> Por defecto</label>
+        {% if can_global %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="is_global" value="1"> Para toda la empresa</label>{% endif %}
+        <button type="submit" class="btn btn-sm btn-outline-success">Guardar como nueva</button>
+        <button type="submit" name="overwrite" value="1" class="btn btn-sm btn-outline-primary">Modificar la elegida</button>
+    </form>
+    <form data-nui-action-form data-nui-no-refresh data-nui-tpl-reload data-nui-tpl-export action="{% url 'new_ui:screen_tpl_delete' %}">
+        {% csrf_token %}<input type="hidden" name="screen" value="{{ screen }}">
+        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar la plantilla elegida?">Borrar la plantilla elegida</button>
+    </form>
+</details>

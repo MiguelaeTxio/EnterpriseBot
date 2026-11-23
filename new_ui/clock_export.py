@@ -16,7 +16,6 @@ historial). Con un solo trabajador, sus datos van arriba como membrete.
 from types import SimpleNamespace
 
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render
 from django.utils import timezone
 from django.views import View
 
@@ -295,179 +294,21 @@ def build_workbook(company, people, date_from, date_to, columns=None):
     return book
 
 
-# ------------------------------------------------ plantillas de columnas
-SCREEN = "clock_days"
 _BY_KEY = {c[0]: c for c in DAY_COLUMNS}
-
-
-def _template_model():
-    from panel.models import ScreenExportTemplate
-
-    return ScreenExportTemplate
-
-
-def _is_admin(company_user):
-    return company_user.role in company_user.ADMIN_ROLES
-
-
-def templates_for(company_user):
-    """
-    The user's own «Fichajes: jornadas» templates and the global ones.
-
-    ---
-
-    Las plantillas propias de «Fichajes: jornadas» y las globales de la
-    empresa (las mismas que en la interfaz antigua), con si se pueden
-    modificar.
-    """
-    rows = _template_model().objects.filter(
-        company=company_user.company, screen=SCREEN)
-    own = list(rows.filter(company_user=company_user, is_global=False)
-               .order_by("-is_default", "name"))
-    shared = list(rows.filter(is_global=True).order_by("name"))
-    out = []
-    for template in own + shared:
-        out.append({
-            "pk": template.pk, "name": template.name,
-            "is_global": template.is_global,
-            "is_default": template.is_default,
-            "columns": [k for k in (template.columns or []) if k in _BY_KEY],
-            "editable": (_is_admin(company_user) if template.is_global
-                         else True),
-        })
-    return out
-
-
-def _editable(company_user, pk):
-    template = _template_model().objects.filter(
-        pk=pk or 0, company=company_user.company, screen=SCREEN).first()
-    if template is None:
-        return None
-    if template.is_global:
-        return template if _is_admin(company_user) else None
-    return (template if template.company_user_id == company_user.pk
-            else None)
 
 
 def chosen_columns(request):
     """
-    The «Jornadas» columns of the export, in order.
+    The «Jornadas» columns of the export, in order (all if none marked).
 
     ---
 
-    Las columnas marcadas, en el orden de la plantilla elegida si la
-    hay (y coincide), si no en el de siempre; sin ninguna marcada, todas.
+    Las columnas marcadas de «Jornadas», en el orden de la plantilla
+    elegida (new_ui/screen_templates.py, pantalla «clock_days»).
     """
-    keys = [k for k in request.POST.getlist("columns") if k in _BY_KEY]
-    if not keys:
-        return list(DAY_COLUMNS)
-    template = _template_model().objects.filter(
-        pk=request.POST.get("template_pk") or 0,
-        company=request.user.company_user.company, screen=SCREEN).first()
-    if template is not None:
-        order = [k for k in (template.columns or []) if k in keys]
-        keys = order + [k for k in keys if k not in order]
-    else:
-        keys = [c[0] for c in DAY_COLUMNS if c[0] in keys]
-    return [_BY_KEY[k] for k in keys]
+    from new_ui.screen_templates import chosen_keys
 
-
-class ClockExportBlockView(SuperuserRequiredMixin, View):
-    """
-    GET: the export block (dates, templates, columns, buttons).
-
-    ---
-
-    GET: el bloque de exportación del registro de jornada: fechas,
-    plantillas (la de por defecto, ya marcada), columnas y botones.
-    """
-
-    def get(self, request):
-        templates = templates_for(request.user.company_user)
-        default = next((t for t in templates if t["is_default"]), None)
-        checked = set(default["columns"]) if default else set(_BY_KEY)
-        return render(request, "new_ui/_clock_export_block.html", {
-            "templates": templates,
-            "default_pk": default["pk"] if default else "",
-            "columns": [(c[0], c[1], c[0] in checked) for c in DAY_COLUMNS],
-            "all_keys": ",".join(_BY_KEY),
-            "can_global": _is_admin(request.user.company_user),
-        })
-
-
-class ClockTemplateSaveView(SuperuserRequiredMixin, View):
-    """
-    POST: save the marked columns as a template (new or the chosen one).
-
-    ---
-
-    POST: guarda las columnas marcadas como plantilla: nueva con el
-    nombre escrito, o sobre la elegida si se pide modificarla.
-    """
-
-    def post(self, request):
-        cu = request.user.company_user
-        name = (request.POST.get("name") or "").strip()[:100]
-        keys = [k for k in request.POST.getlist("columns") if k in _BY_KEY]
-        if not keys:
-            return JsonResponse({"ok": False, "message": "Marca al menos una "
-                                 "columna."}, status=400)
-        if request.POST.get("overwrite") == "1":
-            template = _editable(cu, request.POST.get("template_pk"))
-            if template is None:
-                return JsonResponse({"ok": False, "message": "Elige una "
-                                     "plantilla que puedas modificar."},
-                                    status=400)
-            name = name or template.name
-        else:
-            if not name:
-                return JsonResponse({"ok": False, "message": "Escribe el "
-                                     "nombre de la plantilla."}, status=400)
-            is_global = request.POST.get("is_global") == "1" and _is_admin(cu)
-            template = _template_model()(
-                company=cu.company, screen=SCREEN, is_global=is_global,
-                company_user=None if is_global else cu)
-        same = _template_model().objects.filter(
-            company=cu.company, screen=SCREEN, name__iexact=name,
-            is_global=template.is_global)
-        if not template.is_global:
-            same = same.filter(company_user=cu)
-        if same.exclude(pk=template.pk).exists():
-            return JsonResponse({"ok": False, "message": "Ya hay una "
-                                 "plantilla con ese nombre."}, status=400)
-        template.name = name
-        template.columns = keys
-        template.is_default = (request.POST.get("is_default") == "1"
-                               and not template.is_global)
-        template.save()
-        if template.is_default:
-            _template_model().objects.filter(
-                company=cu.company, screen=SCREEN, company_user=cu,
-                is_global=False).exclude(pk=template.pk).update(
-                is_default=False)
-        return JsonResponse({"ok": True, "message": "Plantilla «%s» "
-                             "guardada." % name})
-
-
-class ClockTemplateDeleteView(SuperuserRequiredMixin, View):
-    """
-    POST `template_pk`: delete a template the user may edit.
-
-    ---
-
-    POST: borra la plantilla elegida, si se puede modificar.
-    """
-
-    def post(self, request):
-        template = _editable(request.user.company_user,
-                             request.POST.get("template_pk"))
-        if template is None:
-            return JsonResponse({"ok": False, "message": "Elige una "
-                                 "plantilla que puedas borrar."}, status=400)
-        name = template.name
-        template.delete()
-        return JsonResponse({"ok": True, "message": "Plantilla «%s» "
-                             "borrada." % name})
+    return [_BY_KEY[k] for k in chosen_keys(request, "clock_days")]
 
 
 class ClockExportView(SuperuserRequiredMixin, View):

@@ -1,4 +1,23 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_clock.html -- S163: exportar el registro de jornada (Excel) con plantillas de columnas; el bloque se pide aparte (new_ui/_clock_export_block.html) para repintarse al guardar o borrar una plantilla. Vista: new_ui/clock_export.py. #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_clock.html -- S163: exportar el registro de jornada (Excel) con plantillas de columnas de «Jornadas» (new_ui/_screen_tpl_block.html, pantalla «clock_days») . Vista: new_ui/clock_export.py. #}
 <div class="d-none" data-nui-actions-for="jornadas fichajes general">
-    <div data-nui-clock-block data-url="{% url 'new_ui:clock_export_block' %}"><p class="small text-muted mb-0">Cargando…</p></div>
+    <div data-nui-tpl-shared>
+        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Registro de jornada (Excel)</div>
+        <div class="d-flex flex-wrap align-items-center gap-1 mb-1 small">
+            <span class="text-muted">Desde</span><input type="date" class="form-control form-control-sm" style="width: 10rem;" data-nui-tpl-from aria-label="Desde">
+            <span class="text-muted">hasta</span><input type="date" class="form-control form-control-sm" style="width: 10rem;" data-nui-tpl-to aria-label="Hasta">
+            <span class="text-muted">(sin fechas, el mes en curso)</span>
+        </div>
+        <div data-nui-screen-tpl data-url="{% url 'new_ui:screen_tpl_block' %}?screen=clock_days"><p class="small text-muted mb-1">Cargando…</p></div>
+        <p class="small text-muted mb-1">DNI y nombre van siempre delante (o arriba, con un solo trabajador). Pulsaciones y Correcciones salen siempre enteras.</p>
+        <div class="d-flex flex-wrap gap-1">
+            <form data-nui-action-form data-nui-download data-nui-no-refresh data-nui-tpl-export action="{% url 'new_ui:clock_export' %}">
+                {% csrf_token %}<input type="hidden" name="person_pk" value="" data-nui-scope-input>
+                <button type="submit" class="btn btn-sm btn-outline-primary">De la persona abierta</button>
+            </form>
+            <form data-nui-action-form data-nui-needs-selection data-nui-download data-nui-no-refresh data-nui-tpl-export action="{% url 'new_ui:clock_export' %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary">De las marcadas</button>
+            </form>
+        </div>
+    </div>
 </div>

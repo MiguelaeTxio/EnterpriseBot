@@ -634,6 +634,12 @@ class NewUiListView(SuperuserRequiredMixin, View):
 
         section = request.GET.get("s", "")
         tab = request.GET.get("t", "")
+        if (section, tab) == ("per", "alta_fichaje") and _check_view(
+                request, section, tab):
+            # Vista propia (no es un listado de modelo): S163.
+            from new_ui.views_onboarding import render_report
+
+            return render_report(request)
         definition = list_def(section, tab)
         if definition is None or not _check_view(request, section, tab):
             return HttpResponseBadRequest("Listado no disponible.")

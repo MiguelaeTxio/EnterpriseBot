@@ -1,0 +1,13 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_onboarding.html -- S163: exportar el informe del alta en el fichaje (con los filtros de la vista) con plantillas de columnas (pantalla «clock_onboarding»). Vista: new_ui/views_onboarding.py. #}
+<div class="d-none" data-nui-actions-for="alta_fichaje">
+    <div data-nui-tpl-shared>
+        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Exportar el informe (con los filtros de la vista)</div>
+        <div data-nui-screen-tpl data-url="{% url 'new_ui:screen_tpl_block' %}?screen=clock_onboarding&panel=trabajador,seccion,situacion,alta,envios,reenvio,whatsapp,abierta,acceso,ultimo_fichaje,dias_alta,dias_reenvio,dias_fichaje"><p class="small text-muted mb-1">Cargando…</p></div>
+        <form data-nui-action-form data-nui-download data-nui-no-refresh data-nui-tpl-export data-nui-list-params action="{% url 'new_ui:onboarding_export' %}" class="d-flex flex-wrap gap-1">
+            {% csrf_token %}
+            <button type="submit" name="export_format" value="xlsx" class="btn btn-sm btn-outline-primary">Excel</button>
+            <button type="submit" name="export_format" value="pdf" class="btn btn-sm btn-outline-primary">PDF</button>
+            <button type="submit" name="export_format" value="html" class="btn btn-sm btn-outline-primary">HTML</button>
+        </form>
+    </div>
+</div>

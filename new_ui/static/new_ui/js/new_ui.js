@@ -356,28 +356,29 @@
             if (tabButton) tabButton.textContent = "De " + (label ? label.textContent.trim() : "la vista");
         }
         listPanel.addEventListener("nui:tab", function (ev) { paintViewActions(ev.detail); });
-        // Registro de jornada: el bloque (fechas, plantillas y columnas)
-        // se pide aparte y se repinta al guardar o borrar una plantilla;
-        // lo común del bloque va con cada formulario al enviarlo.
-        function loadClockBlocks() {
-            root.querySelectorAll("[data-nui-clock-block]").forEach(function (box) {
+        // Plantillas de columnas de las exportaciones de pantalla: el bloque
+        // se pide aparte y se repinta al guardar o borrar una plantilla; lo
+        // común (fechas, plantilla elegida, columnas) va con cada formulario
+        // del [data-nui-tpl-shared] al enviarlo.
+        function loadScreenTpl() {
+            document.querySelectorAll("[data-nui-screen-tpl]").forEach(function (box) {
                 fetch(box.dataset.url, {credentials: "same-origin"})
                     .then(r => r.ok ? r.text() : Promise.reject(r.status))
                     .then(function (html) { box.innerHTML = html; })
                     .catch(function () { box.innerHTML = '<p class="small text-danger mb-0">No se ha podido cargar.</p>'; });
             });
         }
-        loadClockBlocks();
-        root.addEventListener("change", function (ev) {
-            const radio = ev.target.closest('[name="nui_clocktpl"]');
+        loadScreenTpl();
+        document.addEventListener("change", function (ev) {
+            const radio = ev.target.closest("[data-nui-tpl-radio]");
             if (!radio) return;
             const keys = (radio.dataset.columns || "").split(",");
-            radio.closest("[data-nui-clock-shared]").querySelectorAll("[data-nui-clock-col]").forEach(function (box) { box.checked = keys.indexOf(box.value) !== -1; });
+            radio.closest("[data-nui-tpl-shared]").querySelectorAll("[data-nui-tpl-col]").forEach(function (box) { box.checked = keys.indexOf(box.value) !== -1; });
         });
-        root.addEventListener("submit", function (ev) {
-            const f = ev.target.closest("[data-nui-clock-export]");
+        document.addEventListener("submit", function (ev) {
+            const f = ev.target.closest("[data-nui-tpl-export]");
             if (!f) return;
-            const box = f.closest("[data-nui-clock-shared]");
+            const box = f.closest("[data-nui-tpl-shared]");
             f.querySelectorAll("[data-nui-copied]").forEach(el => el.remove());
             function add(name, value) {
                 const input = document.createElement("input");
@@ -385,11 +386,15 @@
                 input.setAttribute("data-nui-copied", "");
                 f.appendChild(input);
             }
-            add("desde", box.querySelector("[data-nui-clock-from]").value);
-            add("hasta", box.querySelector("[data-nui-clock-to]").value);
-            const chosen = box.querySelector('[name="nui_clocktpl"]:checked');
+            const from = box.querySelector("[data-nui-tpl-from]"), to = box.querySelector("[data-nui-tpl-to]");
+            if (from) add("desde", from.value);
+            if (to) add("hasta", to.value);
+            if (f.hasAttribute("data-nui-list-params") && window.nuiListExtra) {
+                Object.entries(window.nuiListExtra()).forEach(([k, v]) => add(k, v));
+            }
+            const chosen = box.querySelector("[data-nui-tpl-radio]:checked");
             add("template_pk", chosen ? chosen.value : "");
-            box.querySelectorAll("[data-nui-clock-col]:checked").forEach(c => add("columns", c.value));
+            box.querySelectorAll("[data-nui-tpl-col]:checked").forEach(c => add("columns", c.value));
         }, true);
         root.addEventListener("submit", function (ev) {
             const f = ev.target.closest("[data-nui-action-form]");
@@ -435,7 +440,7 @@
                     if (f.closest("#nui-entity-actions") && !f.hasAttribute("data-nui-no-refresh")) loadEntityActions();
                     // Alta: la vista se queda con la persona nueva.
                     if (data.scope && (section === "per" || section === "cdg")) setScope(data.scope);
-                    if (f.hasAttribute("data-nui-clocktpl-reload")) loadClockBlocks();
+                    if (f.hasAttribute("data-nui-tpl-reload")) loadScreenTpl();
                     // Formularios de un solo uso (subir): vuelven a empezar.
                     if (f.hasAttribute("data-nui-reset-after")) {
                         f.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
@@ -905,6 +910,8 @@
             }
             refreshSelection();
         }
+        const listExtra = {};
+        window.nuiListExtra = function () { return Object.assign({q: (form.querySelector('[name="q"]') || {}).value || ""}, listExtra[tab()] || {}); };
         function params(extra) {
             const p = new URLSearchParams(new FormData(form));
             p.set("s", section);
@@ -927,7 +934,7 @@
             if (!box) return;
             const ticket = ++loading;
             box.innerHTML = '<p class="text-muted small p-3 mb-0">Cargando…</p>';
-            fetch(urls.list + "?" + params().toString(), {credentials: "same-origin"})
+            fetch(urls.list + "?" + params(listExtra[t] || {}).toString(), {credentials: "same-origin"})
                 .then(r => r.ok ? r.text() : r.text().then(t2 => Promise.reject(t2)))
                 .then(function (html) {
                     if (ticket !== loading) return;
@@ -1176,6 +1183,17 @@
         // sola, como una pestaña más del listado (sin acordeones).
         function fichaBox() { return pane(tab()); }
         let cardView = {pk: null, tab: null, extra: {}};
+        // Vistas propias (no listados de modelo, p. ej. Alta en el
+        // fichaje): sus botones de filtro van con la pestaña.
+        lists.addEventListener("click", function (ev) {
+            const btn = ev.target.closest("[data-nui-list-param]");
+            if (!btn) return;
+            ev.preventDefault();
+            const t = tab();
+            listExtra[t] = Object.assign({}, listExtra[t] || {});
+            listExtra[t][btn.dataset.nuiListParam] = btn.dataset.value;
+            load();
+        });
         // S163: carga de albaranes (copia adaptada de
         // panel/static/panel/js/albaran_upload.js). La ventana solo sube los
         // archivos (4 a la vez); la IA los lee en segundo plano, así que se
