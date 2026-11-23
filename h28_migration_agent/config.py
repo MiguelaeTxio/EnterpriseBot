@@ -378,6 +378,19 @@ INSURANCE_FOLDERS = (
     "DOC.ASISTENCIA/DOC.ALLIANZ - MARIA/SEGUROS",
 )
 
+# S164 (seguros): carpetas de seguros que no cuelgan de
+# DOCUMENTS_ROOT_NAME sino de su carpeta padre ("Documentos
+# compartidos"), relativas a ella. Miguel Angel, 23/11/2026: la carpeta
+# "seguros" (C:\Users\Usuario\OneDrive - GRUALDI SL\Documentos
+# compartidos\seguros) no se habia incluido. En el cubo se refleja con
+# su nombre (fs_utils.mirror_name: fuera de la raiz, su nombre).
+# ---
+# Insurance folders hanging from the parent of DOCUMENTS_ROOT_NAME,
+# relative to that parent, for the same "watch insurance folders" item.
+INSURANCE_SIBLING_FOLDERS = (
+    "seguros",
+)
+
 
 def get_agent_root_dir():
     """Return the directory the agent (script or .exe) runs from.

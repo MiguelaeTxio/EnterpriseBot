@@ -43,6 +43,7 @@ from config import (
     DIRTY_BUCKET_NAME,
     DOCUMENTS_ROOT_NAME,
     INSURANCE_FOLDERS,
+    INSURANCE_SIBLING_FOLDERS,
     LOG_BACKUP_COUNT,
     LOG_FILE_NAME,
     LOG_MAX_BYTES,
@@ -722,7 +723,8 @@ def _watch_insurance_folders(icon, _menu_item):
     """Reconcile and watch the companies' insurance folders (S152).
     ---
     Reconcilia y deja vigiladas las carpetas de polizas y recibos de
-    seguros de las empresas (config.INSURANCE_FOLDERS), para que la
+    seguros de las empresas (config.INSURANCE_FOLDERS y, desde S164,
+    config.INSURANCE_SIBLING_FOLDERS), para que la
     pestana Seguros del panel tenga la documentacion al dia. Mismo
     camino que "Vigilar carpeta ya migrada": lo que falte en el cubo
     va a la cuarentena (con su ruta desde DOCUMENTOS GRUPO ALVAREZ) y
@@ -740,11 +742,19 @@ def _watch_insurance_folders(icon, _menu_item):
         )
         return
 
+    # S164: las de config.INSURANCE_SIBLING_FOLDERS cuelgan de la
+    # carpeta padre de la raiz ("Documentos compartidos\seguros").
+    shared_root = os.path.dirname(documents_root)
+    locations = [
+        (documents_root, relative) for relative in INSURANCE_FOLDERS
+    ] + [
+        (shared_root, relative) for relative in INSURANCE_SIBLING_FOLDERS
+    ]
     pending = []
     missing = []
-    for relative in INSURANCE_FOLDERS:
+    for base, relative in locations:
         folder = os.path.normpath(
-            os.path.join(documents_root, *relative.split("/")))
+            os.path.join(base, *relative.split("/")))
         if folder in _watched_folders:
             continue
         if os.path.isdir(folder):
