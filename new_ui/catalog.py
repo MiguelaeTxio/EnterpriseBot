@@ -63,6 +63,7 @@ TAB_NOUNS = {
         "epis": ("entrega de EPI", "entregas de EPI", "f"),
         "requisitos": ("trabajador", "trabajadores"),
         "pagos_trab": ("trabajador", "trabajadores"),
+        "pagos_partes": ("parte", "partes"),
     },
     "doc": {
         "bandeja": ("documento", "documentos"),
@@ -145,7 +146,7 @@ TAB_GROUPS = {
         ("Partes", ("partes_trab", "partes")),
         ("Repostajes", ("repostajes_trab", "repostajes")),
         ("EPIs", ("epis_trab", "epis")),
-        ("Horas y pagos", ("pagos_trab", "pagos")),
+        ("Horas y pagos", ("pagos_trab", "pagos_partes", "pagos")),
     ],
 }
 # S163 (23/11): la lista de todos («all», sin persona abierta) o lo de
@@ -163,7 +164,8 @@ VIEW_MODES = {
     "per": {
         "all": ("general", "requisitos", "comunicaciones", "horarios",
                 "saldo_vacaciones", "bajas", "partes_trab",
-                "repostajes_trab", "epis_trab", "pagos_trab"),
+                "repostajes_trab", "epis_trab", "pagos_trab",
+                "pagos_partes"),
         "one": ("ficha", "documentos", "laboral", "solicitudes",
                 "pedidos", "circulares_rec",
                 "fichajes", "jornadas", "desglose_vacaciones", "salud",
@@ -278,6 +280,7 @@ SECTIONS = OrderedDict([
         ("epis_trab", "EPIs"),
         ("epis", "Entregas"),
         ("pagos_trab", "Horas y pagos"),
+        ("pagos_partes", "Partes"),
         ("pagos", "Cálculo"),
     ])),
     # S163 (23/11): por temas, como Personal.

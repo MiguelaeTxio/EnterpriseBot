@@ -35,6 +35,26 @@
         <p class="small text-muted mb-0">Del 21 al 20, como los periodos de trabajo: se cierra el suyo (los partes de dentro ya no se editan) y horas, precios e importe se guardan tal cual. No deja liquidar con partes sin revisar. Se ve y se deshace (reabre) en Empresa › Horas y pagos › Liquidaciones.</p>
     </form>
 </div>
+<div class="d-none" data-nui-actions-for="pagos_partes">
+    <div class="small fw-semibold mb-1"><i class="bi bi-check2-all me-1"></i>Revisión de los partes marcados</div>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:partes_review' %}" class="d-flex flex-wrap gap-1 mb-3">
+        {% csrf_token %}
+        <button type="submit" name="what" value="review" class="btn btn-sm btn-success"><i class="bi bi-check2-all me-1"></i>Marcar revisados</button>
+        <button type="submit" name="what" value="unreview" class="btn btn-sm btn-outline-warning"><i class="bi bi-x-circle me-1"></i>Desmarcar revisados</button>
+        <button type="submit" name="what" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Eliminar los partes marcados? No se puede deshacer."><i class="bi bi-trash me-1"></i>Eliminar</button>
+    </form>
+    <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-excel me-1"></i>Exportar los marcados por plantilla</div>
+    {% for t in parte_templates %}
+    <form data-nui-action-form data-nui-needs-selection data-nui-download data-nui-no-refresh action="{% url 'new_ui:partes_export' %}" class="d-flex flex-wrap align-items-center gap-1 mb-1">
+        {% csrf_token %}<input type="hidden" name="template" value="{{ t.pk }}">
+        <span class="small">{{ t.name }}{% if t.is_global %} <span class="text-muted">(de todos)</span>{% endif %}</span>
+        <button type="submit" name="fmt" value="xlsx" class="btn btn-sm btn-outline-success py-0">Excel</button>
+        <button type="submit" name="fmt" value="pdf" class="btn btn-sm btn-outline-secondary py-0">PDF</button>
+    </form>
+    {% empty %}
+    <p class="small text-muted mb-0">No hay plantillas de exportación de partes: se crean en Partes digitales.</p>
+    {% endfor %}
+</div>
 {% endif %}
 {% if section == "doc" %}
 <div class="d-none" data-nui-actions-for="liquidaciones">

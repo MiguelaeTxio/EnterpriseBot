@@ -43,6 +43,7 @@ from new_ui.views_medical import absences_context, medical_context
 from new_ui.views_payslips_nui import payslips_context
 from new_ui.views_safety import safety_context
 from new_ui.views_pay import pay_context
+from new_ui.views_partes import partes_context
 from new_ui.views_epis import epis_context
 from new_ui.views_accessories import accessories_context
 from new_ui.views_vacations import VacationSetupBlockView, vacations_context
@@ -322,6 +323,7 @@ def _section_context(company_user, section):
         **payslips_context(section, company_user),
         **safety_context(section),
         **pay_context(section, company_user.company),
+        **partes_context(section, company_user),
         **epis_context(section),
         **machines_context(section, company_user.company),
         **(logbook_context() if section == "cdg" else {}),

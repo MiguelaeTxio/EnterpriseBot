@@ -2448,6 +2448,177 @@ def _pay_periods_def():
              "vuelven a calcular; para cambiarlos, deshaz la liquidación.")
 
 
+
+def _prepare_pay_partes(rows):
+    """
+    Festive split and clock-in/out of each parte (ListDef.prepare).
+
+    ---
+
+    De cada parte: si el día es festivo para su trabajador (sábado,
+    domingo o festivo de su base: entonces todas sus horas son festivas
+    y no hay extra; si no, extra es lo que pasa de 8), y la primera
+    entrada y la última salida de su fichaje ese día (redondeadas), como
+    en Partes digitales.
+    """
+    import datetime as _dt
+    from decimal import Decimal
+
+    from hr_calendar.clock_report import MAX_SHIFT_HOURS, build_shifts
+    from hr_calendar.models import ClockEvent
+    from work_order_processor.festive import is_festive, split_hours
+
+    for row in rows:
+        day = row.nui_fecha
+        if isinstance(day, str):
+            day = _dt.date.fromisoformat(day[:10])
+            row.nui_fecha = day
+        row.nui_festivo = is_festive(day, row.uploaded_by)
+        row.nui_extra, row.nui_festivas = split_hours(
+            row.nui_horas or Decimal("0"), row.nui_festivo)
+        row.nui_in = row.nui_out = None
+    dated = [r for r in rows if r.nui_fecha and r.uploaded_by_id]
+    if not dated:
+        return
+    tz = timezone.get_current_timezone()
+    margin = _dt.timedelta(hours=MAX_SHIFT_HOURS)
+    first = min(r.nui_fecha for r in dated)
+    last = max(r.nui_fecha for r in dated)
+    start = timezone.make_aware(_dt.datetime.combine(first, _dt.time.min), tz)
+    end = timezone.make_aware(_dt.datetime.combine(
+        last + _dt.timedelta(days=1), _dt.time.min), tz)
+    events = {}
+    for event in ClockEvent.objects.current().filter(
+            company_user_id__in={r.uploaded_by_id for r in dated},
+            pressed_at__gte=start - margin, pressed_at__lt=end + margin,
+    ).order_by("company_user_id", "pressed_at", "pk"):
+        events.setdefault(event.company_user_id, []).append(event)
+    times = {}
+    for user_id, user_events in events.items():
+        for shift in build_shifts(user_events):
+            day_in, day_out = times.get((user_id, shift.day), (None, None))
+            if shift.clock_in is not None and (
+                    day_in is None
+                    or shift.clock_in.pressed_at < day_in.pressed_at):
+                day_in = shift.clock_in
+            if shift.clock_out is not None and (
+                    day_out is None
+                    or shift.clock_out.pressed_at > day_out.pressed_at):
+                day_out = shift.clock_out
+            times[(user_id, shift.day)] = (day_in, day_out)
+    for row in dated:
+        day_in, day_out = times.get((row.uploaded_by_id, row.nui_fecha),
+                                    (None, None))
+        row.nui_in = timezone.localtime(
+            day_in.rounded_at or day_in.pressed_at) if day_in else None
+        row.nui_out = timezone.localtime(
+            day_out.rounded_at or day_out.pressed_at) if day_out else None
+
+
+def _pay_partes_def():
+    """
+    Personal › Horas y pagos › Partes: the digital partes to review.
+
+    ---
+
+    Personal › Horas y pagos › Partes (S163, 23/11, Miguel Ángel:
+    "Carolina tendrá que utilizar esta parte"): los partes digitales de
+    todos, uno por fila, con lo de Partes digitales (fecha, entrada y
+    salida del fichaje, bloques, horas, extra, festivas, dieta, revisado
+    y origen). Revisar, desmarcar, eliminar y exportar por plantilla, en
+    Acciones. Los días de quien no hace partes salen de su fichaje (ya
+    visado en Fichaje) en la lista de trabajadores y en su Cálculo.
+    """
+    from django.db.models import Count, Exists, Min, Sum
+
+    from work_order_processor.models import WorkOrder, WorkOrderEntry
+
+    def queryset(company):
+        diet = WorkOrderEntry.objects.filter(work_order=OuterRef("pk"),
+                                             has_diet=True)
+        return WorkOrder.objects.filter(
+            company=company, uploaded_by__isnull=False,
+            source__in=[WorkOrder.Source.DIGITAL,
+                        WorkOrder.Source.GENERATED],
+        ).annotate(
+            nui_fecha=Min("entries__work_date"),
+            nui_bloques=Count("entries__lines"),
+            nui_horas=Sum("entries__lines__delta_hours"),
+            nui_dieta=Exists(diet),
+        ).select_related("uploaded_by__person_identity", "uploaded_by__user",
+                         "uploaded_by__base", "reviewed_by__user")
+
+    def entity_of(row):
+        return getattr(row.uploaded_by, "person_identity", None)
+
+    def who(cu):
+        if cu is None:
+            return ""
+        return cu.user.get_full_name() or cu.user.username
+
+    def hhmm(value):
+        return value.strftime("%H:%M") if value else ""
+
+    def hours(value):
+        return fmt_num(value) if value else ""
+
+    return ListDef(
+        "Partes", queryset, [
+            Col("persona", "Trabajador", lambda r: person_name(entity_of(r))
+                or who(r.uploaded_by), "uploaded_by__person_identity__"
+                "first_surname", entity=True),
+            Col("fecha", "Fecha", lambda r: fmt_date(r.nui_fecha),
+                "nui_fecha", "text-nowrap"),
+            Col("entrada", "Entrada (fichaje)", lambda r: hhmm(r.nui_in)),
+            Col("salida", "Salida (fichaje)", lambda r: hhmm(r.nui_out)),
+            Col("bloques", "Bloques", lambda r: r.nui_bloques or "",
+                "nui_bloques", "text-end"),
+            Col("horas", "Horas", lambda r: hours(r.nui_horas), "nui_horas",
+                "text-end"),
+            Col("extra", "Horas extra", lambda r: hours(r.nui_extra), "",
+                "text-end"),
+            Col("festivas", "Horas festivas", lambda r: hours(
+                r.nui_festivas), "", "text-end"),
+            Col("dieta", "Dieta", lambda r: "Sí" if r.nui_dieta else "",
+                "nui_dieta"),
+            Col("revisado", "Revisado", lambda r: "Sí" if r.reviewed
+                else "Pendiente", "reviewed"),
+            Col("revisado_por", "Revisado por", lambda r: who(r.reviewed_by),
+                "reviewed_by__user__first_name"),
+            Col("revisado_el", "Revisado el", lambda r: fmt_datetime(
+                r.reviewed_at), "reviewed_at", "text-nowrap"),
+            Col("origen", "Origen", lambda r: disp(r, "source"), "source"),
+        ],
+        entity="person", entity_path="uploaded_by__person_identity",
+        entity_filter=lambda qs, ids: qs.filter(
+            uploaded_by__person_identity__in=ids),
+        entity_of=entity_of,
+        search=("uploaded_by__person_identity__first_surname",
+                "uploaded_by__person_identity__second_surname",
+                "uploaded_by__person_identity__given_name"),
+        date_field="nui_fecha", default_order=("nui_fecha", "pk"),
+        actions=lambda r: [],
+        prepare=_prepare_pay_partes,
+        default_cols=["persona", "fecha", "entrada", "salida", "bloques",
+                      "horas", "extra", "festivas", "dieta", "revisado"],
+        extras=[
+            Extra("revisado", "Revisión", lambda company: [
+                ("no", "Pendientes de revisar"), ("si", "Revisados")],
+                apply=lambda qs, v: qs.filter(reviewed=(v == "si"))),
+            Extra("dieta", "Dieta", lambda company: [
+                ("si", "Con dieta"), ("no", "Sin dieta")],
+                apply=lambda qs, v: qs.filter(nui_dieta=(v == "si"))),
+            Extra("origen", "Origen", lambda company: [
+                (WorkOrder.Source.DIGITAL, "Digital (del operario)"),
+                (WorkOrder.Source.GENERATED, "Generado (ausencia)")],
+                apply=lambda qs, v: qs.filter(source=v)),
+        ],
+        note=("Periodo: fecha del parte. Festivo (sábado, domingo o festivo "
+              "de su base): todas sus horas son festivas; si no, extra es "
+              "lo que pasa de 8. Revisar, eliminar y exportar por plantilla, "
+              "en Acciones con los marcados."))
+
+
 _CACHE = {}
 
 
@@ -2500,6 +2671,7 @@ def list_def(section, tab):
             order=("expiry_date", "review_date", "retimbrado_date"))
         # S163 (23/11): Horas y pagos.
         _CACHE["per"]["pagos_trab"] = _pay_person_list()
+        _CACHE["per"]["pagos_partes"] = _pay_partes_def()
         _CACHE["doc"]["liquidaciones"] = _pay_periods_def()
         _CACHE["per"]["pedidos"] = _CACHE["doc"]["pedir"]
         _CACHE["per"]["circulares_rec"] = _CACHE["doc"]["circulares"]
