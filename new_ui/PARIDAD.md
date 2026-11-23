@@ -122,9 +122,12 @@ configurables, cada supervisor las suyas.
   Vacaciones), **grupo de selección** (las secciones reales; la sección
   es herencia del SIME y no cuenta) e **individual**. Manda el más
   concreto: si el trabajador no tiene los suyos, los de su grupo; si el
-  grupo no tiene, los de la empresa. Lista, con los marcados: registrar
+  grupo no tiene, los de la empresa. Si está en dos grupos con días
+  distintos y no tiene los suyos, los de la empresa. Los días de la
+  empresa y de cada grupo se ponen en Empresa › Vacaciones. Lista, con los marcados: registrar
   vacaciones, poner días propios (o quitarlos), importar saldos de
-  partida; los días de un grupo, al elegirlo en Grupos de selección. Columnas para elegir: días que le tocan (y de dónde: propios,
+  partida.
+  Columnas para elegir: días que le tocan (y de dónde: propios,
   grupo o empresa), disfrutados, pendientes, del año anterior, próximo
   periodo. En su ficha: su desglose (periodos, cambiar o borrar; ajustes),
   su saldo explicado y lo mismo solo para él. Desaparecen las vistas
