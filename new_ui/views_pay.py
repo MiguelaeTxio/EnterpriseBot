@@ -72,6 +72,12 @@ def _date(text):
         return None
 
 
+def _as_date(value):
+    if value is None or isinstance(value, datetime.date):
+        return value
+    return _date(str(value)[:10])
+
+
 def pay_period(params):
     """El periodo del filtro; sin periodo, el mes en curso hasta hoy."""
     start, end = period_range(params)
@@ -238,9 +244,10 @@ def prepare_people(people):
         person.nui_pay = None
         if not person.company_user_id:
             continue
+        # En MySQL la fecha anotada llega como texto.
         key = (person.company_user.company_id,
-               getattr(person, "nui_pay_from", None),
-               getattr(person, "nui_pay_to", None))
+               _as_date(getattr(person, "nui_pay_from", None)),
+               _as_date(getattr(person, "nui_pay_to", None)))
         groups.setdefault(key, []).append(person)
     for (_company_id, start, end), members in groups.items():
         if start is None or end is None:
