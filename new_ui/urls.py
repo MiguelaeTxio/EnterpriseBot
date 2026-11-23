@@ -227,6 +227,8 @@ urlpatterns = [
          views_notices.ScopeSaveView.as_view(), name="notice_scope"),
     path("partes/revisar/", views_partes.PartesReviewView.as_view(),
          name="partes_review"),
+    path("partes/<int:pk>/ver/", views_partes.ParteSheetView.as_view(),
+         name="parte_sheet"),
     path("partes/exportar/", views_partes.PartesExportView.as_view(),
          name="partes_export"),
     path("pagos/ajustes/", views_pay.PaySettingsSaveView.as_view(),

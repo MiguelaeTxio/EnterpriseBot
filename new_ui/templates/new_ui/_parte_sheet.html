@@ -1,0 +1,70 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_parte_sheet.html -- S163: el documento de un parte digital, en el visor de la nueva interfaz (copia de panel/documentation_h30/_personal_workday_detail.html, con el resumen y los botones de revisar). Vista: new_ui/views_partes.py (ParteSheetView). #}
+<div class="small">
+    <div class="d-flex flex-wrap align-items-baseline gap-3 mb-2">
+        <span class="fs-6 fw-bold">{{ worker }}</span>
+        <span class="fw-semibold">{{ day|date:"l d/m/Y"|capfirst|default:"Sin fecha" }}{% if festive %} <span class="badge text-bg-warning">festivo</span>{% endif %}</span>
+        <span>Horas: <strong>{{ total|floatformat:2 }}</strong></span>
+        <span>Extra: <strong>{{ extra|floatformat:2 }}</strong></span>
+        <span>Festivas: <strong>{{ festive_hours|floatformat:2 }}</strong></span>
+        <span>Dieta: <strong>{% if diet %}Sí{% else %}No{% endif %}</strong></span>
+        <span>{% if parte.reviewed %}<span class="badge text-bg-success">Revisado{% if reviewed_by %} por {{ reviewed_by }}{% endif %}{% if parte.reviewed_at %} el {{ parte.reviewed_at|date:"d/m/Y" }}{% endif %}</span>{% else %}<span class="badge text-bg-warning">Pendiente de revisar</span>{% endif %}</span>
+        <span class="text-muted">{{ parte.get_source_display }}</span>
+    </div>
+    <form data-nui-action-form data-nui-sheet-form action="{% url 'new_ui:partes_review' %}" class="d-flex flex-wrap gap-1 mb-3">
+        {% csrf_token %}<input type="hidden" name="selected" value="{{ parte.pk }}">
+        {% if parte.reviewed %}
+        <button type="submit" name="what" value="unreview" class="btn btn-sm btn-outline-warning"><i class="bi bi-x-circle me-1"></i>Desmarcar revisado</button>
+        {% else %}
+        <button type="submit" name="what" value="review" class="btn btn-sm btn-success"><i class="bi bi-check2-all me-1"></i>Marcar revisado</button>
+        {% endif %}
+    </form>
+
+    {% for block in blocks %}
+    <div class="mb-3 pb-3 {% if not forloop.last %}border-bottom{% endif %}">
+        <div class="d-flex flex-wrap gap-4 mb-2">
+            <div><div class="text-muted text-uppercase small">Fecha del parte</div><div class="fw-semibold">{{ block.entry.work_date|date:"d/m/Y"|default:"Sin fecha" }}</div></div>
+            <div><div class="text-muted text-uppercase small">Dieta</div><div class="fw-semibold">{% if block.entry.has_diet %}Sí{% else %}No{% endif %}</div></div>
+            <div><div class="text-muted text-uppercase small">Pausa de comida</div><div class="fw-semibold">{% if block.entry.no_lunch_break %}No paró a comer{% elif block.entry.lunch_break_start and block.entry.lunch_break_end %}{{ block.entry.lunch_break_start|time:"H:i" }} — {{ block.entry.lunch_break_end|time:"H:i" }}{% else %}Sin registrar{% endif %}</div></div>
+        </div>
+        {% for line in block.lines %}
+        <div class="border rounded p-2 mb-2">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge bg-dark">Tarea {{ line.line_number }}</span>
+                {% if line.is_on_site %}<span class="badge bg-secondary"><i class="bi bi-geo-alt me-1"></i>In situ</span>{% endif %}
+                {% if line.breakdown_ticket_id %}{% if line.ticket_closed %}<span class="badge bg-success">Ticket cerrado</span>{% else %}<span class="badge bg-warning text-dark">Ticket abierto</span>{% endif %}{% endif %}
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-12 col-md-4"><div class="text-muted small">Máquina o sección</div><div>{% if line.machine_asset %}{{ line.machine_asset.code }} — {{ line.machine_asset.brand_model }}{% else %}{{ line.machine_raw|default:"—" }}{% endif %}</div></div>
+                <div class="col-6 col-md-2"><div class="text-muted small">H.C.</div><div>{{ line.hc|time:"H:i"|default:"—" }}</div></div>
+                <div class="col-6 col-md-2"><div class="text-muted small">H.F.</div><div>{{ line.hf|time:"H:i"|default:"—" }}</div></div>
+                <div class="col-6 col-md-2"><div class="text-muted small">Horas</div><div>{{ line.delta_hours|default:"—" }}</div></div>
+                <div class="col-6 col-md-2"><div class="text-muted small">O.R.</div><div>{{ line.or_val|default:"—" }}</div></div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-12 col-md-6"><div class="text-muted small">Descripción avería</div><div>{{ line.fault_description|default:"—"|linebreaksbr }}</div></div>
+                <div class="col-12 col-md-6"><div class="text-muted small">Reparación realizada</div><div>{{ line.repair_notes|default:"—"|linebreaksbr }}</div></div>
+            </div>
+            {% if line.spare_parts.all %}
+            <div class="mb-2"><div class="text-muted small mb-1">Repuestos</div>
+                <ul class="mb-0 ps-3">{% for sp in line.spare_parts.all %}<li>{{ sp.material|default:sp.reference|default:"Repuesto sin descripción" }}{% if sp.quantity %} ({{ sp.quantity }}){% endif %}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+            {% if line.photo_entries %}
+            <div><div class="text-muted small mb-1">Fotos</div>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for e in line.photo_entries %}
+                    {% if e.signed_url %}<a href="{{ e.signed_url }}" target="_blank" rel="noopener"><img src="{{ e.signed_url }}" class="rounded border" style="width:72px;height:72px;object-fit:cover;" alt="{{ e.photo.caption|default:'Foto de la tarea' }}"></a>
+                    {% elif e.photo.drive_web_link %}<a href="{{ e.photo.drive_web_link }}" target="_blank" rel="noopener"><img src="https://drive.google.com/thumbnail?id={{ e.photo.drive_file_id }}" class="rounded border" style="width:72px;height:72px;object-fit:cover;" alt="{{ e.photo.caption|default:'Foto de la tarea' }}"></a>{% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% empty %}
+        <p class="text-muted mb-0">Sin tareas registradas ese día.</p>
+        {% endfor %}
+    </div>
+    {% empty %}
+    <p class="text-muted mb-0">El parte no tiene datos.</p>
+    {% endfor %}
+</div>

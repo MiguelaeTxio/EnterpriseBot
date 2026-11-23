@@ -98,6 +98,8 @@ body.nui-dragging { user-select: none; }
 .min-w-0 { min-width: 0; }
 .nui-ficha-box { border: 1px solid #dee2e6; border-radius: .375rem; background: #fff; min-width: 0; overflow: hidden; }
 .nui-ficha-box.nui-ficha-wide { grid-column: 1 / -1; }
+.nui-openable { cursor: pointer; }
+.nui-openable:hover > td { background: #e7f1ff; }
 .nui-ficha-head { font-size: .8rem; font-weight: 600; padding: .3rem .6rem; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
 .nui-ficha-box .table th { width: 42%; }
 .nui-ficha-box .table > :not(caption) > * > * { padding: .2rem .6rem; }
@@ -267,6 +269,18 @@ body.nui-dragging { user-select: none; }
                 <ul class="list-unstyled mb-0 small" id="nui-selection-list"></ul>
             </div>
         </section>
+    </div>
+    {# S163 (23/11): visor de documentos (el parte al pulsar su fila). #}
+    <div class="modal fade" id="nui-viewer" tabindex="-1" aria-hidden="true" aria-labelledby="nui-viewer-title">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title" id="nui-viewer-title">Parte</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body" data-nui-viewer-body></div>
+            </div>
+        </div>
     </div>
 </div>
 

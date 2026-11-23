@@ -722,6 +722,7 @@
                     if (f.hasAttribute("data-nui-tpl-reload")) loadScreenTpl();
                     if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
                     if (f.hasAttribute("data-nui-vacset-reload")) loadVacationSetup();
+                    if (f.hasAttribute("data-nui-sheet-form") && window.nuiOpenViewer) window.nuiOpenViewer(null, data.message);
                     if (f.hasAttribute("data-nui-fragment-reload")) {
                         const box = f.closest("[data-nui-fragment-box]");
                         if (box && box.dataset.current) loadFragment(box);
@@ -1510,6 +1511,36 @@
         // sola, como una pestaña más del listado (sin acordeones).
         function fichaBox() { return pane(tab()); }
         let cardView = {pk: null, tab: null, extra: {}};
+        // S163 (23/11, Miguel Ángel: "yo quiero llegar, pinchar un parte
+        // y verlo"): pulsar una fila que se puede abrir (data-nui-open)
+        // la enseña en el visor, sin salir de la lista. El nombre (su
+        // ficha) y la casilla siguen como siempre.
+        let viewerUrl = "";
+        window.nuiOpenViewer = function (url, note) {
+            const modal = document.getElementById("nui-viewer");
+            if (!modal) return;
+            if (url) viewerUrl = url;
+            const body = modal.querySelector("[data-nui-viewer-body]");
+            body.innerHTML = '<p class="small text-muted mb-0">Cargando…</p>';
+            bootstrap.Modal.getOrCreateInstance(modal).show();
+            fetch(viewerUrl, {credentials: "same-origin"})
+                .then(r => r.ok ? r.text() : Promise.reject(new Error("No se ha podido abrir.")))
+                .then(function (html) {
+                    body.innerHTML = html;
+                    if (note) {
+                        const p = document.createElement("div");
+                        p.className = "alert alert-success small py-1 px-2";
+                        p.textContent = note;
+                        body.prepend(p);
+                    }
+                })
+                .catch(function (err) { body.innerHTML = '<p class="text-danger small mb-0">' + err.message + '</p>'; });
+        };
+        lists.addEventListener("click", function (ev) {
+            const tr = ev.target.closest("tr[data-nui-open]");
+            if (!tr || ev.target.closest("input, a, button, label, [data-nui-scope]")) return;
+            window.nuiOpenViewer(tr.dataset.nuiOpen);
+        });
         // Vistas propias (no listados de modelo, p. ej. Alta en el
         // fichaje): sus botones de filtro van con la pestaña.
         lists.addEventListener("click", function (ev) {

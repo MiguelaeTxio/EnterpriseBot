@@ -12,7 +12,8 @@ tendrá que utilizar esta parte".
 """
 import io
 
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
+from django.shortcuts import render
 from django.utils import timezone
 from django.views import View
 
@@ -133,3 +134,97 @@ class PartesExportView(SuperuserRequiredMixin, View):
         response["Content-Disposition"] = (
             'attachment; filename="partes_digitales_%s.xlsx"' % stamp)
         return response
+
+
+def _photo_entries(photos):
+    """
+    Each task photo with its signed GCS URL (or None).
+
+    ---
+
+    Cada foto de la tarea con su URL firmada de GCS (copia de
+    panel/views_task_photos._build_photo_entries); las antiguas de Drive
+    llevan su enlace.
+    """
+    import logging
+
+    from spare_parts.gcs_service import (
+        TASK_PHOTOS_BUCKET, generate_signed_url,
+    )
+
+    entries = []
+    for photo in photos:
+        url = None
+        if photo.gcs_blob_name:
+            try:
+                url = generate_signed_url(TASK_PHOTOS_BUCKET,
+                                          photo.gcs_blob_name)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Sin URL firmada para la foto %s", photo.pk)
+        entries.append({"photo": photo, "signed_url": url})
+    return entries
+
+
+class ParteSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: the document of one digital parte (read only), for the viewer.
+
+    ---
+
+    GET: el documento del parte (como en la ficha antigua: "como si
+    fuera el documento del parte digital"): datos del día, cada tarea
+    con máquina, horas, avería, reparación, repuestos y fotos; arriba,
+    el resumen (horas, extra, festivas, dieta, revisado) y los botones
+    de revisar. Miguel Ángel (23/11): "yo quiero llegar, pinchar un
+    parte y verlo".
+    """
+
+    def get(self, request, pk):
+        from decimal import Decimal
+
+        from work_order_processor.festive import is_festive, split_hours
+        from work_order_processor.models import (
+            WorkOrder, WorkOrderEntry, WorkOrderEntryLine,
+        )
+
+        parte = WorkOrder.objects.filter(
+            pk=pk, company=request.user.company_user.company,
+        ).select_related("uploaded_by__user", "uploaded_by__base",
+                         "uploaded_by__person_identity",
+                         "reviewed_by__user").first()
+        if parte is None:
+            raise Http404
+        entries = list(WorkOrderEntry.objects.filter(
+            work_order=parte).order_by("page_number", "pk"))
+        lines = WorkOrderEntryLine.objects.filter(
+            entry__in=entries,
+        ).exclude(vacation_period__isnull=False).select_related(
+            "machine_asset").prefetch_related(
+            "spare_parts", "photos").order_by("line_number", "pk")
+        by_entry = {}
+        total = Decimal("0")
+        for line in lines:
+            line.photo_entries = _photo_entries(line.photos.all())
+            by_entry.setdefault(line.entry_id, []).append(line)
+            total += line.delta_hours or Decimal("0")
+        day = entries[0].work_date if entries else None
+        festive = is_festive(day, parte.uploaded_by)
+        extra, festive_hours = split_hours(total, festive)
+        cu = parte.uploaded_by
+        person = getattr(cu, "person_identity", None) if cu else None
+        from new_ui.lists import person_name
+
+        reviewer = parte.reviewed_by
+        return render(request, "new_ui/_parte_sheet.html", {
+            "parte": parte,
+            "worker": person_name(person) if person else (
+                cu.user.get_full_name() if cu else ""),
+            "day": day, "festive": festive, "total": total,
+            "extra": extra, "festive_hours": festive_hours,
+            "diet": any(e.has_diet for e in entries),
+            "reviewed_by": (reviewer.user.get_full_name()
+                            or reviewer.user.username) if reviewer else "",
+            "blocks": [{"entry": e, "lines": by_entry.get(e.pk, [])}
+                       for e in entries],
+        })

@@ -250,12 +250,15 @@ class ListDef:
                  default_order=("-pk",), actions=None, note="",
                  scope_filter=None, prepare=None, extras=(),
                  default_cols=None, col_templates=None,
-                 period_annotate=None):
+                 period_annotate=None, row_url=None):
         self.label = label
         # S163 (23/11): period_annotate(qs, desde, hasta) añade a una
         # lista de trabajadores sus datos del periodo (repostajes,
         # partes...) como columnas que se pueden ordenar.
         self.period_annotate = period_annotate
+        # S163 (23/11): row_url(fila) -> lo que se abre en el visor al
+        # pulsar la fila (p. ej. el documento del parte).
+        self.row_url = row_url
         # S163 (23/11): columnas que se ven si el usuario no ha elegido
         # (None: todas) y plantillas de columnas de serie {nombre: claves}.
         self.default_cols = default_cols
@@ -1420,6 +1423,8 @@ def _partes_def():
         search=("worker_name",), date_field="work_date",
         default_order=("-work_date",),
         actions=lambda r: _person_actions(entity_of(r)),
+        row_url=lambda r: reverse("new_ui:parte_sheet",
+                                  args=[r.work_order_id]),
         note=("Periodo: fecha del parte. Los partes en PDF antiguos siguen "
               "en la ficha actual del trabajador."),
     )
@@ -2599,6 +2604,7 @@ def _pay_partes_def():
         date_field="nui_fecha", default_order=("nui_fecha", "pk"),
         actions=lambda r: [],
         prepare=_prepare_pay_partes,
+        row_url=lambda r: reverse("new_ui:parte_sheet", args=[r.pk]),
         default_cols=["persona", "fecha", "entrada", "salida", "bloques",
                       "horas", "extra", "festivas", "dieta", "revisado"],
         extras=[
@@ -2669,6 +2675,9 @@ def list_def(section, tab):
         # centros de gasto, primero los que antes vencen.
         _CACHE["doc"]["avisos_seguridad"] = _safety_records_def(
             order=("expiry_date", "review_date", "retimbrado_date"))
+        # S163 (23/11): pulsar una tarea del taller abre su parte.
+        _CACHE["cdg"]["taller"].row_url = lambda r: reverse(
+            "new_ui:parte_sheet", args=[r.entry.work_order_id])
         # S163 (23/11): Horas y pagos.
         _CACHE["per"]["pagos_trab"] = _pay_person_list()
         _CACHE["per"]["pagos_partes"] = _pay_partes_def()
@@ -2839,5 +2848,7 @@ def rows_for(definition, rows, columns):
             "entity_label": label,
             "label": item or (cells[0]["value"] if cells else ""),
             "actions": definition.actions(row),
+            "open_url": definition.row_url(row) if definition.row_url
+            else "",
         })
     return out
