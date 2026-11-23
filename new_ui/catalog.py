@@ -146,6 +146,8 @@ TAB_GROUPS = {
         ("Partes", ("partes_trab", "partes")),
         ("Repostajes", ("repostajes_trab", "repostajes")),
         ("EPIs", ("epis_trab", "epis")),
+        # «Partes» se ve en las dos: la de todos y, con un trabajador
+        # abierto, solo los suyos (S163, 23/11).
         ("Horas y pagos", ("pagos_trab", "pagos_partes", "pagos")),
     ],
 }
@@ -164,8 +166,7 @@ VIEW_MODES = {
     "per": {
         "all": ("general", "requisitos", "comunicaciones", "horarios",
                 "saldo_vacaciones", "bajas", "partes_trab",
-                "repostajes_trab", "epis_trab", "pagos_trab",
-                "pagos_partes"),
+                "repostajes_trab", "epis_trab", "pagos_trab"),
         "one": ("ficha", "documentos", "laboral", "solicitudes",
                 "pedidos", "circulares_rec",
                 "fichajes", "jornadas", "desglose_vacaciones", "salud",
