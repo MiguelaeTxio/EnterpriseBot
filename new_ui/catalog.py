@@ -77,6 +77,10 @@ TAB_NOUNS = {
     },
     "cdg": {
         "general": ("centro de gasto", "centros de gasto"),
+        "documentacion": ("centro de gasto", "centros de gasto"),
+        "mantenimiento": ("centro de gasto", "centros de gasto"),
+        "taller_maq": ("centro de gasto", "centros de gasto"),
+        "repostajes_maq": ("centro de gasto", "centros de gasto"),
         "documentos": ("documento", "documentos"),
         "especificaciones": ("centro de gasto", "centros de gasto"),
         "avisos": ("documento", "documentos"),
@@ -107,6 +111,16 @@ TAB_GROUPS = {
         ("EPIs", ("catalogo_epis",)),
         ("Nóminas", ("nominas",)),
     ],
+    "cdg": [
+        ("General", ("general", "ficha", "qr")),
+        ("Documentación", ("documentacion", "documentos", "avisos")),
+        ("Especificaciones", ("especificaciones",)),
+        ("Mantenimiento", ("mantenimiento", "revisiones", "lecturas")),
+        ("Taller", ("taller_maq", "taller", "averias", "libro")),
+        ("Repostajes", ("repostajes_maq", "repostajes")),
+        ("Accesorios", ("accesorios",)),
+        ("Equipos", ("equipos",)),
+    ],
     # Personal (23/11): cada tema, su lista de trabajadores (para muchos)
     # y lo de uno solo, en su ficha (VIEW_MODES).
     "per": [
@@ -127,6 +141,12 @@ TAB_GROUPS = {
 # ninguno de los dos se ve siempre. Al pulsar un trabajador se pasa a
 # su ficha, en el mismo tema.
 VIEW_MODES = {
+    "cdg": {
+        "all": ("general", "documentacion", "mantenimiento", "taller_maq",
+                "repostajes_maq"),
+        "one": ("ficha", "qr", "documentos", "avisos", "revisiones",
+                "lecturas", "taller", "averias", "libro", "repostajes"),
+    },
     "per": {
         "all": ("general", "requisitos", "comunicaciones", "horarios",
                 "saldo_vacaciones", "bajas", "partes_trab",
@@ -240,20 +260,25 @@ SECTIONS = OrderedDict([
         ("epis_trab", "EPIs"),
         ("epis", "Entregas"),
     ])),
+    # S163 (23/11): por temas, como Personal.
     ("cdg", ("Centros de gasto", "bi-truck", [
         ("general", "General"),
-        ("ficha", "Ficha"),
+        ("ficha", "Datos"),
         ("qr", "QR"),
+        ("documentacion", "Documentación"),
         ("documentos", "Documentos"),
-        ("especificaciones", "Especificaciones"),
         ("avisos", "Avisos"),
+        ("especificaciones", "Especificaciones"),
+        ("mantenimiento", "Mantenimiento"),
         ("revisiones", "Revisiones"),
         ("lecturas", "Lecturas"),
-        ("repostajes", "Repostajes"),
-        ("accesorios", "Accesorios"),
-        ("taller", "Taller"),
+        ("taller_maq", "Taller"),
+        ("taller", "Partes"),
         ("averias", "Averías"),
         ("libro", "Libro historial"),
+        ("repostajes_maq", "Repostajes"),
+        ("repostajes", "Repostajes"),
+        ("accesorios", "Accesorios"),
         ("equipos", "Equipos"),
     ])),
     (PERMISSIONS, ("Permisos", "bi-shield-lock", [

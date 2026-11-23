@@ -2104,6 +2104,102 @@ THEME_COLUMNS = {
 }
 
 
+def _annotate_mantenimiento(qs, start, end):
+    from django.db.models import Max
+
+    return qs.annotate(
+        nui_rev=_count("fleet.MachineServiceRecord", "machine",
+                       "service_date", start, end),
+        nui_rev_last=_per_person("fleet.MachineServiceRecord", "machine",
+                                 "", None, None, Max("service_date")),
+        nui_lec_last=_per_person("fleet.MachineMeterReading", "machine",
+                                 "", None, None, Max("reading_date")))
+
+
+def _annotate_taller(qs, start, end):
+    from django.db.models import Max
+
+    return qs.annotate(
+        nui_par=_count("work_order_processor.WorkOrderEntryLine",
+                       "machine_asset", "entry__work_date", start, end),
+        nui_ave=_count("chat.BreakdownTicket", "machine",
+                       "created_at__date", start, end),
+        nui_ave_open=_count("chat.BreakdownTicket", "machine", "", None,
+                            None, extra={"status__in": (
+                                "OPEN", "IN_PROGRESS", "PAUSED")}),
+        nui_lib_last=_per_person("fleet.MachineLogbookEntry", "machine", "",
+                                 None, None, Max("entry_date")))
+
+
+def _annotate_repostajes_maq(qs, start, end):
+    from django.db.models import Max, Sum
+
+    path, day = "vehicle__machine", "supplied_at__date"
+    return qs.annotate(
+        nui_rep=_count("fleet.GasoGesSupply", path, day, start, end),
+        nui_rep_l=_per_person("fleet.GasoGesSupply", path, day, start, end,
+                              Sum("litres")),
+        nui_rep_last=_per_person("fleet.GasoGesSupply", path, "", None,
+                                 None, Max("supplied_at")))
+
+
+# Centros de gasto: tema -> (anotar, [columnas], nota, de entrada).
+MACHINE_THEME_COLUMNS = {
+    "documentacion": (None, [], "", ["codigo", "familia", "matricula",
+                                     "estado", "itv"]),
+    "mantenimiento": (_annotate_mantenimiento, [
+        Col("revisiones", "Revisiones en el periodo",
+            lambda m: m.nui_rev or "", "nui_rev", "text-end"),
+        Col("ultima_revision", "Última revisión",
+            lambda m: fmt_date(m.nui_rev_last), "nui_rev_last"),
+        Col("ultima_lectura", "Última lectura",
+            lambda m: fmt_date(m.nui_lec_last), "nui_lec_last"),
+    ], "Periodo: revisiones de esas fechas.",
+        ["codigo", "familia", "estado", "horas", "km"]),
+    "taller_maq": (_annotate_taller, [
+        Col("partes", "Líneas de parte en el periodo",
+            lambda m: m.nui_par or "", "nui_par", "text-end"),
+        Col("averias", "Averías en el periodo",
+            lambda m: m.nui_ave or "", "nui_ave", "text-end"),
+        Col("averias_abiertas", "Averías abiertas",
+            lambda m: m.nui_ave_open or "", "nui_ave_open", "text-end"),
+        Col("ultimo_libro", "Última anotación del libro",
+            lambda m: fmt_date(m.nui_lib_last), "nui_lib_last"),
+    ], "Periodo: partes y averías de esas fechas.",
+        ["codigo", "familia", "estado"]),
+    "repostajes_maq": (_annotate_repostajes_maq, [
+        Col("repostajes", "Repostajes en el periodo",
+            lambda m: m.nui_rep or "", "nui_rep", "text-end"),
+        Col("litros", "Litros en el periodo",
+            lambda m: fmt_num(m.nui_rep_l) if m.nui_rep_l else "",
+            "nui_rep_l", "text-end"),
+        Col("ultimo_repostaje", "Último repostaje",
+            lambda m: fmt_datetime(m.nui_rep_last), "nui_rep_last"),
+    ], "Periodo: repostajes de esas fechas.",
+        ["codigo", "familia", "matricula", "estado"]),
+}
+
+
+def _theme_machine_list(key):
+    """
+    The machines list of a Centros de gasto theme (S163, 23/11).
+
+    ---
+
+    La lista de centros de gasto de un tema: las columnas de General y
+    las del tema.
+    """
+    annotate, columns, note, first = MACHINE_THEME_COLUMNS[key]
+    definition = _machine_general()
+    definition.columns = list(definition.columns) + list(columns)
+    definition.period_annotate = annotate
+    definition.default_cols = first + [c.key for c in columns]
+    definition.date_field = ""
+    if note:
+        definition.note = note
+    return definition
+
+
 def _theme_person_list(key):
     """
     The workers list of a Personal theme: General's columns plus its own.
@@ -2168,6 +2264,8 @@ def list_def(section, tab):
         # S163 (23/11): en la ficha, Comunicaciones: lo que se le ha
         # pedido y las circulares que ha recibido (las mismas listas que
         # tenía Documentos, ya solo de esa persona).
+        for key in MACHINE_THEME_COLUMNS:
+            _CACHE["cdg"][key] = _theme_machine_list(key)
         _CACHE["per"]["pedidos"] = _CACHE["doc"]["pedir"]
         _CACHE["per"]["circulares_rec"] = _CACHE["doc"]["circulares"]
     return _CACHE.get(section, {}).get(tab)
