@@ -32,7 +32,7 @@ from django.views import View
 from budgets.models import Base
 from document_explorer.models import PersonIdentity
 from hr_calendar.balance import (
-    NO_SECTION_LABEL, BalanceCalculator, add_free_days,
+    BalanceCalculator, add_free_days,
     add_manual_adjustment, assign_section, validate_rule,
 )
 from hr_calendar.models import (
@@ -45,7 +45,6 @@ from new_ui.mixins import SuperuserRequiredMixin
 
 logger = logging.getLogger(__name__)
 
-NO_SECTION = "none"
 SORTS = {
     "person": lambda r: r.sort_name,
     "dni": lambda r: r.person.dni,
@@ -158,14 +157,12 @@ def render_balance(request):
         "company_user__base"))
     calculator = BalanceCalculator(company, people)
     rows = [_Row(p, calculator.balance(p, year)) for p in people]
-    if section == NO_SECTION:
-        rows = [r for r in rows
-                if r.balance.current_section_name == NO_SECTION_LABEL]
-    elif section.isdigit():
-        wanted = Section.objects.filter(
-            pk=int(section), company=company).values_list(
-            "name", flat=True).first()
-        rows = [r for r in rows if r.balance.current_section_name == wanted]
+    # S163 (23/11): de dónde le vienen los días (propios, su grupo o la
+    # empresa), en lugar de la sección del SIME.
+    sources = sorted({r.balance.current_section_name for r in rows
+                      if r.balance.current_section_name})
+    if section:
+        rows = [r for r in rows if r.balance.current_section_name == section]
     sort = request.GET.get("vac_sort", "")
     key = sort.lstrip("-")
     rows.sort(key=lambda r: r.sort_name)
@@ -181,11 +178,10 @@ def render_balance(request):
         "year": year,
         "years": range(today.year - 2, today.year + 2),
         "section": section,
-        "sections": _sections(company),
-        "no_section": NO_SECTION,
+        "sources": sources,
         "sort": sort,
         "sorts": [("person", "Trabajador"), ("dni", "DNI"),
-                  ("section", "Sección"), ("taken", "Consumidos"),
+                  ("section", "Días de"), ("taken", "Consumidos"),
                   ("pending", "Pendientes")],
     })
 
