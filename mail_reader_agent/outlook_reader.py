@@ -29,6 +29,11 @@ import re
 import shutil
 import tempfile
 
+# pywin32 lo carga por dentro al leer fechas de COM (ReceivedTime);
+# importado aqui para que PyInstaller lo meta en el .exe (S156: sin el,
+# "No module named 'win32timezone'" en cada revision).
+import win32timezone  # noqa: F401
+
 from config import (
     BUCKET_NAME, LOOKBACK_DAYS, MAIL_JSON_NAME, MAX_BODY_CHARS,
     OL_MAIL_ITEM, PR_ATTACHMENT_HIDDEN, PR_INTERNET_MESSAGE_ID,
