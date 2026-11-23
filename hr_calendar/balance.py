@@ -105,7 +105,9 @@ def round_up_day(value):
     """
     if value <= 0:
         return value
-    return Decimal(math.ceil(value))
+    # S163: la suma día a día (días/365 por cada día) deja restos como
+    # 25,0000000001; sin redondear antes a centésimas, 25 días daban 26.
+    return Decimal(math.ceil(Decimal(value).quantize(Decimal("0.01"))))
 
 
 def _year_bounds(year):
@@ -160,27 +162,41 @@ def carry_over_deadline(rule, year):
 class RuleBook:
     """
     The company's vacation rules, loaded once, answering which rule is
-    in force for a section on a given day.
+    in force for a worker on a given day.
     ---
-    Las reglas de vacaciones de la empresa, cargadas una vez, que
-    responden qué regla rige para una sección un día dado: la de la
-    sección con la fecha más reciente no posterior a ese día; si la
-    sección no tiene ninguna vigente (o no hay sección), la general.
+    Las reglas de vacaciones de la empresa, cargadas una vez. S163
+    (23/11, Miguel Ángel): tres niveles y manda el más concreto: los
+    días propios del trabajador; si no, los de su grupo de selección
+    (el grupo o, si no tiene regla, el grupo padre más cercano que la
+    tenga); si no, los de la empresa. Si está en varios grupos con
+    reglas distintas y no tiene las suyas, los de la empresa. En cada
+    nivel rige la regla con la fecha más reciente no posterior al día.
+    Las reglas por sección (anteriores) ya no se aplican.
     """
 
     def __init__(self, company):
-        self.by_section = {}
+        from document_explorer.models import PersonGroupTemplate
+
+        self.by_person = {}
+        self.by_group = {}
         self.general = []
         rules = VacationRule.objects.filter(company=company).select_related(
-            "section", "holiday_base",
+            "section", "holiday_base", "group", "person",
         ).order_by("valid_from")
         for rule in rules:
-            if rule.section_id is None:
+            if rule.person_id:
+                self.by_person.setdefault(rule.person_id, []).append(rule)
+            elif rule.group_id:
+                self.by_group.setdefault(rule.group_id, []).append(rule)
+            elif rule.section_id is None:
                 self.general.append(rule)
-            else:
-                self.by_section.setdefault(rule.section_id, []).append(rule)
+        self.parents = dict(PersonGroupTemplate.objects.values_list(
+            "pk", "parent_id")) if self.by_group else {}
+        self.group_names = dict(PersonGroupTemplate.objects.values_list(
+            "pk", "name")) if self.by_group else {}
         all_rules = self.general + [
-            r for rules in self.by_section.values() for r in rules
+            r for bucket in (self.by_person, self.by_group)
+            for rules_ in bucket.values() for r in rules_
         ]
         self.first_year = (
             min(r.valid_from.year for r in all_rules) if all_rules else None
@@ -196,18 +212,37 @@ class RuleBook:
                 break
         return found
 
-    def rule_on(self, section_id, day):
-        """
-        Rule in force for `section_id` (None = no section) on `day`.
-        ---
-        Regla vigente para `section_id` (None = sin sección) el día
-        `day`, o None si no hay ninguna.
-        """
-        if section_id is not None:
-            rule = self._latest(self.by_section.get(section_id, []), day)
+    def _group_rule(self, group_id, day):
+        seen = set()
+        while group_id and group_id not in seen:
+            seen.add(group_id)
+            rule = self._latest(self.by_group.get(group_id, []), day)
             if rule is not None:
                 return rule
-        return self._latest(self.general, day)
+            group_id = self.parents.get(group_id)
+        return None
+
+    def rule_for(self, person_id, group_ids, day):
+        """
+        (rule or None, where it comes from, conflict) for a worker.
+        ---
+        La regla que rige para un trabajador un día, de dónde viene
+        («Propios», «Grupo «X»», «Empresa») y si hubo varios grupos con
+        reglas distintas (entonces, la de la empresa).
+        """
+        own = self._latest(self.by_person.get(person_id, []), day)
+        if own is not None:
+            return own, "Propios", False
+        found = {}
+        for group_id in group_ids:
+            rule = self._group_rule(group_id, day)
+            if rule is not None:
+                found[rule.pk] = rule
+        if len(found) == 1:
+            rule = next(iter(found.values()))
+            return rule, "Grupo «%s»" % self.group_names.get(
+                rule.group_id, ""), False
+        return self._latest(self.general, day), "Empresa", len(found) > 1
 
 
 @dataclass
@@ -307,6 +342,14 @@ class BalanceCalculator:
         self.rules = RuleBook(company)
         self.people = {p.pk: p for p in people}
         ids = list(self.people)
+        # S163 (23/11): grupos de selección de cada trabajador.
+        from document_explorer.models import PersonGroupTemplate
+
+        self.groups = {}
+        for person_id, group_id in PersonGroupTemplate.members.through.\
+                objects.filter(personidentity_id__in=ids).values_list(
+                    "personidentity_id", "persongrouptemplate_id"):
+            self.groups.setdefault(person_id, []).append(group_id)
         self.assignments = {}
         for row in PersonSectionAssignment.objects.filter(
             person_id__in=ids,
@@ -340,9 +383,9 @@ class BalanceCalculator:
         return found
 
     def _rule_for(self, person_id, day):
-        assignment = self._assignment_on(person_id, day)
-        section_id = assignment.section_id if assignment else None
-        return self.rules.rule_on(section_id, day), assignment
+        """(rule, where it comes from, conflict) — RuleBook.rule_for."""
+        return self.rules.rule_for(
+            person_id, self.groups.get(person_id, []), day)
 
     def _in_medical_leave(self, person_id, day):
         for leave in self.leaves.get(person_id, []):
@@ -408,18 +451,13 @@ class BalanceCalculator:
                 "de enero."
             )
         without_rule = 0
-        without_section = False
+        conflict = False
         if employment is not None:
             per_day_total = ZERO
             segment = None
             for day in _daterange(*employment):
-                rule, assignment = self._rule_for(person.pk, day)
-                if assignment is None:
-                    without_section = True
-                section_name = (
-                    assignment.section.name if assignment else
-                    NO_SECTION_LABEL
-                )
+                rule, section_name, clash = self._rule_for(person.pk, day)
+                conflict = conflict or clash
                 if (
                     segment is None
                     or segment.rule is not rule
@@ -446,10 +484,10 @@ class BalanceCalculator:
                 f"{without_rule} día(s) de alta sin regla de vacaciones "
                 "aplicable: no generan días."
             )
-        if without_section:
+        if conflict:
             result.warnings.append(
-                "Sin sección asignada en todo o parte del año: se aplica la "
-                "regla general de la empresa."
+                "Está en varios grupos con días distintos y no tiene días "
+                "propios: se aplican los de la empresa."
             )
 
         # 2. Ajustes del año.
@@ -468,7 +506,7 @@ class BalanceCalculator:
                 opening_carryover = adj.days
 
         # 3. Arrastre del año anterior.
-        prev_rule, _assignment = self._rule_for(
+        prev_rule, _source, _clash = self._rule_for(
             person.pk, datetime.date(year - 1, 12, 31),
         )
         if opening_carryover is not None:
@@ -500,7 +538,7 @@ class BalanceCalculator:
             first = max(period.date_start, year_start)
             last = min(period.date_end, year_end)
             for day in _daterange(first, last):
-                rule, _assignment = self._rule_for(person.pk, day)
+                rule, _source, _clash = self._rule_for(person.pk, day)
                 if (
                     rule is not None
                     and rule.day_kind == VacationRule.DayKind.WORKING
@@ -662,7 +700,7 @@ def set_opening_balance(person, company, year, kind, days, created_by,
 
 
 def validate_rule(company, section, valid_from, days_per_year, day_kind,
-                  deadline_month, deadline_day):
+                  deadline_month, deadline_day, group=None, person=None):
     """
     Return a list of user-facing errors for a new rule (empty = ok).
     ---
@@ -690,7 +728,8 @@ def validate_rule(company, section, valid_from, days_per_year, day_kind,
             errors.append("El día del plazo no existe en ese mes.")
     if valid_from is not None and VacationRule.objects.filter(
         company=company, section=section, valid_from=valid_from,
+        group=group, person=person,
     ).exists():
-        errors.append("Ya hay una regla para esa sección con esa misma "
-                      "fecha. Bórrala antes de crear otra.")
+        errors.append("Ya hay una regla para ellos con esa misma fecha. "
+                      "Bórrala antes de crear otra.")
     return errors

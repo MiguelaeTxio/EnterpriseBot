@@ -594,6 +594,31 @@ class VacationRule(models.Model):
         help_text="Vacío = regla general de la empresa, para los "
                   "trabajadores que aún no tienen sección asignada.",
     )
+    # S163 (23/11, Miguel Ángel): las vacaciones van en tres niveles,
+    # empresa (sin grupo ni persona), grupo de selección y persona; manda
+    # el más concreto. Si alguien está en varios grupos con días
+    # distintos y no tiene los suyos, los de la empresa. La sección es
+    # herencia del SIME y ya no decide (hr_calendar/balance.RuleBook).
+    group = models.ForeignKey(
+        "document_explorer.PersonGroupTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="vacation_rules",
+        verbose_name="Grupo de selección",
+        help_text="Regla de los trabajadores de este grupo (y de sus "
+                  "subgrupos) que no tienen días propios.",
+    )
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="vacation_rules",
+        verbose_name="Trabajador",
+        help_text="Días propios de este trabajador: mandan sobre los de "
+                  "su grupo y los de la empresa.",
+    )
     valid_from = models.DateField(
         verbose_name="Vigente desde",
     )
@@ -664,8 +689,27 @@ class VacationRule(models.Model):
             ),
         ]
 
+    def target_label(self):
+        """
+        Who the rule is for: the worker, the group or the company.
+
+        ---
+
+        A quién es la regla: el trabajador, el grupo o la empresa (o la
+        sección, en las antiguas).
+        """
+        if self.person_id:
+            return "Propios de %s %s" % (self.person.given_name,
+                                         self.person.first_surname)
+        if self.group_id:
+            return "Grupo «%s»" % self.group.name
+        if self.section_id:
+            return "Sección «%s» (antigua, no se aplica)" % (
+                self.section.name)
+        return "Empresa"
+
     def __str__(self) -> str:
-        section = self.section.name if self.section_id else "General"
+        section = self.target_label()
         return (
             f"{section} desde {self.valid_from:%d/%m/%Y}: "
             f"{self.days_per_year} {self.get_day_kind_display().lower()}"
