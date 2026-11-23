@@ -481,9 +481,14 @@
                 // Sin lista (Ficha, Jornadas...) no hay nada que seleccionar.
                 const has = activeIn(s1).length > 0 && !listPanel.querySelector('[data-nui-entity-tab][data-nui-tab="' + t + '"]');
                 s1.classList.toggle("d-none", !has);
-                s1.querySelector("[data-nui-sec-title]").textContent = n === 1 ? "Con 1 " + noun[0] + " seleccionado" : "Con los " + n + " " + noun[1] + " seleccionados";
+                const fem = noun[2] === "f";
+                s1.querySelector("[data-nui-sec-title]").textContent = n === 1
+                    ? (fem ? "Con 1 " + noun[0] + " seleccionada" : "Con 1 " + noun[0] + " seleccionado")
+                    : (fem ? "Con las " + n + " " + noun[1] + " seleccionadas" : "Con los " + n + " " + noun[1] + " seleccionados");
                 const hint = s1.querySelector("[data-nui-sec-hint]");
-                hint.textContent = n ? "" : "Marca con la casilla los " + noun[1] + " de la lista para hacer aquí lo mismo con todos a la vez.";
+                hint.textContent = n ? "" : (noun[2] === "f"
+                    ? "Marca con la casilla las " + noun[1] + " de la lista para hacer aquí lo mismo con todas a la vez."
+                    : "Marca con la casilla los " + noun[1] + " de la lista para hacer aquí lo mismo con todos a la vez.");
                 hint.classList.toggle("d-none", !!n);
                 body.classList.toggle("d-none", !n);
             }
@@ -529,7 +534,7 @@
                     } else {
                         const person = section === "cdg" ? "un centro de gasto" : "un trabajador";
                         title.textContent = section === "cdg" ? "Con un centro de gasto" : "Con un trabajador";
-                        hint.textContent = "Pulsa el nombre de " + person + " en la lista (o marca un solo " + noun[0] + ") para ver aquí lo que puedes hacer con él.";
+                        hint.textContent = "Pulsa el nombre de " + person + " en la lista (o marca " + (noun[2] === "f" ? "una sola " : "un solo ") + noun[0] + ") para ver aquí lo que puedes hacer con él.";
                     }
                     hint.classList.remove("d-none");
                 }
