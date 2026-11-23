@@ -1311,3 +1311,75 @@ ver "COMPLETADAS EN S143 (sesión invasora)" en el anexo V24.
   por hora recalculados (`be33404`).
 - Comprobado con datos reales: tras «Volver a valorar», los 6 servicios
   de prueba cuadran con su presupuesto manual.
+
+---
+
+## 15. COMPLETADAS EN S163 (sesión invasora, 20/11 → 23/11/2026, PEE PC)
+
+Sesión invasora sobre H37, en paralelo con la principal S156 (H31 EN
+PROGRESO, sin mover). Archivos de SWAP desde el 700 (no se llegó a usar
+ninguno). **Sin commits de código, sin migraciones y sin cambios en
+producción:** la sesión fue de vídeos de demostración. Ninguna hoja de
+ruta de este anexo se toca.
+
+**Aviso de numeración:** el mismo número S163 lo lleva también otra
+invasora sobre H31 (nueva interfaz, Horas y pagos, extintores; sus
+commits llevan «(S163, invasora)» o «(S163)» y tocan H31/`new_ui`).
+Son dos sesiones distintas; esta entrada es solo la de H37.
+
+### 15.1. Encargo y decisiones de Miguel Ángel
+
+- Encargo inicial: un vídeo de demostración de cómo interactuaríamos con
+  TIREA: cómo se extraen los servicios (las órdenes), cómo se hace de
+  forma automática el presupuesto de cada servicio (ya construido en
+  S142-S143) y cómo se eligen los servicios para lanzarlos, cada parte
+  visible por separado.
+- Primera versión (`Demo_TIREA_EnterpriseBot_S163.mp4`, 3:42):
+  captura del albarán en TIREA → carpeta → «Subir carpeta» → valoración;
+  columnas de presupuesto, coste y rendimiento; ordenar, marcar, «Crear
+  la orden» y lanzar desde Tráfico arrastrando conductor, máquina y
+  equipo. Miguel Ángel: *"el vídeo está bien"*, pero lo que hay que
+  vender es otra cosa.
+- Decisión de Miguel Ángel (20/11/2026), verbatim: *"la moto que tenemos
+  que vender es que el proceso es totalmente automático [...] el sistema
+  es quien lee [...] los servicios, el sistema es el que genera los
+  presupuestos y el sistema espera la respuesta humana para lanzar el
+  servicio. El servicio se lanza a cada [...] operario con su equipo de
+  máquina, se ve el visor, se ven los lugares donde está cada máquina,
+  cada equipo."*
+- Segunda versión, la buena (`Demo_Asistencia_Automatica_TIREA_S163.mp4`,
+  2:40), en cuatro pasos: (1) el sistema lee TIREA solo; (2) el sistema
+  presupuesta y ordena por rendimiento por hora; (3) el sistema propone
+  qué servicios lanzar y con qué conductor y máquina, espera el visto
+  bueno («Aprobar y lanzar», único clic humano) y lanza: crea las
+  órdenes, forma los equipos, los asigna y envía el albarán (Tráfico en
+  amarillo); (4) visor en tiempo real con cada equipo moviéndose por su
+  ruta y la lista de quién está en la calle.
+
+### 15.2. Cómo se hicieron (para rehacerlos)
+
+- Copia local del proyecto con SQLite (ajustes propios, sin migraciones,
+  `run_syncdb`), datos inventados (4 conductores, 5 máquinas, base de
+  Málaga, 4 aseguradoras, 8 servicios con números coherentes) y
+  grabación del panel real con Playwright por *screencast* de Chrome
+  (JPEG 92), montada con ffmpeg a 1920×1080 y 30 fps.
+- Simulado en la copia local, porque no hay red: lectura de Gemini (los
+  servicios se cargan ya valorados), WhatsApp al conductor, matriz de
+  rutas y geocodificación de Google, y el mapa (dibujado con d3 sobre
+  los municipios de `es-atlas`, leyendo el JSON real del mapa de
+  Tráfico). La pantalla de TIREA es una imitación con franja
+  «SIMULACIÓN» y datos inventados.
+- Los guiones y la copia local no se versionan (vivían solo en el
+  entorno de trabajo del modelo); los dos vídeos se entregaron en el
+  chat.
+
+### 15.3. Lo que el vídeo enseña y hoy no existe
+
+1. Lectura automática de TIREA (hoy los servicios entran por foto o
+   carpeta; la lectura automática de la web se descartó en S133, 6.3.A).
+2. La propuesta de lanzamiento con «Aprobar y lanzar» en la pestaña
+   Servicios (en el vídeo es una ventana pintada encima del panel; lo
+   que hace después sí son las vistas reales: orden, `pair`, `assign`,
+   `send`).
+3. Visor a pantalla completa con la lista de equipos en la calle (el
+   mapa real de Tráfico usa Google Maps y no tiene esa lista).
