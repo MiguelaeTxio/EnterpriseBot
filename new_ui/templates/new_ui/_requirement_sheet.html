@@ -8,30 +8,42 @@ gasto / Todos, categoría 1 / 2 / ambas (lo marcado se ve siempre),
 cambiar categorías y, a la derecha, lo marcado. El comportamiento está
 en new_ui.js (data-nui-req-sheet).
 {% endcomment %}
-<div data-nui-req-sheet data-save-url="{% url 'new_ui:requirement_save' %}" data-category-url="{% url 'new_ui:requirement_type_category' %}" data-pk="{{ position.pk }}" data-name="{{ position.name }}">
+<div data-nui-req-sheet data-save-url="{% url 'new_ui:requirement_save' %}" data-category-url="{% url 'new_ui:requirement_type_category' %}" data-pk="{{ position.pk|default:'' }}" data-name="{{ position.name }}">
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
         <form data-nui-action-form action="{% url 'new_ui:requirement_save' %}" id="nui-req-sheet-form" data-nui-viewer-open-tpl="{% url 'new_ui:requirement_sheet' 0 %}" class="m-0 flex-grow-1" style="max-width: 32rem;">
             {% csrf_token %}
-            <input type="hidden" name="position_pk" value="{{ position.pk }}">
+            <input type="hidden" name="position_pk" value="{{ position.pk|default:'' }}">
             <input type="hidden" name="rename_as_new" value="1">
             <div class="input-group input-group-sm">
                 <span class="input-group-text">Nombre</span>
-                <input type="text" name="name" class="form-control" value="{{ position.name }}" required aria-label="Nombre">
+                <input type="text" name="name" class="form-control" value="{{ position.name }}" placeholder="Nombre (p. ej. Gruista, Administrativo, Grúa móvil)" required aria-label="Nombre">
                 <button type="submit" class="btn btn-primary">Guardar</button>
             </div>
         </form>
+        {% if position.pk %}
         <span class="badge {% if position.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if position.is_active %}Activo{% else %}Desactivado (no avisa){% endif %}</span>
-        <form data-nui-action-form action="{% url 'new_ui:requirement_bulk' %}" class="m-0 d-flex gap-1" data-nui-viewer-close-on="delete">
+        <form data-nui-action-form action="{% url 'new_ui:requirement_bulk' %}" class="m-0 d-flex gap-1">
             {% csrf_token %}<input type="hidden" name="selected" value="{{ position.pk }}">
             {% if position.is_active %}
             <button type="submit" name="action" value="deactivate" class="btn btn-sm btn-outline-secondary">Desactivar</button>
             {% else %}
             <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success">Activar</button>
             {% endif %}
-            <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Eliminar el requisito «{{ position.name }}»? Quien lo tenga se queda sin él.">Eliminar</button>
         </form>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-req-delete-ask>Eliminar</button>
+        {% endif %}
     </div>
-    <p class="small text-muted mb-2">Los documentos que marques son obligatorios (disparan los avisos de falta y de caducidad) y se guardan al momento. Con otro nombre y Guardar se crea un requisito nuevo y este no se toca.</p>
+    {% if position.pk %}
+    <form data-nui-action-form action="{% url 'new_ui:requirement_bulk' %}" data-nui-viewer-close-on="delete" class="alert alert-danger small py-2 px-2 mb-2 d-none" data-nui-req-delete-box>
+        {% csrf_token %}<input type="hidden" name="selected" value="{{ position.pk }}">
+        Se va a eliminar el requisito <strong>{{ position.name }}</strong>. Quien lo tenga asignado se queda sin él; las personas y máquinas no se tocan.
+        <div class="d-flex gap-1 mt-2">
+            <button type="button" class="btn btn-sm btn-secondary" data-nui-req-delete-cancel>Cancelar</button>
+            <button type="submit" name="action" value="delete" class="btn btn-sm btn-danger" data-nui-countdown disabled>Eliminar <span data-nui-countdown-left></span></button>
+        </div>
+    </form>
+    {% endif %}
+    <p class="small text-muted mb-2">{% if not position.pk %}Escribe el nombre, marca sus documentos obligatorios y pulsa Guardar para crearlo. {% endif %}Los documentos que marques son obligatorios (disparan los avisos de falta y de caducidad) {% if position.pk %}y se guardan al momento{% else %}y se guardan al pulsar Guardar{% endif %}. Con otro nombre y Guardar se crea un requisito nuevo y este no se toca.</p>
     <div class="row g-2">
         <div class="col-lg-9">
             <div class="card">
@@ -86,7 +98,7 @@ en new_ui.js (data-nui-req-sheet).
         </div>
         <div class="col-lg-3">
             <div class="card">
-                <div class="card-header py-1 small fw-bold d-flex justify-content-between"><span>{{ position.name }}</span><span class="badge text-bg-secondary" data-nui-req-count>{{ chosen|length }}</span></div>
+                <div class="card-header py-1 small fw-bold d-flex justify-content-between"><span>{{ position.name|default:"Nuevo requisito" }}</span><span class="badge text-bg-secondary" data-nui-req-count>{{ chosen|length }}</span></div>
                 <div class="card-body p-2 small" style="max-height: 60vh; overflow-y: auto;">
                     <ul class="mb-1 ps-3" data-nui-req-chosen>{% for label in chosen %}<li>{{ label }}</li>{% empty %}<li class="text-muted list-unstyled">Ningún documento marcado.</li>{% endfor %}</ul>
                     <div class="text-muted" data-nui-req-chosen-driving>{% if chosen_driving %}Permiso: {{ chosen_driving|join:", " }}{% endif %}</div>

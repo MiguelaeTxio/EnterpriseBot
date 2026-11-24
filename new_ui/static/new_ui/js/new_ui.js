@@ -1596,6 +1596,13 @@
             if (!box) return;
             if (ev.target.matches("[data-nui-req-sheet-view], [data-nui-req-sheet-catedit]")) { reqSheetView(box); return; }
             if (!ev.target.matches('[name="document_type_ids"], [name="driving_category_ids"]')) return;
+            if (!box.dataset.pk) {
+                // Nuevo: se guarda todo junto al pulsar Guardar.
+                reqSheetPaint(box);
+                const status = box.querySelector("[data-nui-req-status]");
+                status.className = "fw-normal text-muted"; status.textContent = "Pulsa Guardar para crearlo.";
+                return;
+            }
             const body = new FormData();
             body.append("position_pk", box.dataset.pk);
             body.append("name", box.dataset.name);
@@ -1603,6 +1610,28 @@
             reqSheetPaint(box);
             const input = ev.target;
             reqSheetPost(box, box.dataset.saveUrl, body).catch(function () { input.checked = !input.checked; reqSheetPaint(box); });
+        });
+        // Eliminar un requisito: aviso con lo que se borra y el botón
+        // se habilita tras 5 s, como en la antigua.
+        let reqCountdown = null;
+        document.addEventListener("click", function (ev) {
+            const ask = ev.target.closest("[data-nui-req-delete-ask], [data-nui-req-delete-cancel]");
+            if (!ask) return;
+            const box = ask.closest("[data-nui-req-sheet]");
+            const panel = box.querySelector("[data-nui-req-delete-box]");
+            const btn = panel.querySelector("[data-nui-countdown]");
+            const left = panel.querySelector("[data-nui-countdown-left]");
+            clearInterval(reqCountdown);
+            if (ask.hasAttribute("data-nui-req-delete-cancel")) { panel.classList.add("d-none"); return; }
+            panel.classList.remove("d-none");
+            let n = 5;
+            btn.disabled = true; left.textContent = "(" + n + ")";
+            reqCountdown = setInterval(function () {
+                n -= 1;
+                if (n > 0) { left.textContent = "(" + n + ")"; return; }
+                clearInterval(reqCountdown);
+                left.textContent = ""; btn.disabled = false;
+            }, 1000);
         });
         document.addEventListener("click", function (ev) {
             const btn = ev.target.closest("[data-nui-req-swap]");

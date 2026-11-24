@@ -288,9 +288,11 @@ class RequirementSheetView(SuperuserRequiredMixin, View):
     """
 
     def get(self, request, pk):
-        position = get_object_or_404(JobPosition, pk=pk)
+        # pk 0: uno nuevo (Acciones › Nuevo requisito), sin guardar.
+        position = (get_object_or_404(JobPosition, pk=pk) if pk
+                    else JobPosition(name=""))
         marked = set(position.required_document_types.values_list(
-            "pk", flat=True))
+            "pk", flat=True)) if pk else set()
         groups = requirement_sections()
         chosen = []
         for group in groups:
@@ -302,7 +304,7 @@ class RequirementSheetView(SuperuserRequiredMixin, View):
                 chosen += [item["label"] for item in section["items"]
                            if item["on"]]
         driving = set(position.required_driving_categories.values_list(
-            "pk", flat=True))
+            "pk", flat=True)) if pk else set()
         return render(request, "new_ui/_requirement_sheet.html", {
             "position": position,
             "groups": groups,

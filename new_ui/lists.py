@@ -1869,8 +1869,7 @@ def _doc_lists():
                     r.updated_at), "updated_at", "text-nowrap"),
             ],
             search=("name",), default_order=("name",),
-            actions=lambda r: [("Modificar", "bi-pencil-square",
-                                "#nui-edit:nui-requirement-form:%d" % r.pk)],
+            actions=lambda r: [],
             # S163 (24/11): pulsar un requisito lo abre para editarlo,
             # como en la antigua.
             row_url=lambda r: reverse("new_ui:requirement_sheet",
