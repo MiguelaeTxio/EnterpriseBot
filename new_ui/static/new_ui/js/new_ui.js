@@ -665,6 +665,33 @@
             add("template_pk", chosen ? chosen.value : "");
             box.querySelectorAll("[data-nui-tpl-col]:checked").forEach(c => add("columns", c.value));
         }, true);
+        // S163 (24/11): eliminar los marcados con aviso de lo que se borra
+        // y el botón habilitado a los 5 s (como en la antigua).
+        let countdownTimer = null;
+        root.addEventListener("click", function (ev) {
+            const btn = ev.target.closest("[data-nui-countdown-ask], [data-nui-countdown-cancel]");
+            if (!btn) return;
+            const f = btn.closest("form");
+            const box = f.querySelector("[data-nui-countdown-box]");
+            const go = box.querySelector("[data-nui-countdown-go]");
+            const left = box.querySelector("[data-nui-countdown-left]");
+            clearInterval(countdownTimer);
+            if (btn.hasAttribute("data-nui-countdown-cancel")) { box.classList.add("d-none"); return; }
+            const picked = Array.from(sel().entries());
+            if (!picked.length) { result("Marca primero con la casilla, en la lista de abajo, a quién aplicarlo.", true); return; }
+            const list = box.querySelector("[data-nui-countdown-list]");
+            list.innerHTML = "";
+            picked.forEach(function ([id, label]) { const li = document.createElement("li"); li.textContent = label || id; list.appendChild(li); });
+            box.classList.remove("d-none");
+            const end = Date.now() + 5000;
+            go.disabled = true; left.textContent = "(5)";
+            countdownTimer = setInterval(function () {
+                const n = Math.ceil((end - Date.now()) / 1000);
+                if (n > 0) { left.textContent = "(" + n + ")"; return; }
+                clearInterval(countdownTimer);
+                left.textContent = ""; go.disabled = false;
+            }, 200);
+        });
         root.addEventListener("submit", function (ev) {
             const f = ev.target.closest("[data-nui-action-form]");
             if (!f) return;
@@ -724,6 +751,7 @@
                     if (f.hasAttribute("data-nui-tpl-reload")) loadScreenTpl();
                     if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
                     if (f.hasAttribute("data-nui-vacset-reload")) loadVacationSetup();
+                    f.querySelectorAll("[data-nui-countdown-box]").forEach(b => b.classList.add("d-none"));
                     const closeOn = f.dataset.nuiViewerCloseOn;
                     if (closeOn && submitter && submitter.value === closeOn) {
                         // Lo abierto en el visor ya no existe (p. ej. requisito eliminado).

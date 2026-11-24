@@ -93,7 +93,23 @@ new_ui.js enseña el de la vista abierta. Formularios:
 </div>
 <div class="d-none" data-nui-actions-for="lista_requisitos">
     {# S163 (24/11, Miguel Ángel): en Acciones solo «Nuevo»; crear y modificar, en la ventana del requisito. #}
-    <button type="button" class="btn btn-sm btn-success" data-nui-viewer-url="{% url 'new_ui:requirement_sheet' 0 %}" data-nui-viewer-title="Nuevo requisito"><i class="bi bi-plus-circle me-1"></i>Nuevo requisito</button>
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:requirement_sheet' 0 %}" data-nui-viewer-title="Nuevo requisito"><i class="bi bi-plus-circle me-1"></i>Nuevo requisito</button>
+    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Los requisitos marcados</div>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:requirement_bulk' %}" class="d-flex flex-wrap gap-1">
+        {% csrf_token %}
+        <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success">Activar</button>
+        <button type="submit" name="action" value="deactivate" class="btn btn-sm btn-outline-secondary">Desactivar (no avisan)</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-trash me-1"></i>Eliminar</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 w-100 d-none" data-nui-countdown-box>
+            Se van a eliminar:
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            Quien los tenga asignados se queda sin ellos; las personas y máquinas no se tocan.
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" name="action" value="delete" class="btn btn-sm btn-danger" data-nui-countdown-go disabled>Eliminar <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
 </div>
 <div class="d-none" data-nui-actions-for="pedir">
     {# S163: cancelar peticiones de documentos seleccionadas. Se piden desde Personal › General. #}
