@@ -147,6 +147,13 @@ ASSISTANCE_FAMILY = "ASISTENCIA"
 HOURS_FAMILIES = ("PLATAFORMAS", "CARRETILLAS", "MÓVILES")
 HOURS_CONVENTION_PREFIXES = ("A", "B", "T", "Z")
 KM_CODE_PREFIXES = ("P", "X")
+# S154 (sesión invasora), Miguel Ángel: B38 y B41 son plataformas de
+# transporte (familia PLATAFORMAS) y "van por kilómetros"; en GasoGes
+# sus repostajes llevan los km del camión (B38 de 718.700 a 760.810,
+# B41 hasta 762.515). Mandan sobre la familia y el prefijo B.
+# ---
+# Cost centres that go by km whatever their family or prefix.
+KM_CODES = ("B38", "B41")
 
 
 def convention_unit(code, family):
@@ -160,6 +167,8 @@ def convention_unit(code, family):
     """
     code = str(code or "").upper()
     family = str(family or "").upper()
+    if code in KM_CODES:
+        return UNIT_KM
     if family == ASSISTANCE_FAMILY:
         return UNIT_KM
     if family in KM_FAMILIES:
