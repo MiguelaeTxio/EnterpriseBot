@@ -212,6 +212,10 @@ urlpatterns = [
     path("seguridad/marcados/", views_safety.SafetyRowsView.as_view(),
          name="safety_rows"),
     # Empresa › Nóminas (S163, 23/11).
+    path("avisos/ver/", views_notices.NoticeSheetView.as_view(),
+         name="notice_sheet"),
+    path("avisos/pedir-otro/", views_notices.NoticeAskView.as_view(),
+         name="notice_ask"),
     path("avisos/pedir/", views_notices.NoticeRequestView.as_view(),
          name="notice_request"),
     path("avisos/subir/", views_notices.NoticeUploadView.as_view(),

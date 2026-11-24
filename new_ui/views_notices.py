@@ -78,8 +78,12 @@ def _allowed_subjects(request, domain):
 
     section = "per" if domain == notices.DOMAIN_PERSONAL else "cdg"
     company = request.user.company_user.company
+    # S163 (24/11): «Buscar» no filtra aquí a las personas/máquinas: se
+    # aplica a cada aviso (persona, máquina o documento), como la antigua.
+    params = request.GET.copy()
+    params.pop("q", None)
     return set(filtered(list_def(section, "general"), company,
-                        request.GET, None).values_list("pk", flat=True))
+                        params, None).values_list("pk", flat=True))
 
 
 # ------------------------------------------------------- avisos pendientes
@@ -143,8 +147,10 @@ def render_pending(request):
             return False
         if doc_type_pk is not None and notice.document_type_id != doc_type_pk:
             return False
-        if query and query.lower() not in ("%s %s" % (
-                notice.subject_label, notice.document_label)).lower():
+        if query and not all(word in ("%s %s %s" % (
+                notice.subject_label, notice.document_label,
+                getattr(notice, "service_text", ""))).lower()
+                for word in query.lower().split()):
             return False
         return True
 
@@ -160,6 +166,8 @@ def render_pending(request):
         months[-1]["items"].append(item)
     for notice in pending:
         _texts(notice)
+    for notice in pending + [item.notice for item in calendar_items]:
+        notice.sheet_url = _sheet_url(notice)
     is_personal = domain == notices.DOMAIN_PERSONAL
     can_request_docs = (is_personal
                         and company_user.role in DOC_REQUEST_ROLES)
@@ -195,15 +203,18 @@ def render_pending(request):
             ("Caducados" if is_personal
              else "Caducados y revisiones vencidas",
              [n for n in pending if n.kind == notices.KIND_EXPIRED],
-             "text-danger", "Ningún documento caducado."),
+             "text-danger", "Ningún documento caducado.",
+             "text-bg-danger"),
             ("Próximos a caducar" if is_personal
              else "Próximos a caducar y revisiones próximas",
              [n for n in pending if n.kind == notices.KIND_UPCOMING],
              "text-warning-emphasis",
-             "Ningún aviso de caducidad ha llegado todavía."),
+             "Ningún aviso de caducidad ha llegado todavía.",
+             "text-bg-warning"),
             ("Faltan",
              [n for n in pending if n.kind == notices.KIND_MISSING], "",
-             "No falta ningún documento con aviso configurado."),
+             "No falta ningún documento con aviso configurado.",
+             "text-bg-secondary"),
         ],
         "calendar_months": months,
         "calendar_count": len(calendar_items),
@@ -609,3 +620,123 @@ class ScopeSaveView(SuperuserRequiredMixin, View):
         name = supervisor.user.get_full_name() or supervisor.user.username
         return _ok("Destinatario %s guardado." % name)
 
+
+
+# ---------------------------------------------------- ventana de un aviso
+def _sheet_url(notice):
+    """La ventana de un aviso (S163, 24/11): qué pasa y cómo resolverlo."""
+    from urllib.parse import urlencode
+
+    from django.urls import reverse
+
+    return "%s?%s" % (reverse("new_ui:notice_sheet"), urlencode({
+        "d": notice.domain, "s": notice.subject_id,
+        "t": notice.document_type_id or "",
+        "l": notice.document_label if notice.is_service else "",
+        "k": notice.kind}))
+
+
+class NoticeSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one notice in the viewer, with every way to solve it.
+
+    ---
+
+    GET: un aviso en el visor (al pulsarlo en Avisos pendientes o en el
+    calendario), con todos los cauces para resolverlo (Miguel Ángel,
+    24/11: «resolver la falta o la desactualización del documento con
+    todas las cosas que necesitamos»): subir el documento (o la versión
+    nueva) aquí mismo, pedírselo al trabajador por WhatsApp, la cita del
+    reconocimiento médico e ir a su ficha. Como en la antigua, pulsar un
+    aviso lleva a su documentación.
+    """
+
+    def get(self, request):
+        from django.http import HttpResponse
+
+        domain = request.GET.get("d")
+        if domain not in (notices.DOMAIN_PERSONAL, notices.DOMAIN_MACHINE):
+            return HttpResponse("Aviso no válido.", status=400)
+        subject_id = core._int_or_none(request.GET.get("s"))
+        type_id = core._int_or_none(request.GET.get("t"))
+        label = request.GET.get("l", "")
+        kind = request.GET.get("k", "")
+        pending, _scheduled, calendar_items = notices.compute_notices(
+            domain, include_service=True)
+
+        def same(n):
+            if n.subject_id != subject_id:
+                return False
+            if label:
+                return n.is_service and n.document_label == label
+            return n.document_type_id == type_id
+
+        notice = (next((n for n in pending if same(n) and n.kind == kind),
+                       None)
+                  or next((n for n in pending if same(n)), None))
+        future = notice is None
+        if notice is None:
+            item = next((i for i in calendar_items if same(i.notice)), None)
+            notice = item.notice if item else None
+        if notice is None:
+            return HttpResponse(
+                '<p class="small text-muted mb-0">Este aviso ya no está '
+                'pendiente: puede que ya se haya resuelto. Recarga la '
+                'lista.</p>')
+        company_user = request.user.company_user
+        recipients = recipients_for(notice, load_scopes(company_user.company))
+        notice.recipient_names = ", ".join(
+            r.user.get_full_name() or r.user.username for r in recipients)
+        is_personal = domain == notices.DOMAIN_PERSONAL
+        if not future:
+            _texts(notice)
+        if is_personal and not notice.is_service:
+            core._annotate_worker_requests(
+                [notice], company_user.role in DOC_REQUEST_ROLES)
+        doc_type = (DocumentTypeCatalog.objects.filter(pk=type_id).first()
+                    if type_id else None)
+        return render(request, "new_ui/_notice_sheet.html", {
+            "notice": notice,
+            "future": future,
+            "is_personal": is_personal,
+            "doc_type": doc_type,
+            "upload_domain": "personal" if is_personal else "machine",
+            "is_missing": notice.kind == notices.KIND_MISSING,
+            "goto_section": "per" if is_personal else "cdg",
+            "goto_tab": ("revisiones" if notice.is_service
+                         else "documentos"),
+        })
+
+
+class NoticeAskView(SuperuserRequiredMixin, View):
+    """
+    GET: «Pedir cualquier otro documento» in the viewer.
+
+    ---
+
+    GET: pedir por WhatsApp cualquier documento a los trabajadores que
+    se marquen aquí (la antigua «Pedir documentos»): buscar y marcar
+    trabajadores con móvil, elegir los documentos y pedir o cancelar lo
+    pedido. Usa las mismas vistas que Personal › Comunicaciones.
+    """
+
+    def get(self, request):
+        from document_explorer.person_phone_service import mobile_of
+        from new_ui.views_notify import notify_context
+
+        company = request.user.company_user.company
+        people = []
+        for person in PersonIdentity.objects.filter(
+                Q(company=company) | Q(company__isnull=True),
+                is_active_employee=True).order_by(
+                "first_surname", "second_surname", "given_name"):
+            people.append({
+                "pk": person.pk,
+                "label": "%s %s, %s" % (person.first_surname,
+                                        person.second_surname or "",
+                                        person.given_name),
+                "mobile": mobile_of(person)})
+        return render(request, "new_ui/_notice_ask.html", {
+            "people": people,
+            "ask_types": notify_context("per").get("ask_types", []),
+        })

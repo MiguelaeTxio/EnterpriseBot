@@ -1,0 +1,61 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_notice_sheet.html #}
+{% comment %}
+S163 (24/11). Un aviso en el visor (Avisos pendientes o calendario): qué
+pasa y todos los cauces para resolverlo: subir el documento o su versión
+nueva aquí mismo (aunque lo aporte el trabajador: si lo trae en papel se
+escanea y se sube), pedírselo por WhatsApp, la cita del reconocimiento
+médico e ir a su ficha. Vista: new_ui/views_notices.py (NoticeSheetView).
+{% endcomment %}
+<div class="small">
+    <div class="d-flex justify-content-between gap-2 mb-1">
+        <span class="fw-semibold fs-6">{{ notice.subject_label }}</span>
+        {% if not future %}<span class="text-nowrap {% if notice.kind == 'EXPIRED' %}text-danger{% elif notice.kind == 'UPCOMING' %}text-warning-emphasis{% endif %}">{% if notice.is_service %}<i class="bi bi-wrench-adjustable me-1"></i>{% endif %}{{ notice.when_text }}</span>{% endif %}
+    </div>
+    <div class="mb-1">{% if future %}{{ notice.document_label }} — caduca el {{ notice.expiry_date|date:"d/m/Y" }} (aviso programado){% else %}{{ notice.what_text }}{% endif %}</div>
+    <div class="mb-2">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>Avisa a {{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}
+        {% if notice.request_state %}<span class="badge {{ notice.request_state_class }} text-wrap text-start ms-1">{{ notice.request_state }}</span>{% endif %}
+        {% if notice.appointment_state %}<span class="badge text-bg-primary text-wrap text-start ms-1">{{ notice.appointment_state }}</span>{% endif %}
+    </div>
+    {% if notice.entry_id %}<div class="mb-2"><a href="{% url 'new_ui:document_file' notice.entry_id %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-text me-1"></i>Ver el documento que hay ahora</a></div>{% endif %}
+
+    {% if doc_type %}
+    <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" class="border rounded p-2 mb-2" data-nui-reset-after>
+        {% csrf_token %}
+        <input type="hidden" name="domain" value="{{ upload_domain }}">
+        <input type="hidden" name="subject_pk" value="{{ notice.subject_id }}">
+        <input type="hidden" name="document_type_code" value="{{ doc_type.code }}">
+        <div class="fw-semibold mb-1"><i class="bi bi-upload me-1"></i>{% if is_missing %}Subir el documento{% else %}Actualizarlo (subir la versión nueva){% endif %}: {{ doc_type.label }}</div>
+        <input type="file" name="file" multiple required accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" class="form-control form-control-sm mb-1" aria-label="Archivo">
+        <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+            {% if doc_type.tracks_expiry %}
+            <label class="text-muted" for="nui-ns-exp">Caducidad</label><input type="date" id="nui-ns-exp" name="expiry_date" class="form-control form-control-sm" style="width: 10rem;">
+            {% else %}
+            <label class="text-muted" for="nui-ns-iss">Fecha del documento</label><input type="date" id="nui-ns-iss" name="issue_date" class="form-control form-control-sm" style="width: 10rem;">
+            {% endif %}
+            <span class="text-muted">Opcional: sin fecha, se lee del propio documento.</span>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-upload me-1"></i>Subir a su ficha</button>
+        <span class="text-muted ms-1">{% if not is_missing %}Sustituye al anterior. {% endif %}Vale también si lo ha traído en papel: se escanea y se sube aquí.</span>
+    </form>
+    {% endif %}
+
+    {% if notice.is_requestable %}
+    <form data-nui-action-form action="{% url 'new_ui:notice_request' %}" class="border rounded p-2 mb-2">
+        {% csrf_token %}<input type="hidden" name="selected" value="{{ notice.request_key }}">
+        <div class="fw-semibold mb-1"><i class="bi bi-whatsapp me-1"></i>Pedírselo al trabajador</div>
+        <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Pedirle por WhatsApp «{{ notice.document_label }}»?"><i class="bi bi-whatsapp me-1"></i>Pedir por WhatsApp</button>
+        <span class="text-muted ms-1">Si ya tiene otro pedido, este queda en cola y se le pide al entregar el anterior.</span>
+    </form>
+    {% endif %}
+
+    {% if notice.can_mark_appointment %}
+    <form data-nui-action-form action="{% url 'new_ui:notice_appointment' %}" class="border rounded p-2 mb-2">
+        {% csrf_token %}
+        <input type="hidden" name="person" value="{{ notice.subject_id }}"><input type="hidden" name="doc_type" value="{{ notice.document_type_id }}">
+        <div class="fw-semibold mb-1"><i class="bi bi-calendar-check me-1"></i>Cita</div>
+        {% if notice.appointment_state %}<button type="submit" name="action" value="cancel" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Anular la cita</button>{% else %}<button type="submit" name="action" value="mark" class="btn btn-sm btn-outline-success"><i class="bi bi-calendar-check me-1"></i>Cita solicitada</button>{% endif %}
+    </form>
+    {% endif %}
+
+    <button type="button" class="btn btn-sm btn-outline-primary" data-nui-goto="{{ goto_section }}" data-tab="{{ goto_tab }}" data-pk="{{ notice.subject_id }}" data-label="{{ notice.subject_label }}"><i class="bi bi-box-arrow-up-right me-1"></i>Ir a su ficha ({% if notice.is_service %}revisiones{% else %}documentos{% endif %})</button>
+</div>

@@ -985,6 +985,19 @@
             const subject = uploadForm.querySelector('[name="subject_pk"]');
             if (!subject.value && scope && scope.pk) subject.value = scope.pk;
         }, true);
+        // S163 (24/11): Avisos pendientes › Acciones: cuántos avisos hay
+        // marcados para pedir por WhatsApp, y Limpiar.
+        function paintNoticeCount() {
+            const out = document.querySelector("[data-nui-notice-count]");
+            if (out) out.textContent = document.querySelectorAll("[data-nui-notice-check]:checked").length;
+        }
+        root.addEventListener("change", function (ev) { if (ev.target.matches("[data-nui-notice-check]")) paintNoticeCount(); });
+        root.addEventListener("click", function (ev) {
+            if (!ev.target.closest("[data-nui-notice-clear]")) return;
+            document.querySelectorAll("[data-nui-notice-check]:checked").forEach(c => { c.checked = false; });
+            paintNoticeCount();
+        });
+        new MutationObserver(paintNoticeCount).observe(document.body, {childList: true, subtree: true});
         // S163 (24/11), Configuración de avisos como la antigua: «Cambios
         // sin guardar» y cuántos hay marcados en cada lista «(N marcados)».
         function paintCounts(f) {
@@ -1510,6 +1523,28 @@
             const wanted = value ? (target || groupOne(now) || "ficha") : (modeOf(now) === "one" ? (groupAll(now) || "general") : now);
             if (wanted !== now) showTab(listPanel, wanted, true); else load();
         }
+        // S163 (24/11): «Ir a su ficha» desde un aviso: abre esa persona o
+        // máquina en su sección y en la pestaña pedida (documentos...).
+        root.addEventListener("click", function (ev) {
+            const b = ev.target.closest("[data-nui-goto]");
+            if (!b) return;
+            ev.preventDefault();
+            const sec = b.dataset.nuiGoto;
+            const value = {pk: b.dataset.pk, label: b.dataset.label || ""};
+            if (sec === section) {
+                const modal = document.getElementById("nui-viewer");
+                if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
+                setScope(value, b.dataset.tab);
+                return;
+            }
+            const values = {};
+            values["scope_" + sec] = value;
+            tabs[sec + ":listado"] = b.dataset.tab;
+            values.tabs = tabs;
+            save(values);
+            if (window.EbUiState && window.EbUiState.flush) window.EbUiState.flush();
+            setTimeout(function () { window.location.href = "?s=" + sec; }, 300);
+        });
         const scopeClear = document.getElementById("nui-scope-clear");
         if (scopeClear) scopeClear.addEventListener("click", function () { setScope(null); });
 

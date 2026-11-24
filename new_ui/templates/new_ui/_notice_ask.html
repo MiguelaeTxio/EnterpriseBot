@@ -1,0 +1,37 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_notice_ask.html #}
+{% comment %}
+S163 (24/11). «Pedir cualquier otro documento» desde Avisos pendientes
+(la antigua «Pedir documentos»): marcar trabajadores, elegir documentos y
+pedirlos por WhatsApp o cancelar lo pedido. Vista: NoticeAskView.
+{% endcomment %}
+<form data-nui-action-form action="{% url 'new_ui:doc_request_send' %}" class="small">
+    {% csrf_token %}
+    <div class="row g-2">
+        <div class="col-12 col-md-6">
+            <div class="fw-semibold mb-1"><i class="bi bi-people me-1"></i>Trabajadores</div>
+            <input type="search" class="form-control form-control-sm mb-1" placeholder="Buscar por nombre…" aria-label="Buscar trabajador" data-nui-filter-list>
+            <div class="border rounded px-2 py-1" style="max-height: 22rem; overflow-y: auto;" data-nui-filter-target>
+                <div data-nui-filter-group>
+                {% for p in people %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="checkbox" name="selected" value="{{ p.pk }}"{% if not p.mobile %} disabled{% endif %}> <span class="form-check-label">{{ p.label }}{% if not p.mobile %} <span class="text-muted">(sin móvil)</span>{% endif %}</span></label>{% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6">
+            <div class="fw-semibold mb-1"><i class="bi bi-file-earmark me-1"></i>Documentos a pedir</div>
+            <input type="search" class="form-control form-control-sm mb-1" placeholder="Buscar tipo de documento…" aria-label="Buscar documento" data-nui-filter-list>
+            <div class="border rounded px-2 py-1" style="max-height: 22rem; overflow-y: auto;" data-nui-filter-target>
+                {% for family, types in ask_types %}
+                <div data-nui-filter-group>
+                    <div class="fw-semibold text-muted mt-1">{{ family }}</div>
+                    {% for pk, label in types %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="checkbox" name="type_ids" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="d-flex flex-wrap gap-1 mt-2">
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-whatsapp me-1"></i>Pedir por WhatsApp</button>
+        <button type="submit" formaction="{% url 'new_ui:doc_request_cancel' %}" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Cancelar lo pedido a los trabajadores marcados (los documentos marcados o, sin marcar ninguno, todo)?"><i class="bi bi-x-circle me-1"></i>Cancelar lo pedido</button>
+    </div>
+    <p class="text-muted mt-1 mb-0">Uno activo por trabajador: el resto queda en cola y se le pide al entregar el anterior. Lo pedido se ve en Personal › Comunicaciones › Documentos pedidos.</p>
+</form>

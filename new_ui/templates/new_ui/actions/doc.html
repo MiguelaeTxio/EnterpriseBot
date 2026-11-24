@@ -110,6 +110,19 @@ new_ui.js enseña el de la vista abierta. Formularios:
         </div>
     </form>
 </div>
+<div class="d-none" data-nui-actions-for="avisos_pendientes">
+    {# S163 (24/11): pedir por WhatsApp los avisos marcados y cualquier otro documento. Cada aviso se resuelve al pulsarlo (subir, actualizar, pedir, cita). #}
+    <form id="nui-notice-request" data-nui-action-form action="{% url 'new_ui:notice_request' %}" class="mb-2">
+        {% csrf_token %}
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="small fw-semibold"><span data-nui-notice-count>0</span> avisos marcados</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-nui-notice-clear>Limpiar</button>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Pedir por WhatsApp a cada trabajador los documentos marcados?"><i class="bi bi-whatsapp me-1"></i>Pedir por WhatsApp</button>
+        <p class="small text-muted mt-1 mb-0">Solo llevan casilla los documentos que aporta el propio trabajador, si tiene móvil válido. Se le pide uno y, cuando lo entrega, el siguiente.</p>
+    </form>
+    <button type="button" class="btn btn-sm btn-outline-primary" data-nui-viewer-url="{% url 'new_ui:notice_ask' %}" data-nui-viewer-title="Pedir cualquier otro documento"><i class="bi bi-whatsapp me-1"></i>Pedir cualquier otro documento…</button>
+</div>
 <div class="d-none" data-nui-actions-for="pedir">
     {# S163: cancelar peticiones de documentos seleccionadas. Se piden desde Personal › General. #}
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:doc_request_cancel_rows' %}">

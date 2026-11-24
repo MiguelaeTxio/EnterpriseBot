@@ -26,49 +26,22 @@
     <div class="alert alert-info py-1 px-2">{% if is_personal %}Ninguna persona activa{% else %}Ningún centro de gasto activo{% endif %} tiene un requisito de documentación asignado.</div>
     {% endif %}
 
-    {% if can_request_docs %}
-    <form id="nui-notice-request" data-nui-action-form action="{% url 'new_ui:notice_request' %}" class="border rounded p-2 mb-2">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Pedir por WhatsApp a cada trabajador los documentos marcados?"><i class="bi bi-whatsapp me-1"></i>Pedir por WhatsApp los marcados</button>
-        <span class="text-muted ms-1">Solo llevan casilla los documentos que aporta el propio trabajador, si tiene móvil válido. Se le pide uno y, cuando lo entrega, el siguiente.</span>
-    </form>
-    {% endif %}
 
     <div class="row g-2">
         <div class="col-12 col-xl-7">
-            {% for title, items, css, empty in groups %}
+            {% for title, items, css, empty, badge in groups %}
             <div class="card mb-2">
-                <div class="card-header py-1 fw-semibold {{ css }}">{{ title }} <span class="badge text-bg-secondary">{{ items|length }}</span></div>
+                <div class="card-header py-1 fw-semibold {{ css }}">{{ title }} <span class="badge {{ badge }}">{{ items|length }}</span></div>
                 <div class="list-group list-group-flush" style="max-height: 28rem; overflow-y: auto;">
                     {% for notice in items %}
                     <div class="list-group-item py-1 d-flex gap-2 align-items-start">
-                        {% if notice.is_requestable %}<input type="checkbox" form="nui-notice-request" name="selected" value="{{ notice.request_key }}" class="form-check-input mt-1" aria-label="Pedir al trabajador por WhatsApp">{% endif %}
-                        <div class="flex-grow-1">
-                            <div class="d-flex justify-content-between gap-2"><span class="fw-semibold">{{ notice.subject_label }}</span><span class="text-nowrap">{{ notice.when_text }}</span></div>
+                        {% if notice.is_requestable %}<input type="checkbox" form="nui-notice-request" name="selected" value="{{ notice.request_key }}" class="form-check-input mt-1" data-nui-notice-check aria-label="Pedir al trabajador por WhatsApp">{% endif %}
+                        <div class="flex-grow-1 nui-openable" role="button" title="Pulsa para resolverlo: subir, actualizar, pedir…" data-nui-viewer-url="{{ notice.sheet_url }}" data-nui-viewer-title="Aviso">
+                            <div class="d-flex justify-content-between gap-2"><span class="fw-semibold">{{ notice.subject_label }}</span><span class="text-nowrap{% if notice.kind == 'EXPIRED' %} text-danger{% endif %}">{% if notice.is_service %}<i class="bi bi-wrench-adjustable me-1"></i>{% endif %}{{ notice.when_text }}</span></div>
                             <div>{{ notice.what_text }}</div>
                             <div>{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                             {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
                             {% if notice.appointment_state %}<div><span class="badge text-bg-primary text-wrap text-start">{{ notice.appointment_state }}</span></div>{% endif %}
-                            {% if notice.can_upload %}
-                            <details class="mt-1">
-                                <summary class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-upload me-1"></i>Subir</summary>
-                                <form data-nui-action-form action="{% url 'new_ui:notice_upload' %}" enctype="multipart/form-data" class="d-flex flex-wrap align-items-center gap-1 mt-1">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="person" value="{{ notice.subject_id }}"><input type="hidden" name="doc_type" value="{{ notice.document_type_id }}">
-                                    <input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" class="form-control form-control-sm" style="max-width: 16rem;" required>
-                                    <span class="text-muted">{{ notice.upload_date_label }}</span><input type="date" name="date" class="form-control form-control-sm" style="width: 10rem;">
-                                    <button type="submit" class="btn btn-sm btn-primary">Subir a la ficha</button>
-                                    <span class="text-muted w-100">La fecha es opcional: sin ella, se lee del documento.</span>
-                                </form>
-                            </details>
-                            {% endif %}
-                            {% if notice.can_mark_appointment %}
-                            <form data-nui-action-form action="{% url 'new_ui:notice_appointment' %}" class="mt-1">
-                                {% csrf_token %}
-                                <input type="hidden" name="person" value="{{ notice.subject_id }}"><input type="hidden" name="doc_type" value="{{ notice.document_type_id }}">
-                                {% if notice.appointment_state %}<button type="submit" name="action" value="cancel" class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-x-circle me-1"></i>Anular la cita</button>{% else %}<button type="submit" name="action" value="mark" class="btn btn-sm btn-outline-success py-0"><i class="bi bi-calendar-check me-1"></i>Cita solicitada</button>{% endif %}
-                            </form>
-                            {% endif %}
                         </div>
                     </div>
                     {% empty %}
@@ -86,7 +59,7 @@
                     <div class="px-2 py-1 fw-semibold bg-light">{{ month.label }}</div>
                     <div class="list-group list-group-flush">
                         {% for item in month.items %}
-                        <div class="list-group-item py-1">
+                        <div class="list-group-item list-group-item-action py-1 nui-openable" role="button" title="Pulsa para resolverlo ya" data-nui-viewer-url="{{ item.notice.sheet_url }}" data-nui-viewer-title="Aviso">
                             <div class="d-flex justify-content-between gap-2"><span class="fw-semibold">{{ item.trigger_date|date:"d/m" }} · {{ item.step_label }}</span><span class="text-muted text-nowrap">caduca {{ item.notice.expiry_date|date:"d/m/Y" }}</span></div>
                             <div>{{ item.notice.subject_label }} — {{ item.notice.document_label }}</div>
                             <div>{% if item.notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ item.notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
