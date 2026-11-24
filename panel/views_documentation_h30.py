@@ -622,6 +622,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "plantillas", "bandeja", "revisiones", "repostajes",
             "especificaciones",
             "solicitudes", "nominas", "pedir", "firmas", "seguros",
+            "cae",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
         # documentación (mismos roles que DocsUploadAccessMixin).
@@ -667,6 +668,13 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         can_insure = can_use_insurance(request.user.company_user)
         if not can_insure:
             valid_tabs = tuple(t for t in valid_tabs if t != "seguros")
+        # S156: pestaña "Correos CAE" (avisos de las plataformas de
+        # coordinación), para administración y supervisión.
+        from cae_mail.views import can_use_cae
+
+        can_cae = can_use_cae(request.user.company_user)
+        if not can_cae:
+            valid_tabs = tuple(t for t in valid_tabs if t != "cae")
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a
         # pestañas propias del hub -- Miguel Ángel: "las gestiones
@@ -716,6 +724,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "can_send_payslips": can_send_payslips(request.user.company_user),
             "can_use_signatures": can_sign,
             "can_use_insurance": can_insure,
+            "can_use_cae": can_cae,
         })
 
 

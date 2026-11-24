@@ -277,6 +277,17 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         </a>
     </li>
     {% endif %}
+    {% if can_use_cae %}
+    <li class="nav-item">
+        {# S156: avisos de las plataformas CAE: qué piden, qué tenemos, qué falta. #}
+        <a class="nav-link {% if persisted_active_tab == 'cae' %}active{% endif %}" id="tab-cae" data-bs-toggle="tab" href="#pane-cae"
+           hx-get="{% url 'cae_mail:tab' %}"
+           hx-target="#pane-cae"
+           hx-trigger="{% if persisted_active_tab == 'cae' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-envelope-paper me-1"></i>Correos CAE
+        </a>
+    </li>
+    {% endif %}
     {% if can_use_inbox %}
     <li class="nav-item">
         {% comment %}
@@ -365,6 +376,11 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
     {% endif %}
     {% if can_use_insurance %}
     <div class="tab-pane fade {% if persisted_active_tab == 'seguros' %}show active{% endif %}" id="pane-seguros">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    {% endif %}
+    {% if can_use_cae %}
+    <div class="tab-pane fade {% if persisted_active_tab == 'cae' %}show active{% endif %}" id="pane-cae">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     {% endif %}

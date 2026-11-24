@@ -1,0 +1,36 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/cae_mail/templates/cae_mail/_results.html #}
+{% if mails %}
+<table class="table table-sm table-hover small mb-0">
+    <thead>
+        <tr>
+            <th>Fecha</th>
+            <th>Plataforma</th>
+            <th>Cliente</th>
+            <th>Empresa</th>
+            <th class="text-end">Pide</th>
+            <th>Estado</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for mail in mails %}
+        <tr role="button" hx-get="{% url 'cae_mail:detail' mail.pk %}" hx-target="#cae-detail"
+            title="{{ mail.summary }}">
+            <td class="text-nowrap">{{ mail.received_at|default:mail.forwarded_at|date:"d/m/Y" }}</td>
+            <td>{{ mail.platform|default:"—" }}</td>
+            <td>{{ mail.client|default:"—" }}</td>
+            <td>{{ mail.our_company|default:"—" }}</td>
+            <td class="text-end">{% if mail.demand_count %}{{ mail.demand_count }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-nowrap">
+                {% if mail.attended_at %}<span class="badge text-bg-success">Atendido</span>
+                {% elif mail.status == "ERROR" %}<span class="badge text-bg-danger">Error al leer</span>
+                {% elif mail.status == "PENDING" %}<span class="badge text-bg-secondary">Leyendo…</span>
+                {% else %}<span class="badge text-bg-warning">Por atender</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% if mails|length >= limit %}<div class="text-muted small mt-1">Se muestran los {{ limit }} más recientes; afina con los filtros.</div>{% endif %}
+{% else %}
+<div class="text-muted small py-3">No hay avisos con estos filtros.</div>
+{% endif %}

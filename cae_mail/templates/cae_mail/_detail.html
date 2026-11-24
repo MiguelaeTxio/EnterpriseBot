@@ -1,0 +1,71 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/cae_mail/templates/cae_mail/_detail.html #}
+<div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+    <div class="small">
+        <div class="fw-semibold">{{ mail.platform|default:"Plataforma sin identificar" }}{% if mail.client %} · {{ mail.client }}{% endif %}{% if mail.our_company %} · {{ mail.our_company }}{% endif %}</div>
+        <div class="text-muted">{{ mail.received_at|default:mail.forwarded_at|date:"d/m/Y H:i" }} · {{ mail.sender_name|default:mail.sender_address }}</div>
+        <div class="text-muted">{{ mail.subject }}</div>
+    </div>
+    <div class="d-flex gap-1 flex-shrink-0">
+        <button type="button" class="btn btn-sm {% if mail.attended_at %}btn-outline-secondary{% else %}btn-success{% endif %}"
+                hx-post="{% url 'cae_mail:attend' mail.pk %}" hx-target="#cae-detail">
+            {% if mail.attended_at %}Reabrir{% else %}Dar por atendido{% endif %}
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" title="Volver a leer el correo con Gemini"
+                hx-post="{% url 'cae_mail:reread' mail.pk %}" hx-target="#cae-detail"
+                hx-confirm="¿Volver a leer este aviso? Lo que pide se sustituye por la nueva lectura.">Volver a leer</button>
+    </div>
+</div>
+{% if message %}<div class="alert alert-info py-1 px-2 small mb-2">{{ message }}</div>{% endif %}
+{% if mail.attended_at %}<div class="small text-success mb-1">Atendido el {{ mail.attended_at|date:"d/m/Y H:i" }}{% if mail.attended_by %} por {{ mail.attended_by.get_full_name|default:mail.attended_by.username }}{% endif %}.</div>{% endif %}
+{% if mail.summary %}<p class="small mb-2">{{ mail.summary }}</p>{% endif %}
+{% if mail.status == "ERROR" %}<div class="alert alert-danger py-1 px-2 small">{{ mail.error }}</div>{% endif %}
+
+{% if rows %}
+<div class="d-flex flex-wrap gap-1 mb-2 small">
+    {% for key, label, count in counts %}
+    <span class="badge {% if key == 'found' %}text-bg-success{% elif key == 'expired' %}text-bg-warning{% elif key == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ label }}: {{ count }}</span>
+    {% endfor %}
+</div>
+<form method="post" action="{% url 'cae_mail:download' mail.pk %}">
+    {% csrf_token %}
+    <table class="table table-sm small mb-2">
+        <thead>
+            <tr>
+                <th></th>
+                <th>De quién</th>
+                <th>Qué pide</th>
+                <th>Lo nuestro</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td>{% if row.entry %}<input class="form-check-input" type="checkbox" name="entries" value="{{ row.entry.pk }}"{% if row.status == "found" %} checked{% endif %}>{% endif %}</td>
+                <td>
+                    {% if row.holder %}<div>{{ row.holder }}</div>{% endif %}
+                    {% if not row.holder or row.holder|stringformat:"s" != row.demand.subject_name %}<div class="text-muted">{{ row.demand.subject_name|default:row.demand.get_subject_type_display }}{% if row.demand.subject_ref %} · {{ row.demand.subject_ref }}{% endif %}</div>{% endif %}
+                </td>
+                <td>
+                    <div>{{ row.demand.document }}</div>
+                    <div class="text-muted">
+                        {% if row.demand.state %}{{ row.demand.state }}{% endif %}{% if row.demand.due_date %} · hasta {{ row.demand.due_date|date:"d/m/Y" }}{% endif %}{% if row.demand.site %} · {{ row.demand.site }}{% endif %}
+                    </div>
+                </td>
+                <td>
+                    <span class="badge {% if row.status == 'found' %}text-bg-success{% elif row.status == 'expired' %}text-bg-warning{% elif row.status == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status_label }}</span>
+                    {% if row.demand.document_type %}<div class="text-muted">{{ row.demand.document_type.label }}</div>{% endif %}
+                    {% if row.entry %}<div>{{ row.entry.name }}{% if row.entry.expiry_date %} · caduca {{ row.entry.expiry_date|date:"d/m/Y" }}{% elif row.entry.issue_date %} · del {{ row.entry.issue_date|date:"d/m/Y" }}{% endif %}</div>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if downloadable %}
+    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-download me-1"></i>Descargar lo marcado para subirlo a la plataforma</button>
+    {% endif %}
+</form>
+{% elif mail.status == "PENDING" %}
+<div class="text-muted small py-2">Se está leyendo el aviso; vuelve a pulsarlo en un minuto.</div>
+{% else %}
+<div class="text-muted small py-2">Este aviso no dice qué documentos concretos pide (solo un recuento, un enlace o un aviso genérico): hay que entrar en la plataforma.</div>
+{% endif %}

@@ -92,6 +92,8 @@ urlpatterns = [
     # S163 (invasora UX): nueva interfaz, app aparte (new_ui). Antes que
     # 'panel/' para que sus rutas no las tome el panel.
     path('panel/nueva-interfaz/', include('new_ui.urls')),
+    # S156: pestaña «Correos CAE» del hub de Documentación (cae_mail).
+    path('panel/cae/', include('cae_mail.urls', namespace='cae_mail')),
     path('panel/', include('panel.urls')),
     # ASISTENCIA budget module — motor de presupuestos ASISTENCIA (Hito 16).
     path('panel/budgets/', include('budgets.urls', namespace='budgets')),
