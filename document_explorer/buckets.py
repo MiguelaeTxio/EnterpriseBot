@@ -156,6 +156,8 @@ CAE_QUARANTINE_PREFIXES = (
     QUARANTINE_PREFIX + "00 OBRAS EN EJECUCION",
 )
 CAE_CLASSIFIED_MARK = "/SEGURO ACCIDENTE Y RC EMPRESARIAL Y PATRONAL"
+# Carpeta propia del cubo donde se dejan, con su ruta de OneDrive.
+CAE_ROOT = "DOC. EMPRESA/DOCUMENTACION CAE"
 
 
 def cae_quarantine_q(field="parent_path"):

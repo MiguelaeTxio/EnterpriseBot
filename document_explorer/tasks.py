@@ -455,6 +455,52 @@ _TRANSIENT_MARK = "[PASAJERO]"
 _TRANSIENT_MAX_PASSES = 3
 
 
+_CAE_RELOCATE_BATCH_SIZE = 500
+
+
+def _relocate_cae_entries():
+    """Move CAE files out of quarantine into their own folder (S156).
+    ---
+    Saca de la cuarentena la documentacion CAE que sube el agente H28
+    ("Vigilar carpetas CAE") y la deja en buckets.CAE_ROOT con su ruta
+    de OneDrive (00 DOCUMENTACION MENSUAL 2026/TCs Y RECIBOS/...), sin
+    pasar por Gemini. Escritura de indice pura (move_entry). Devuelve
+    cuantos archivos ha movido.
+    """
+    from document_explorer import move_service
+    from document_explorer.buckets import (
+        CAE_ROOT, PRIMARY_BUCKET, QUARANTINE_PREFIX, cae_quarantine_q,
+    )
+    from document_explorer.index_writer import ensure_folder_chain
+    from document_explorer.models import DocumentIndexEntry
+
+    entries = list(
+        DocumentIndexEntry.objects.filter(
+            cae_quarantine_q(),
+            bucket=PRIMARY_BUCKET,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+        )
+        .order_by("indexed_at")[:_CAE_RELOCATE_BATCH_SIZE]
+    )
+    ready = set()
+    for entry in entries:
+        close_old_connections()
+        relative = entry.parent_path[len(QUARANTINE_PREFIX):]
+        destination = "%s/%s" % (CAE_ROOT, relative)
+        if destination not in ready:
+            ensure_folder_chain(entry.bucket, destination)
+            ready.add(destination)
+        move_service.move_entry(entry, destination, ensure_folder=False)
+    if entries:
+        logger.info(
+            "# [consume_quarantine_task] Documentacion CAE: %d archivo(s) "
+            "movidos a %s.", len(entries), CAE_ROOT,
+        )
+    return len(entries)
+
+
 def _is_transient_gemini_error(text):
     """
     Whether a classification error text is a transient Gemini failure.
@@ -578,7 +624,9 @@ def consume_quarantine_task(self) -> None:
     )
     from document_explorer.models import DocumentIndexEntry
 
-    # S156: la documentacion CAE no se clasifica (buckets.py).
+    # S156: la documentacion CAE no se clasifica (buckets.py): se
+    # mueve tal cual a su carpeta propia (_relocate_cae_entries, ya
+    # dentro de la pasada).
     entries = list(
         DocumentIndexEntry.objects.filter(
             quarantine_scope_q(),
@@ -590,7 +638,14 @@ def consume_quarantine_task(self) -> None:
         .exclude(cae_quarantine_q())
         .order_by("indexed_at")[:_QUARANTINE_CONSUME_BATCH_SIZE]
     )
-    if not entries:
+    cae_pending = DocumentIndexEntry.objects.filter(
+        cae_quarantine_q(),
+        bucket=PRIMARY_BUCKET,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True,
+        purged_at__isnull=True,
+    ).exists()
+    if not entries and not cae_pending:
         return
 
     # Real incident, S040: si el worker se reinicia a mitad de una
@@ -655,6 +710,7 @@ def consume_quarantine_task(self) -> None:
         return
 
     try:
+        _relocate_cae_entries()
         relocated_count = 0
         pending_count = 0
         dossier_trashed_count = 0
