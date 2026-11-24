@@ -54,8 +54,10 @@
             <form data-nui-action-form action="{% url 'new_ui:person_photo_action' person.pk %}" class="d-grid gap-1 mb-2">
                 {% csrf_token %}<input type="hidden" name="action" value="extract">
                 {% for doc in photo_sources %}
-                <button type="submit" name="entry" value="{{ doc.pk }}" class="btn btn-sm text-start {% if id_photo and id_photo.source_id == doc.pk %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
-                    <i class="bi bi-person-vcard me-1"></i>{{ doc.document_type.label|default:"Documento" }}{% if doc.expiry_date %} · caduca {{ doc.expiry_date|date:"d/m/Y" }}{% endif %}{% if doc.is_obsolete %} · obsoleto{% endif %}{% if id_photo and id_photo.source_id == doc.pk %} · la actual{% endif %}
+                {# S163 (24/11): el texto parte en líneas (no se corta) y lleva el archivo, para distinguir dos documentos iguales (p. ej. anverso y reverso del mismo DNI). #}
+                <button type="submit" name="entry" value="{{ doc.pk }}" class="btn btn-sm text-start text-wrap lh-sm {% if id_photo and id_photo.source_id == doc.pk %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+                    <i class="bi bi-person-vcard me-1"></i>{{ doc.document_type.label|default:"Documento" }}{% if doc.expiry_date %} · caduca {{ doc.expiry_date|date:"d/m/Y" }}{% endif %}{% if doc.is_obsolete %} · obsoleto{% endif %}{% if id_photo and id_photo.source_id == doc.pk %} · <strong>la actual</strong>{% endif %}
+                    <span class="d-block small opacity-75 text-break">{{ doc.name }}</span>
                 </button>
                 {% empty %}
                 <span class="small text-muted">No tiene DNI, NIE, pasaporte, permiso ni imágenes.</span>
