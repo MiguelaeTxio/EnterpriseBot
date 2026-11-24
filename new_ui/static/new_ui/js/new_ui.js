@@ -724,7 +724,16 @@
                     if (f.hasAttribute("data-nui-tpl-reload")) loadScreenTpl();
                     if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
                     if (f.hasAttribute("data-nui-vacset-reload")) loadVacationSetup();
-                    if (f.hasAttribute("data-nui-sheet-form") && window.nuiOpenViewer) window.nuiOpenViewer(null, data.message);
+                    const closeOn = f.dataset.nuiViewerCloseOn;
+                    if (closeOn && submitter && submitter.value === closeOn) {
+                        // Lo abierto en el visor ya no existe (p. ej. requisito eliminado).
+                        const modal = document.getElementById("nui-viewer");
+                        if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
+                        result(data.message || "Hecho.", false);
+                    } else if (f.dataset.nuiViewerOpenTpl && data.id && window.nuiOpenViewer) {
+                        // Guardado con otro nombre: se abre el nuevo.
+                        window.nuiOpenViewer(f.dataset.nuiViewerOpenTpl.replace("/0/", "/" + data.id + "/"), data.message, "Requisito");
+                    } else if (f.hasAttribute("data-nui-sheet-form") && window.nuiOpenViewer) window.nuiOpenViewer(null, data.message);
                     else if (f.closest("#nui-viewer") && window.nuiOpenViewer) window.nuiOpenViewer(null, data.message);
                     if (f.hasAttribute("data-nui-fragment-reload")) {
                         const box = f.closest("[data-nui-fragment-box]");
@@ -1539,6 +1548,80 @@
         // la enseña en el visor, sin salir de la lista. El nombre (su
         // ficha) y la casilla siguen como siempre.
         let viewerUrl = "";
+        // S163 (24/11): un requisito en el visor, como el gestor antiguo:
+        // filtros de vista (lo marcado se ve siempre), marcar al vuelo y
+        // cambiar categorías (_requirement_sheet.html).
+        function reqSheetView(box) {
+            const group = (box.querySelector('[name="req_sheet_group"]:checked') || {}).value || "all";
+            const cat = (box.querySelector('[name="req_sheet_cat"]:checked') || {}).value || "all";
+            const editing = (box.querySelector("[data-nui-req-sheet-catedit]") || {}).checked;
+            box.querySelectorAll("[data-nui-req-group]").forEach(function (g) {
+                let groupAny = false;
+                g.querySelectorAll("[data-nui-req-section]").forEach(function (s) {
+                    let any = false;
+                    s.querySelectorAll("[data-nui-req-cat]").forEach(function (item) {
+                        const marked = item.querySelector("input").checked;
+                        const on = marked || ((group === "all" || g.dataset.nuiReqGroup === group || g.dataset.nuiReqGroup === "common") && (cat === "all" || item.dataset.nuiReqCat === cat));
+                        item.classList.toggle("d-none", !on);
+                        const swap = item.querySelector("[data-nui-req-swap]");
+                        if (swap) swap.classList.toggle("d-none", !editing);
+                        any = any || on;
+                    });
+                    s.classList.toggle("d-none", !any);
+                    groupAny = groupAny || any;
+                });
+                g.classList.toggle("d-none", !groupAny);
+            });
+        }
+        function reqSheetPaint(box) {
+            const docs = Array.from(box.querySelectorAll('[name="document_type_ids"]:checked')).map(i => i.dataset.nuiReqLabel);
+            const list = box.querySelector("[data-nui-req-chosen]");
+            list.innerHTML = "";
+            docs.forEach(function (label) { const li = document.createElement("li"); li.textContent = label; list.appendChild(li); });
+            if (!docs.length) list.innerHTML = '<li class="text-muted list-unstyled">Ningún documento marcado.</li>';
+            box.querySelector("[data-nui-req-count]").textContent = docs.length;
+            const codes = Array.from(box.querySelectorAll('[name="driving_category_ids"]:checked')).map(i => i.dataset.nuiReqCode);
+            box.querySelector("[data-nui-req-chosen-driving]").textContent = codes.length ? "Permiso: " + codes.join(", ") : "";
+        }
+        function reqSheetPost(box, url, body) {
+            const status = box.querySelector("[data-nui-req-status]");
+            status.className = "fw-normal text-muted"; status.textContent = "Guardando…";
+            return fetch(url, {method: "POST", credentials: "same-origin", body: body, headers: {"X-CSRFToken": csrf()}})
+                .then(r => r.json().then(d => { if (!r.ok || d.ok === false) throw new Error(d.message || ("Error " + r.status)); return d; }))
+                .then(function (d) { status.className = "fw-normal text-success"; status.textContent = "Guardado."; load(); return d; })
+                .catch(function (err) { status.className = "fw-normal text-danger"; status.textContent = err.message; throw err; });
+        }
+        document.addEventListener("change", function (ev) {
+            const box = ev.target.closest("[data-nui-req-sheet]");
+            if (!box) return;
+            if (ev.target.matches("[data-nui-req-sheet-view], [data-nui-req-sheet-catedit]")) { reqSheetView(box); return; }
+            if (!ev.target.matches('[name="document_type_ids"], [name="driving_category_ids"]')) return;
+            const body = new FormData();
+            body.append("position_pk", box.dataset.pk);
+            body.append("name", box.dataset.name);
+            box.querySelectorAll('[name="document_type_ids"]:checked, [name="driving_category_ids"]:checked').forEach(i => body.append(i.name, i.value));
+            reqSheetPaint(box);
+            const input = ev.target;
+            reqSheetPost(box, box.dataset.saveUrl, body).catch(function () { input.checked = !input.checked; reqSheetPaint(box); });
+        });
+        document.addEventListener("click", function (ev) {
+            const btn = ev.target.closest("[data-nui-req-swap]");
+            if (!btn) return;
+            const box = btn.closest("[data-nui-req-sheet]");
+            const item = btn.closest("[data-nui-req-cat]");
+            const to = item.dataset.nuiReqCat === "1" ? "2" : "1";
+            const body = new FormData();
+            body.append("type_id", btn.dataset.nuiReqSwap);
+            body.append("category", to);
+            reqSheetPost(box, box.dataset.categoryUrl, body).then(function () {
+                item.dataset.nuiReqCat = to;
+                btn.textContent = "pasar a la " + (to === "1" ? "2" : "1");
+                reqSheetView(box);
+            }).catch(function () {});
+        });
+        new MutationObserver(function () {
+            document.querySelectorAll("[data-nui-req-sheet]:not([data-ready])").forEach(function (box) { box.setAttribute("data-ready", ""); reqSheetView(box); });
+        }).observe(document.body, {childList: true, subtree: true});
         window.nuiOpenViewer = function (url, note, title) {
             const modal = document.getElementById("nui-viewer");
             if (!modal) return;

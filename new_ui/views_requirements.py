@@ -21,7 +21,7 @@ from collections import OrderedDict
 
 from django.db import IntegrityError
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views import View
 
@@ -158,6 +158,11 @@ class RequirementSaveView(SuperuserRequiredMixin, View):
         name = request.POST.get("name", "").strip()
         if not name:
             return _error("Falta el nombre del requisito.")
+        # S163 (24/11), como en la antigua: desde el visor, con otro
+        # nombre se crea uno nuevo con lo marcado y el original no se toca.
+        if (position.pk and request.POST.get("rename_as_new") == "1"
+                and name != position.name):
+            position = JobPosition(created_by=request.user.company_user)
         created = position.pk is None
         position.name = name
         try:
@@ -265,3 +270,48 @@ class RequirementAssignView(SuperuserRequiredMixin, View):
         else:
             what = "sin requisitos de documentación"
         return _ok("%d %s %s." % (updated, noun, what))
+
+
+class RequirementSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one requirement in the viewer, edited like the old screen.
+
+    ---
+
+    GET: un requisito en el visor (al pulsar su fila), como el gestor
+    antiguo (panel/_doc_type_picker.html, S128): nombre y Guardar
+    (otro nombre crea uno nuevo), activar, desactivar y eliminar; los
+    documentos por familias con su color, Personal / Centros de gasto /
+    Todos y categoría 1 / 2 / ambas (lo marcado se ve siempre), marcar
+    o desmarcar al vuelo, cambiar categorías y, a la derecha, lo
+    marcado.
+    """
+
+    def get(self, request, pk):
+        position = get_object_or_404(JobPosition, pk=pk)
+        marked = set(position.required_document_types.values_list(
+            "pk", flat=True))
+        groups = requirement_sections()
+        chosen = []
+        for group in groups:
+            for section in group["sections"]:
+                section["items"] = [
+                    {"pk": pk_, "label": label, "cat": cat,
+                     "on": pk_ in marked}
+                    for pk_, label, cat in section["items"]]
+                chosen += [item["label"] for item in section["items"]
+                           if item["on"]]
+        driving = set(position.required_driving_categories.values_list(
+            "pk", flat=True))
+        return render(request, "new_ui/_requirement_sheet.html", {
+            "position": position,
+            "groups": groups,
+            "chosen": chosen,
+            "driving": [(c, c.pk in driving) for c in
+                        DrivingLicenceCategory.objects.order_by(
+                            "display_order", "code")],
+            "chosen_driving": [c.code for c in
+                               DrivingLicenceCategory.objects.filter(
+                                   pk__in=driving).order_by(
+                                   "display_order", "code")],
+        })

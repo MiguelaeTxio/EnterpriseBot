@@ -1,0 +1,97 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_requirement_sheet.html #}
+{% comment %}
+S163 (24/11). Un requisito en el visor, como el gestor antiguo de
+Requisitos (panel/_doc_type_picker.html): nombre y Guardar (otro nombre
+crea uno nuevo), activar/desactivar/eliminar, documentos por familias
+con su color que se marcan o desmarcan al vuelo, Personal / Centros de
+gasto / Todos, categoría 1 / 2 / ambas (lo marcado se ve siempre),
+cambiar categorías y, a la derecha, lo marcado. El comportamiento está
+en new_ui.js (data-nui-req-sheet).
+{% endcomment %}
+<div data-nui-req-sheet data-save-url="{% url 'new_ui:requirement_save' %}" data-category-url="{% url 'new_ui:requirement_type_category' %}" data-pk="{{ position.pk }}" data-name="{{ position.name }}">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <form data-nui-action-form action="{% url 'new_ui:requirement_save' %}" id="nui-req-sheet-form" data-nui-viewer-open-tpl="{% url 'new_ui:requirement_sheet' 0 %}" class="m-0 flex-grow-1" style="max-width: 32rem;">
+            {% csrf_token %}
+            <input type="hidden" name="position_pk" value="{{ position.pk }}">
+            <input type="hidden" name="rename_as_new" value="1">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text">Nombre</span>
+                <input type="text" name="name" class="form-control" value="{{ position.name }}" required aria-label="Nombre">
+                <button type="submit" class="btn btn-primary">Guardar</button>
+            </div>
+        </form>
+        <span class="badge {% if position.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if position.is_active %}Activo{% else %}Desactivado (no avisa){% endif %}</span>
+        <form data-nui-action-form action="{% url 'new_ui:requirement_bulk' %}" class="m-0 d-flex gap-1" data-nui-viewer-close-on="delete">
+            {% csrf_token %}<input type="hidden" name="selected" value="{{ position.pk }}">
+            {% if position.is_active %}
+            <button type="submit" name="action" value="deactivate" class="btn btn-sm btn-outline-secondary">Desactivar</button>
+            {% else %}
+            <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success">Activar</button>
+            {% endif %}
+            <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Eliminar el requisito «{{ position.name }}»? Quien lo tenga se queda sin él.">Eliminar</button>
+        </form>
+    </div>
+    <p class="small text-muted mb-2">Los documentos que marques son obligatorios (disparan los avisos de falta y de caducidad) y se guardan al momento. Con otro nombre y Guardar se crea un requisito nuevo y este no se toca.</p>
+    <div class="row g-2">
+        <div class="col-lg-9">
+            <div class="card">
+                <div class="card-header py-1 small fw-bold d-flex flex-wrap align-items-center gap-2">
+                    <span class="me-auto">Documentos (marca o desmarca al vuelo) <span class="fw-normal text-success" data-nui-req-status></span></span>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Personal o centros de gasto">
+                        <input type="radio" class="btn-check" name="req_sheet_group" id="nui-rsg-personal" value="personal" data-nui-req-sheet-view autocomplete="off">
+                        <label class="btn btn-outline-secondary py-0" for="nui-rsg-personal">Personal</label>
+                        <input type="radio" class="btn-check" name="req_sheet_group" id="nui-rsg-machine" value="machine" data-nui-req-sheet-view autocomplete="off">
+                        <label class="btn btn-outline-secondary py-0" for="nui-rsg-machine">Centros de gasto</label>
+                        <input type="radio" class="btn-check" name="req_sheet_group" id="nui-rsg-all" value="all" data-nui-req-sheet-view autocomplete="off" checked>
+                        <label class="btn btn-outline-secondary py-0" for="nui-rsg-all">Todos</label>
+                    </div>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Categoría">
+                        <input type="radio" class="btn-check" name="req_sheet_cat" id="nui-rsc-1" value="1" data-nui-req-sheet-view autocomplete="off" checked>
+                        <label class="btn btn-outline-secondary py-0" for="nui-rsc-1">Categoría 1</label>
+                        <input type="radio" class="btn-check" name="req_sheet_cat" id="nui-rsc-2" value="2" data-nui-req-sheet-view autocomplete="off">
+                        <label class="btn btn-outline-secondary py-0" for="nui-rsc-2">Categoría 2</label>
+                        <input type="radio" class="btn-check" name="req_sheet_cat" id="nui-rsc-all" value="all" data-nui-req-sheet-view autocomplete="off">
+                        <label class="btn btn-outline-secondary py-0" for="nui-rsc-all">Ambas</label>
+                    </div>
+                    <input type="checkbox" class="btn-check" id="nui-rs-catedit" data-nui-req-sheet-catedit autocomplete="off">
+                    <label class="btn btn-sm btn-outline-secondary py-0" for="nui-rs-catedit" title="Muestra junto a cada documento un botón para pasarlo de la categoría 1 a la 2 o al revés"><i class="bi bi-arrow-left-right"></i> Cambiar categorías</label>
+                </div>
+                <div class="card-body p-2" style="max-height: 60vh; overflow-y: auto;">
+                    <div class="rounded px-2 py-1 mb-2 border">
+                        <div class="small fw-semibold">Permiso de conducción: clases exigidas</div>
+                        <div class="d-flex flex-wrap column-gap-3 small">
+                            {% for cat, on in driving %}<label class="form-check mb-0" title="{{ cat.label }}"><input class="form-check-input" type="checkbox" form="nui-req-sheet-form" name="driving_category_ids" value="{{ cat.pk }}" data-nui-req-code="{{ cat.code }}"{% if on %} checked{% endif %}> <span class="form-check-label">{{ cat.code }}</span></label>{% endfor %}
+                        </div>
+                    </div>
+                    {% for g in groups %}
+                    <div data-nui-req-group="{{ g.key }}">
+                        <div class="fw-semibold mb-1">{{ g.title }}</div>
+                        {% for s in g.sections %}
+                        <div class="rounded px-2 py-1 mb-2" style="background: {{ s.color }};" data-nui-req-section>
+                            <div class="small fw-semibold mb-1">{{ s.title }}</div>
+                            <div class="row row-cols-1 row-cols-md-3 g-0 small">
+                                {% for item in s.items %}
+                                <div class="col pe-2" data-nui-req-cat="{{ item.cat }}">
+                                    <label class="form-check mb-0"><input class="form-check-input" type="checkbox" form="nui-req-sheet-form" name="document_type_ids" value="{{ item.pk }}" data-nui-req-label="{{ item.label }}"{% if item.on %} checked{% endif %}> <span class="form-check-label">{{ item.label }}</span></label>
+                                    <button type="button" class="btn btn-link btn-sm p-0 small d-none" data-nui-req-swap="{{ item.pk }}" title="Pasarlo a la otra categoría">pasar a la {% if item.cat == 1 %}2{% else %}1{% endif %}</button>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3">
+            <div class="card">
+                <div class="card-header py-1 small fw-bold d-flex justify-content-between"><span>{{ position.name }}</span><span class="badge text-bg-secondary" data-nui-req-count>{{ chosen|length }}</span></div>
+                <div class="card-body p-2 small" style="max-height: 60vh; overflow-y: auto;">
+                    <ul class="mb-1 ps-3" data-nui-req-chosen>{% for label in chosen %}<li>{{ label }}</li>{% empty %}<li class="text-muted list-unstyled">Ningún documento marcado.</li>{% endfor %}</ul>
+                    <div class="text-muted" data-nui-req-chosen-driving>{% if chosen_driving %}Permiso: {{ chosen_driving|join:", " }}{% endif %}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
