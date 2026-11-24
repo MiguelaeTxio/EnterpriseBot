@@ -50,7 +50,7 @@
                     <input type="file" name="file" accept="image/*" class="d-none" onchange="this.form.requestSubmit()" aria-label="Foto nueva">
                 </label>
             </form>
-            <div class="small mb-1">Sacar de un documento</div>
+            <div class="small mb-1">Sacar de un documento <span class="text-muted">(solo los vigentes)</span></div>
             <form data-nui-action-form action="{% url 'new_ui:person_photo_action' person.pk %}" class="d-grid gap-1 mb-2">
                 {% csrf_token %}<input type="hidden" name="action" value="extract">
                 {% for doc in photo_sources %}

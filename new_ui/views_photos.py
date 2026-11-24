@@ -104,6 +104,50 @@ class PersonPhotoPanelView(SuperuserRequiredMixin, View):
                       photo_panel_context(person))
 
 
+def _useful_sources(person, id_photo):
+    """
+    The documents worth taking the photo from: in force, one per kind.
+
+    ---
+
+    De qué documentos tiene sentido sacar la foto (S163, 24/11, Miguel
+    Ángel: "si alguien ha entrado aquí con 16 años y tiene 64, ¿cuántos
+    DNIs podemos tener aquí para sacar fotos? ¿Y de qué sirve la foto
+    del primero?"): solo los vigentes (no obsoletos ni caducados) y uno
+    por tipo de documento y caducidad (el mismo DNI guardado dos veces
+    sale una vez). Si no hay ninguno vigente, el último de cada tipo. El
+    del que sale la foto actual, siempre.
+    """
+    from django.utils import timezone
+
+    today = timezone.localdate()
+    all_docs = list(photos.candidates(person).select_related(
+        "document_type"))
+    current = id_photo.source_id if id_photo else None
+    useful = [d for d in all_docs if not d.is_obsolete
+              and (d.expiry_date is None or d.expiry_date >= today)]
+    if not useful:
+        useful = all_docs
+    out, seen = [], set()
+    for doc in useful:
+        key = (doc.document_type_id, doc.expiry_date)
+        if doc.pk != current and key in seen:
+            continue
+        seen.add(key)
+        out.append(doc)
+    if not useful or useful is all_docs:
+        # Sin vigentes: el último de cada tipo.
+        kept, kinds = [], set()
+        for doc in out:
+            if doc.pk == current or doc.document_type_id not in kinds:
+                kept.append(doc)
+                kinds.add(doc.document_type_id)
+        out = kept
+    if current and all(d.pk != current for d in out):
+        out += [d for d in all_docs if d.pk == current]
+    return out
+
+
 def photo_panel_context(person):
     """
     Context of the photo block (Acciones and the worker's Datos).
@@ -139,8 +183,7 @@ def photo_panel_context(person):
         # S163 (24/11): lo de la ventana «Foto de perfil» antigua.
         "id_photo": id_photo,
         "avatar_pk": person.avatar_document_id if id_photo is None else None,
-        "photo_sources": list(photos.candidates(person).select_related(
-            "document_type")),
+        "photo_sources": _useful_sources(person, id_photo),
         "person": person, "photo_url": photo_url, "source": source,
         "reviewed_at": person.contract_reviewed_at,
         "reviewed_by": (reviewer.user.get_full_name()
