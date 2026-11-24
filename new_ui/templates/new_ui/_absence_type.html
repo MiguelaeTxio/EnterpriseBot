@@ -4,13 +4,9 @@
         {% csrf_token %}
         {% if category %}
         <input type="hidden" name="what" value="category_save"><input type="hidden" name="category" value="{{ category.pk }}">
-        <div class="mb-2"><span class="text-muted">Código:</span> <code>{{ category.code }}</code> {% if category.is_active %}<span class="badge text-bg-success">Activo</span>{% else %}<span class="badge text-bg-secondary">Desactivado</span>{% endif %}</div>
+        <div class="mb-2">{% if category.is_active %}<span class="badge text-bg-success">Activo</span>{% else %}<span class="badge text-bg-secondary">Desactivado</span>{% endif %}</div>
         {% else %}
         <input type="hidden" name="what" value="category_add">
-        <div class="mb-2">
-            <label class="form-label mb-0" for="nui-at-code">Código *</label>
-            <input id="nui-at-code" name="code" maxlength="40" class="form-control form-control-sm text-uppercase" style="width: 10rem;" placeholder="P. ej. MEDICO" required>
-        </div>
         {% endif %}
         <div class="mb-2">
             <label class="form-label mb-0" for="nui-at-label">Nombre *</label>

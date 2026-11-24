@@ -534,6 +534,34 @@ def _rule_sheet_context(company, rule=None, base_rule=None):
     }
 
 
+def _category_code(company, label):
+    """
+    Internal code of a new absence type, made from its name.
+
+    ---
+
+    S163 (24/11, Miguel Ángel: «el código no es necesario que aparezca
+    [...] se pone de forma automática»): el código interno sale del
+    nombre (MAYÚSCULAS, sin tildes, con guiones bajos), único en la
+    empresa.
+    """
+    import re
+    import unicodedata
+
+    from ivr_config.models import AbsenceCategory
+
+    plain = unicodedata.normalize("NFKD", label).encode(
+        "ascii", "ignore").decode()
+    base = re.sub(r"[^A-Z0-9]+", "_", plain.upper()).strip("_")[:34] \
+        or "AUSENCIA"
+    code, n = base, 1
+    while AbsenceCategory.objects.filter(company=company,
+                                         code=code).exists():
+        n += 1
+        code = "%s_%d" % (base, n)
+    return code
+
+
 class VacationRuleSheetView(SuperuserRequiredMixin, View):
     """
     GET: one vacation rule in the viewer (0 = a new one, ?from=<pk>
@@ -662,12 +690,12 @@ class VacationSetupSaveView(SuperuserRequiredMixin, View):
             return _ok("Regla borrada: %s." % label)
         if what == "category_add":
             label = (post.get("label") or "").strip()
-            code = (post.get("code") or "").strip().upper()
-            if not label or not code:
-                return _error("El nombre y el código son obligatorios.")
+            if not label:
+                return _error("El nombre es obligatorio.")
             if AbsenceCategory.objects.filter(company=company,
-                                              code=code).exists():
-                return _error("Ya existe un tipo con el código «%s»." % code)
+                                              label__iexact=label).exists():
+                return _error("Ya existe un tipo «%s»." % label)
+            code = _category_code(company, label)
             category = AbsenceCategory.objects.create(
                 company=company, code=code, label=label,
                 requires_note=bool(post.get("requires_note")),

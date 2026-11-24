@@ -557,7 +557,6 @@ def _absence_types_def():
         lambda company: apps.get_model("ivr_config.AbsenceCategory")
         .objects.filter(company=company),
         [
-            Col("codigo", "Código", lambda r: r.code, "code"),
             Col("nombre", "Nombre", lambda r: r.label, "label"),
             Col("nota", "Con nota", lambda r: "Sí" if r.requires_note
                 else "No", "requires_note"),
@@ -568,7 +567,7 @@ def _absence_types_def():
             Col("orden", "Orden", lambda r: str(r.order), "order",
                 "text-end"),
         ],
-        search=("code", "label"), default_order=("order", "label"),
+        search=("label",), default_order=("order", "label"),
         actions=lambda r: [],
         extras=[Extra("activo", "Activo", lambda company: [
             ("si", "Activos"), ("no", "Desactivados")],
