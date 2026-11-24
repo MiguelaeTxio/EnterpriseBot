@@ -3490,6 +3490,47 @@ def _apply_company_classification(entry, result):
     return result
 
 
+def _dates_from_own_item(entry, result):
+    """
+    Dates of a dossier kept with its own type, from its own document.
+
+    ---
+
+    S163 (24/11, José Antonio Becerra): un dossier que se queda con su
+    tipo (p. ej. una imagen con el DNI y el permiso, archivada como DNI)
+    se quedaba sin fecha, y luego la búsqueda de caducidad leía la
+    imagen entera y le ponía la del permiso (24/05/2034 en vez del
+    14/11/2027 del DNI). Gemini ya da las fechas de cada documento del
+    dossier: el original toma las del suyo (el de su mismo tipo), y así
+    la búsqueda posterior no se dispara (solo busca si no hay fecha).
+    """
+    from document_explorer import dossier_service
+
+    code = result.get("document_type_code")
+    own = next((
+        item for item in result.get("contained_documents") or []
+        if (item.get("document_type_code") or "").strip() == code
+    ), None)
+    if own is None:
+        return
+    fields = []
+    expiry = dossier_service.parse_date(own.get("expiry_date"))
+    issue = dossier_service.parse_date(own.get("issue_date"))
+    if expiry and not entry.expiry_date:
+        entry.expiry_date = expiry
+        fields.append("expiry_date")
+    if issue and not entry.issue_date:
+        entry.issue_date = issue
+        fields.append("issue_date")
+    if fields:
+        entry.save(update_fields=fields)
+        logger.info(
+            "# [_handle_dossier] #%d toma las fechas de su %s dentro del "
+            "dossier: %s", entry.pk, code,
+            ", ".join("%s=%s" % (f, getattr(entry, f)) for f in fields),
+        )
+
+
 def _handle_dossier(entry, result, domain):
     """
     Extract a dossier's documents; trash it only when all are filed.
@@ -3552,6 +3593,7 @@ def _handle_dossier(entry, result, domain):
         extracted, covered, unknown,
     )
     if not unknown_main:
+        _dates_from_own_item(entry, result)
         result["_override_owner"] = person
         return None
     if unknown or not (extracted or covered):
