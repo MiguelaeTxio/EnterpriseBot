@@ -7,7 +7,7 @@ la fila (botón derecho = su menú; pulsar = ver su ficha aquí). Es
 salida: sin botones; las acciones de cada fila van ocultas y salen en
 Acciones › Esta fila al marcarla, y en su botón derecho.
 {% endcomment %}
-<div class="nui-list-state d-none"{% if definition.entity %} data-scopeable="1"{% if not definition.entity_path and not definition.entity_filter %} data-entity-rows="1"{% endif %}{% endif %} data-count="{{ total }}" data-sorted="{% if sort_active %}1{% endif %}" data-note="{{ definition.note }}"></div>
+<div class="nui-list-state d-none"{% if definition.entity %} data-scopeable="1"{% if not definition.entity_path and not definition.entity_filter %} data-entity-rows="1"{% endif %}{% endif %} data-count="{{ total }}" data-sorted="{% if sort_active %}1{% endif %}" data-note="{{ definition.note }}" data-period="{{ period_summary }}"></div>
 {% if limited %}<div class="alert alert-warning small py-1 px-2 m-2">Se muestran {{ shown }} de {{ total }}: afina los filtros para ver el resto (exportar saca todas).</div>{% endif %}
 <table class="table table-sm table-hover align-middle small mb-0">
     <thead>

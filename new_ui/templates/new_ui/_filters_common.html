@@ -40,7 +40,7 @@ ver» (barra de título, _view_picker.html): _view_filters.html.
             <input type="date" class="form-control form-control-sm" id="nui-hasta" name="hasta" value="{{ period.hasta }}">
         </div>
     </div>
-    <div class="small text-muted mb-2">{{ period.summary }}</div>
+    <div class="small text-muted mb-2" id="nui-period-summary">{{ period.summary }}</div>
     <div class="row g-1 small">
         <div class="col-3">
             <label class="fw-semibold" for="nui-estado">Estado</label>
@@ -81,7 +81,10 @@ ver» (barra de título, _view_picker.html): _view_filters.html.
             <label class="form-check-label" for="nui-only-selected">Mostrar solo la selección actual</label>
         </div>
         <input type="hidden" name="selected_ids" id="nui-selected-ids" value="">
-        <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="nui-clear-sort"><i class="bi bi-x-circle me-1"></i>Quitar orden</button>
+        <span class="d-flex gap-1">
+            {% if section != "permisos" %}<button type="button" class="btn btn-sm btn-outline-danger py-0" id="nui-clear-filters" title="Buscar, periodo, estado, empresa, grupo, sección y los filtros de la vista, como al entrar"><i class="bi bi-funnel me-1"></i>Quitar filtros</button>{% endif %}
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="nui-clear-sort"><i class="bi bi-x-circle me-1"></i>Quitar orden</button>
+        </span>
     </div>
     {# Debajo de todo lo común: los filtros propios de la vista elegida arriba. #}
     {% include "new_ui/_view_filters.html" %}

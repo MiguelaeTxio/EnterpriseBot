@@ -107,18 +107,24 @@ def period_context(params):
     return {
         "units": [{"key": k, "label": l, "on": k == unit}
                   for k, l in PERIOD_UNITS],
-        "which": [{"key": k, "label": l, "on": k == which}
+        # S163 (24/11): «actual / anterior» solo se marca con una unidad
+        # elegida; sin ella no hay nada que marcar.
+        "which": [{"key": k, "label": l, "on": bool(unit) and k == which}
                   for k, l in PERIOD_WHICH],
         "unit": unit,
         "cual": which,
         "desde": params.get("desde", ""),
         "hasta": params.get("hasta", ""),
-        "summary": (
-            "%s – %s" % (start.strftime("%d/%m/%Y") if start else "…",
-                         end.strftime("%d/%m/%Y") if end else "…")
-            if start or end else "Sin límite de fechas"
-        ),
+        "summary": period_summary(start, end),
     }
+
+
+def period_summary(start, end):
+    """El texto bajo las fechas: el periodo que se está aplicando."""
+    if not start and not end:
+        return "Sin límite de fechas"
+    return "%s – %s" % (start.strftime("%d/%m/%Y") if start else "…",
+                        end.strftime("%d/%m/%Y") if end else "…")
 
 
 def parse_sort(raw, valid):

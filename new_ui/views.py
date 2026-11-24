@@ -760,7 +760,10 @@ class NewUiListView(SuperuserRequiredMixin, View):
             values = definition.totals(qs)
             totals_row = [{"value": values.get(c.key, ""), "css": c.css}
                           for c in columns]
+        from new_ui.filters import period_summary
+
         return render(request, "new_ui/_list.html", {
+            "period_summary": period_summary(*period_range(request.GET)),
             "totals_row": totals_row,
             "section": section,
             "tab": tab,

@@ -237,14 +237,16 @@
             const which = ev.target.closest("[data-period-which]");
             if (!unit && !which) return;
             ev.preventDefault();
+            const input = form.querySelector('[name="periodo"]');
             if (unit) {
-                const input = form.querySelector('[name="periodo"]');
                 input.value = input.value === unit.dataset.periodUnit ? "" : unit.dataset.periodUnit;
                 form.querySelectorAll("[data-period-unit]").forEach(b => b.classList.toggle("active", b.dataset.periodUnit === input.value));
             } else {
                 form.querySelector('[name="cual"]').value = which.dataset.periodWhich;
-                form.querySelectorAll("[data-period-which]").forEach(b => b.classList.toggle("active", b === which));
             }
+            // S163 (24/11): «actual / anterior» solo marcado con una unidad.
+            const cual = form.querySelector('[name="cual"]').value || "actual";
+            form.querySelectorAll("[data-period-which]").forEach(b => b.classList.toggle("active", !!input.value && b.dataset.periodWhich === cual));
             form.querySelector('[name="desde"]').value = "";
             form.querySelector('[name="hasta"]').value = "";
             submitFilters();
@@ -1222,6 +1224,9 @@
                 if (all) all.checked = boxes.length > 0 && Array.from(boxes).every(b => b.checked);
                 const state = box.querySelector(".nui-list-state");
                 root.querySelectorAll("[data-nui-total]").forEach(el => { el.textContent = state ? state.dataset.count : "…"; });
+                // S163 (24/11): las fechas que se están aplicando de verdad.
+                const summary = document.getElementById("nui-period-summary");
+                if (summary && state && state.dataset.period) summary.textContent = state.dataset.period;
             }
             refreshSelection();
         }
@@ -1288,6 +1293,23 @@
         form.addEventListener("submit", function (ev) { ev.preventDefault(); load(); });
         const clearSort = document.getElementById("nui-clear-sort");
         if (clearSort) clearSort.addEventListener("click", function () { sorts[tab()] = ""; load(); });
+        // S163 (24/11, Miguel Ángel): «Quitar filtros» deja todo como al
+        // entrar: sin buscar, sin periodo, activos, todas las empresas,
+        // grupos y secciones, y los filtros propios de la vista vacíos.
+        const clearFilters = document.getElementById("nui-clear-filters");
+        if (clearFilters) clearFilters.addEventListener("click", function () {
+            form.querySelectorAll("input, select").forEach(function (el) {
+                if (["sort", "selected_ids"].indexOf(el.name) !== -1 || !el.name) return;
+                if (el.name === "cual") el.value = "actual";
+                else if (el.name === "estado") el.value = "1";
+                else if (el.type === "checkbox" || el.type === "radio") el.checked = false;
+                else if (el.tagName === "SELECT") el.selectedIndex = 0;
+                else el.value = "";
+            });
+            form.querySelectorAll("[data-period-unit], [data-period-which]").forEach(b => b.classList.remove("active"));
+            Object.keys(listExtra).forEach(k => { delete listExtra[k]; });
+            load();
+        });
 
         // Cambio de pestaña del listado: su selección, sus columnas, su nota.
         listPanel.addEventListener("nui:tab", function (ev) {
