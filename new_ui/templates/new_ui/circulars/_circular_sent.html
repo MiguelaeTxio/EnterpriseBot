@@ -1,0 +1,22 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/circulars/_circular_sent.html #}
+{% comment %}
+S163 (24/11). Una circular entregada (Enviadas) en el visor: a quién,
+cuándo, por qué canal, el WhatsApp y su lectura, el documento que
+recibió y el contenido de la circular. Vista: CircularSentSheetView.
+{% endcomment %}
+<div class="small">
+    <div class="fw-semibold fs-6 mb-1">{{ ack.document_type.label|default:"Circular" }}</div>
+    <div class="mb-2">
+        A <strong>{{ ack.person.first_surname }} {{ ack.person.second_surname }}, {{ ack.person.given_name }}</strong>
+        el {{ ack.delivery_date|date:"d/m/Y" }}{% if ack.channel %} · {{ ack.get_channel_display }}{% endif %}{% if ack.worksite %} · obra {{ ack.worksite }}{% endif %}
+    </div>
+    <div class="mb-2">
+        {% if ack.whatsapp_status %}<span class="badge text-bg-light border">WhatsApp: {{ ack.whatsapp_status }}{% if ack.whatsapp_status_at %} ({{ ack.whatsapp_status_at|date:"d/m/Y H:i" }}){% endif %}</span>{% endif %}
+        {% if ack.whatsapp_read_at %}<span class="badge text-bg-success">Leída el {{ ack.whatsapp_read_at|date:"d/m/Y H:i" }}</span>{% else %}<span class="badge text-bg-secondary">Sin leer</span>{% endif %}
+    </div>
+    {% if ack.source_entry_id %}<div class="mb-2"><a href="{% url 'new_ui:document_file' ack.source_entry_id %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-text me-1"></i>Ver el documento que recibió</a></div>{% endif %}
+    {% if ack.document_type and ack.document_type.content_html %}
+    <div class="fw-semibold mb-1">Contenido de la circular</div>
+    <div class="border rounded p-3 bg-white" style="max-height: 55vh; overflow-y: auto;">{{ ack.document_type.content_html|safe }}</div>
+    {% endif %}
+</div>

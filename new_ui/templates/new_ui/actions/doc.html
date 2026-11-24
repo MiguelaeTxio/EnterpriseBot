@@ -9,26 +9,8 @@ new_ui.js enseña el de la vista abierta. Formularios:
 - sin esa marca: envío normal (p. ej. crear y pasar a editar).
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="circulares plantillas_circular">
-    <form method="post" action="{% url 'new_ui:circulars_create' %}" class="mb-3">
-        {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-plus-circle me-1"></i>Nueva circular</div>
-        <input type="text" name="label" class="form-control form-control-sm mb-1" placeholder="Nombre visible (p. ej. Normas de seguridad en obra)" aria-label="Nombre visible" required>
-        <div class="row g-1">
-            <div class="col-7">
-                <select name="family" class="form-select form-select-sm" aria-label="Familia documental" required>
-                    <option value="">Familia documental…</option>
-                    {% for code, label in circular_families %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
-                </select>
-            </div>
-            <div class="col-5">
-                <select name="domain" class="form-select form-select-sm" aria-label="Dirigida a">
-                    {% for code, label in circular_domains %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
-                </select>
-            </div>
-        </div>
-        <button type="submit" class="btn btn-sm btn-success mt-1"><i class="bi bi-pencil-square me-1"></i>Crear y escribir su contenido</button>
-    </form>
-    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Las plantillas seleccionadas <span class="fw-normal text-muted">(vista «Plantillas de circular»)</span></div>
+    {# S163 (24/11): «Nueva circular» abre su ventana; al pulsar una plantilla, lo suyo. #}
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:circulars_new_form' %}" data-nui-viewer-title="Nueva circular"><i class="bi bi-plus-circle me-1"></i>Nueva circular</button>
     <div class="d-flex flex-wrap gap-1">
         <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:circulars_bulk_signature' %}">
             {% csrf_token %}<input type="hidden" name="action" value="sign">
@@ -39,7 +21,7 @@ new_ui.js enseña el de la vista abierta. Formularios:
             <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Sin firma</button>
         </form>
     </div>
-    <p class="small text-muted mt-2 mb-0">Editar, generar para una persona y descargar en PDF o Word: marca una sola plantilla: salen arriba, en «Con …».</p>
+    <p class="small text-muted mt-2 mb-0">Pulsa una plantilla para ver su contenido, editarlo, generarla para una persona o descargarla.</p>
 </div>
 <div class="d-none" data-nui-actions-for="dosieres">
     {# S163 (24/11): en Acciones solo «Nueva»; crear y modificar, en la ventana de la plantilla. #}

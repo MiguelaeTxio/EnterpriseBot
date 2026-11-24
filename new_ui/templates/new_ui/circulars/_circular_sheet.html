@@ -1,0 +1,36 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/circulars/_circular_sheet.html #}
+{% comment %}
+S163 (24/11). Una plantilla de circular en el visor (al pulsarla): su
+contenido y lo que se hace con ella. Editar el contenido y generar para
+una persona son pantallas propias (las de la antigua, copiadas). Vista:
+new_ui/views_circulars.py (CircularSheetView).
+{% endcomment %}
+<div class="small">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <span class="fw-semibold fs-6">{{ doc_type.label }}</span>
+        <span class="badge text-bg-light border">{{ family }}</span>
+        <span class="badge text-bg-light border">{{ doc_type.get_domain_display }}</span>
+        <span class="badge {% if doc_type.requires_signature %}text-bg-primary{% else %}text-bg-light border{% endif %}">{% if doc_type.requires_signature %}Con firma certificada{% else %}Sin firma{% endif %}</span>
+        <span class="text-muted font-monospace">{{ doc_type.code }}</span>
+    </div>
+    <div class="d-flex flex-wrap gap-1 mb-2">
+        <a class="btn btn-sm btn-primary" href="{% url 'new_ui:circulars_edit' doc_type.pk %}"><i class="bi bi-pencil-square me-1"></i>Editar contenido</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'new_ui:circulars_generate' doc_type.pk %}"><i class="bi bi-file-earmark-person me-1"></i>Generar para una persona</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'new_ui:circulars_export_pdf' doc_type.pk %}"><i class="bi bi-filetype-pdf me-1"></i>Descargar PDF</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'new_ui:circulars_export_word' doc_type.pk %}"><i class="bi bi-filetype-docx me-1"></i>Descargar Word</a>
+        <form data-nui-action-form action="{% url 'new_ui:circulars_bulk_signature' %}" class="m-0">
+            {% csrf_token %}<input type="hidden" name="selected" value="{{ doc_type.pk }}">
+            {% if doc_type.requires_signature %}
+            <button type="submit" name="action" value="unsign" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>Quitarle la firma</button>
+            {% else %}
+            <button type="submit" name="action" value="sign" class="btn btn-sm btn-outline-primary"><i class="bi bi-pen me-1"></i>Con firma certificada</button>
+            {% endif %}
+        </form>
+    </div>
+    <div class="fw-semibold mb-1">Contenido</div>
+    {% if doc_type.content_html %}
+    <div class="border rounded p-3 bg-white" style="max-height: 60vh; overflow-y: auto;">{{ doc_type.content_html|safe }}</div>
+    {% else %}
+    <p class="text-muted mb-0">Todavía no tiene contenido: pulsa «Editar contenido» para escribirlo o importarlo de un Word o PDF.</p>
+    {% endif %}
+</div>

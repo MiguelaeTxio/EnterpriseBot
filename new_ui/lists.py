@@ -1819,6 +1819,7 @@ def _doc_lists():
             .objects.filter(is_active=True, is_notification_template=True),
             [
                 Col("nombre", "Circular", lambda r: r.label, "label"),
+                Col("codigo", "Código", lambda r: r.code, "code"),
                 Col("familia", "Familia", lambda r: model(
                     "document_explorer.DocumentTypeCatalog").family_label(
                     r.family, for_person=True), "family"),
@@ -3035,6 +3036,13 @@ def list_def(section, tab):
         _CACHE["per"]["pagos_partes"] = _pay_partes_def()
         _CACHE["doc"]["liquidaciones"] = _pay_periods_def()
         # S163 (24/11): Firmas, como la pestaña Firmas de la antigua.
+        # S163 (24/11): pulsar una circular (plantilla o enviada) la abre.
+        _CACHE["doc"]["plantillas_circular"].row_url = lambda r: reverse(
+            "new_ui:circulars_sheet", args=[r.pk])
+        _CACHE["doc"]["plantillas_circular"].row_title = "Circular"
+        _CACHE["doc"]["circulares"].row_url = lambda r: reverse(
+            "new_ui:circulars_sent_sheet", args=[r.pk])
+        _CACHE["doc"]["circulares"].row_title = "Circular enviada"
         _CACHE["doc"]["dosieres"].row_url = lambda r: reverse(
             "new_ui:dossier_sheet", args=[r.pk])
         _CACHE["doc"]["dosieres"].row_title = "Plantilla de dosier"

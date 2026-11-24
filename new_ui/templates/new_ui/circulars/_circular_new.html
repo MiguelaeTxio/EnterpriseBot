@@ -1,0 +1,26 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/circulars/_circular_new.html #}
+{% comment %}
+S163 (24/11). «Nueva circular» en el visor: nombre, familia y a quién va
+dirigida, como botones. Al crearla se pasa a escribir su contenido
+(envío normal: lleva a la pantalla del editor). Vista: CircularNewFormView.
+{% endcomment %}
+<form method="post" action="{% url 'new_ui:circulars_create' %}" class="small">
+    {% csrf_token %}
+    <label class="text-muted d-block" for="nui-cn-label">Nombre visible *</label>
+    <input id="nui-cn-label" type="text" name="label" class="form-control form-control-sm mb-2" placeholder="p. ej. Normas de seguridad en obra" required>
+    <div class="text-muted mb-1">Familia documental *</div>
+    <div class="d-flex flex-wrap gap-1 mb-2" role="radiogroup" aria-label="Familia documental">
+        {% for code, label in families %}
+        <input type="radio" class="btn-check" name="family" value="{{ code }}" id="nui-cn-f-{{ code }}" autocomplete="off" required>
+        <label class="btn btn-sm btn-outline-primary py-0" for="nui-cn-f-{{ code }}">{{ label }}</label>
+        {% endfor %}
+    </div>
+    <div class="text-muted mb-1">Dirigida a *</div>
+    <div class="d-flex flex-wrap gap-1 mb-2" role="radiogroup" aria-label="Dirigida a">
+        {% for code, label in domains %}
+        <input type="radio" class="btn-check" name="domain" value="{{ code }}" id="nui-cn-d-{{ code }}" autocomplete="off"{% if forloop.first %} checked{% endif %}>
+        <label class="btn btn-sm btn-outline-secondary py-0" for="nui-cn-d-{{ code }}">{{ label }}</label>
+        {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-pencil-square me-1"></i>Crear y escribir su contenido</button>
+</form>

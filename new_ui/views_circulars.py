@@ -897,3 +897,71 @@ class PersonalDocutenExportView(DocsUploadAccessMixin, View):
             for person, _reason in excluded
         ])
         return response
+
+
+# ------------------------------------------------- ventanas (S163, 24/11)
+class CircularSheetView(DocsUploadAccessMixin, View):
+    """
+    GET: one circular template in the viewer.
+
+    ---
+
+    GET: una plantilla de circular en el visor (al pulsarla): su
+    contenido y lo que se hace con ella (editar el contenido, generar
+    para una persona, descargar en PDF o Word, con o sin firma).
+    """
+
+    def get(self, request, pk):
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, pk=pk, is_notification_template=True)
+        return render(request, "new_ui/circulars/_circular_sheet.html", {
+            "doc_type": document_type,
+            "family": DocumentTypeCatalog.family_label(
+                document_type.family, for_person=True),
+        })
+
+
+class CircularNewFormView(DocsUploadAccessMixin, View):
+    """
+    GET: «Nueva circular» in the viewer (name, family and audience as
+    buttons, no dropdowns).
+
+    ---
+
+    GET: la ventana de «Nueva circular»: nombre, familia y a quién va
+    dirigida (botones, sin desplegables). Al crearla se pasa a escribir
+    su contenido.
+    """
+
+    def get(self, request):
+        return render(request, "new_ui/circulars/_circular_new.html", {
+            "families": [
+                (code, DocumentTypeCatalog.family_label(
+                    code, for_person=True))
+                for code, _label in DocumentTypeCatalog.FAMILY_CHOICES],
+            "domains": [
+                (code, label) for code, label
+                in DocumentTypeCatalog.DOMAIN_CHOICES
+                if code in _CIRCULAR_DOMAINS],
+        })
+
+
+class CircularSentSheetView(DocsUploadAccessMixin, View):
+    """
+    GET: one delivered circular in the viewer.
+
+    ---
+
+    GET: una circular entregada (Enviadas): a quién, cuándo, por qué
+    canal, el estado del WhatsApp y cuándo la leyó, el documento que
+    recibió y el contenido de la circular.
+    """
+
+    def get(self, request, pk):
+        from document_explorer.models import DocumentAcknowledgment
+
+        ack = get_object_or_404(DocumentAcknowledgment.objects.select_related(
+            "person", "document_type", "worksite"), pk=pk)
+        return render(request, "new_ui/circulars/_circular_sent.html", {
+            "ack": ack,
+        })
