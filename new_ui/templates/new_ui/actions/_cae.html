@@ -1,0 +1,23 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_cae.html #}
+{% comment %}
+S156. Acciones de Empresa › Coordinación › Correos CAE (plantilla propia
+de la nueva interfaz): con los avisos marcados, darlos por atendidos,
+reabrirlos, volver a leerlos y descargar todo lo que tenemos de lo que
+piden. Lo de un aviso suelto (qué pide, qué tenemos, marcar qué bajar)
+sale al pulsarlo, en el visor.
+{% endcomment %}
+<div class="d-none" data-nui-actions-for="correos_cae">
+    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Los avisos marcados</div>
+    <div class="d-flex flex-wrap gap-1 mb-2">
+        <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:cae_download' %}">
+            {% csrf_token %}<button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-download me-1"></i>Descargar lo que tenemos de lo que piden</button>
+        </form>
+        <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:cae_bulk' %}">
+            {% csrf_token %}
+            <button type="submit" name="action" value="attend" class="btn btn-sm btn-success"><i class="bi bi-check2-circle me-1"></i>Dar por atendidos</button>
+            <button type="submit" name="action" value="reopen" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir</button>
+            <button type="submit" name="action" value="reread" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Volver a leer los avisos marcados? Lo que piden se sustituye por la nueva lectura."><i class="bi bi-arrow-repeat me-1"></i>Volver a leer</button>
+        </form>
+    </div>
+    <p class="small text-muted mb-0">Pulsa un aviso en la lista para ver qué pide, qué tenemos y qué falta, y elegir qué descargar.</p>
+</div>

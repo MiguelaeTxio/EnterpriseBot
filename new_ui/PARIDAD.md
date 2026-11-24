@@ -294,6 +294,16 @@ Ficha, QR, Avisos, Revisiones, Lecturas, Averías y Libro historial
   su código, dar de baja) y avisos de caducidad con «No mostrar más»
 - ⬜ Seguros: lista, libro mayor (subir, empresa), nuevo, acciones, exportar
 
+## Coordinación (CAE)
+- ⬜ (S156) Correos CAE (Empresa › Coordinación › Correos CAE): lista de
+  avisos de las plataformas (filtros Estado y Plataforma); al pulsar uno,
+  en el visor, qué pide, de quién, qué tenemos (vigente, caducado, no lo
+  tenemos), descargar lo marcado, «Dar por atendido» / «Reabrir» y
+  «Volver a leer»; en Acciones, lo mismo con los marcados y descargar
+  todo lo que tenemos de lo que piden. Vistas y plantillas propias
+  (`new_ui/views_cae.py`); la antigua es la pestaña Documentación ›
+  Correos CAE (`cae_mail/views.py`). Pendiente de comprobar en producción.
+
 ## Centros de gasto
 - ✅ Ficha técnica, Modificar, foto, exportar tarjeta (5 formatos)
 - ✅ QR: código, descarga, observaciones, fotos y vídeos, contraseña editor

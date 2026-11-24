@@ -2511,6 +2511,97 @@ def _signed_docs_def():
              "descárgalos en Acciones.")
 
 
+# --------------------------------------------------------- correos CAE
+_CAE_STATES = (
+    ("por_atender", "Por atender"),
+    ("atendidos", "Atendidos"),
+    ("leyendo", "Leyéndose"),
+    ("error", "Error al leer"),
+)
+
+
+def _cae_state(row):
+    if row.attended_at:
+        return "Atendido"
+    if row.status == "ERROR":
+        return "Error al leer"
+    if row.status == "PENDING":
+        return "Leyéndose"
+    return "Por atender"
+
+
+def _cae_state_filter(qs, value):
+    if value == "por_atender":
+        return qs.filter(attended_at__isnull=True, status="PROCESSED")
+    if value == "atendidos":
+        return qs.filter(attended_at__isnull=False)
+    if value == "leyendo":
+        return qs.filter(status="PENDING")
+    if value == "error":
+        return qs.filter(status="ERROR")
+    return qs
+
+
+def _cae_platforms(company):
+    from cae_mail.models import CaeMail
+
+    return [(name, name) for name in CaeMail.objects.exclude(
+        platform="").values_list("platform", flat=True).distinct()
+        .order_by("platform")]
+
+
+def _cae_mails_def():
+    """
+    Empresa › Coordinación › Correos CAE (S156).
+
+    ---
+
+    Los avisos de las plataformas de coordinación (egestiona, Cellnex,
+    Nalanda...): cuándo llegaron, de qué plataforma y cliente, a qué
+    empresa, cuántos documentos piden y si ya se han atendido. Pulsar
+    uno abre en el visor qué pide y qué tenemos.
+    """
+    from django.db.models import Count
+
+    from cae_mail.models import CaeMail
+
+    def queryset(company):
+        return CaeMail.objects.annotate(demand_count=Count("demands"))
+
+    return ListDef(
+        "Correos CAE", queryset, [
+            Col("recibido", "Recibido", lambda r: fmt_datetime(
+                r.received_at or r.forwarded_at), "received_at",
+                "text-nowrap"),
+            Col("plataforma", "Plataforma", lambda r: r.platform,
+                "platform"),
+            Col("cliente", "Cliente", lambda r: r.client, "client"),
+            Col("empresa", "Empresa", lambda r: r.our_company,
+                "our_company"),
+            Col("pide", "Pide", lambda r: r.demand_count or "",
+                "demand_count", "text-end"),
+            Col("resumen", "Resumen", lambda r: short(r.summary, 120),
+                "summary"),
+            Col("estado", "Estado", _cae_state, "attended_at"),
+        ],
+        search=("subject", "client", "summary", "our_company",
+                "platform"),
+        date_field="forwarded_at", date_is_datetime=True,
+        default_order=("-received_at", "-forwarded_at", "-pk"),
+        actions=lambda r: [],
+        extras=[
+            Extra("estado", "Estado", lambda company: list(_CAE_STATES),
+                  _cae_state_filter),
+            Extra("plataforma", "Plataforma", _cae_platforms,
+                  lambda qs, v: qs.filter(platform=v) if v else qs),
+        ],
+        row_url=lambda r: reverse("new_ui:cae_sheet", args=[r.pk]),
+        row_title="Correo CAE",
+        note="Periodo: fecha en que llegó. Pulsa un aviso para ver qué "
+             "pide y qué tenemos; marca varios para atenderlos o "
+             "descargar lo que tenemos en Acciones.")
+
+
 def _signatures_def():
     """
     Empresa › Firmas › Firmas: las firmas guardadas de cada empresa.
@@ -2914,6 +3005,8 @@ def list_def(section, tab):
         _CACHE["doc"]["firmas"] = _signed_docs_def()
         _CACHE["doc"]["firmas_guardadas"] = _signatures_def()
         _CACHE["doc"]["agentes_firma"] = _agents_def()
+        # S156: Empresa › Coordinación › Correos CAE.
+        _CACHE["doc"]["correos_cae"] = _cae_mails_def()
         _CACHE["per"]["pedidos"] = _CACHE["doc"]["pedir"]
         _CACHE["per"]["circulares_rec"] = _CACHE["doc"]["circulares"]
     return _CACHE.get(section, {}).get(tab)

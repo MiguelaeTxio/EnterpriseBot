@@ -19,7 +19,7 @@ from new_ui import (
     views_access, views_doc_actions, views_notify, views_personnel,
     views_epis, views_machines, views_medical, views_payslips_nui,
     views_notices, views_partes, views_pay, views_photos, views_safety,
-    views_signatures_nui,
+    views_signatures_nui, views_cae,
     views_logbook, views_refuels, views_requirements, views_schedules,
     views_service,
 )
@@ -244,6 +244,12 @@ urlpatterns = [
          views_pay.PayPeriodActionView.as_view(), name="pay_undo"),
     path("pagos/liquidaciones/excel/",
          views_pay.PayPeriodDownloadView.as_view(), name="pay_download"),
+    # S156: Empresa › Coordinación › Correos CAE.
+    path("cae/<int:pk>/", views_cae.CaeSheetView.as_view(),
+         name="cae_sheet"),
+    path("cae/marcados/", views_cae.CaeBulkView.as_view(), name="cae_bulk"),
+    path("cae/descargar/", views_cae.CaeDownloadView.as_view(),
+         name="cae_download"),
     # S163 (24/11): Empresa › Firmas.
     path("firmas/generar/",
          views_signatures_nui.SignedFormsGenerateView.as_view(),
