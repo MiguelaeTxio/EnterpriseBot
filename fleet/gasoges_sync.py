@@ -446,7 +446,7 @@ def recheck_series(machine, unit):
     points = [(s.supplied_at, s.meter_value) for s in supplies]
     forced = {i for i, s in enumerate(supplies)
               if s.status_note.startswith(DRIVER_NOTES)}
-    chain = best_series(points, unit)
+    chain = best_series(points, unit, machine.family)
     readings = doubtful = 0
     for index, supply in enumerate(supplies):
         if index in forced:
@@ -475,7 +475,8 @@ def recheck_series(machine, unit):
                     "status", "status_note", "reading"])
             continue
         doubtful += 1
-        note = series_reason(points, index, chain, unit)[:255]
+        note = series_reason(points, index, chain, unit,
+                             machine.family)[:255]
         if (supply.status == GasoGesSupply.STATUS_ANOMALY
                 and supply.reading_id is None
                 and supply.status_note == note):

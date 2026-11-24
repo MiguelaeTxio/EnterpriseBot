@@ -16,6 +16,7 @@ from fleet.gasoges_rules import UNIT_UNKNOWN
 from fleet.gasoges_rules import best_series
 from fleet.gasoges_rules import convention_unit
 from fleet.gasoges_rules import deduce_unit
+from fleet.gasoges_rules import max_rise
 from fleet.gasoges_rules import name_matches
 from fleet.gasoges_rules import normalize
 from fleet.gasoges_rules import series_reason
@@ -262,3 +263,36 @@ class ConventionUnitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MaxRiseTests(unittest.TestCase):
+    """
+    Highest rise by elapsed time (S154).
+
+    ---
+
+    Lo máximo que sube un contador según el tiempo que ha pasado (S154).
+    """
+
+    def test_hours_not_more_than_the_clock(self):
+        # De las 10 de ayer a las 10 de hoy, 24; a las 9, 23.
+        self.assertEqual(max_rise(UNIT_HOURS, _d("2026-06-01 10:00:00"),
+                                  _d("2026-06-02 10:00:00")), 24)
+        self.assertEqual(max_rise(UNIT_HOURS, _d("2026-06-01 10:00:00"),
+                                  _d("2026-06-02 09:00:00")), 23)
+        points = [(_d("2026-06-01 10:00:00"), 1000),
+                  (_d("2026-06-02 10:00:00"), 1027)]
+        self.assertEqual(best_series(points, UNIT_HOURS), {1})
+
+    def test_trucks_at_100_kmh(self):
+        self.assertEqual(max_rise(UNIT_KM, _d("2026-06-01 08:00:00"),
+                                  _d("2026-06-01 18:00:00"), "MÓVILES"),
+                         1000)
+        points = [(_d("2026-06-01 08:00:00"), 100000),
+                  (_d("2026-06-01 18:00:00"), 101200)]
+        self.assertEqual(len(best_series(points, UNIT_KM, "MÓVILES")), 1)
+
+    def test_cars_have_no_speed_limit(self):
+        points = [(_d("2026-06-01 08:00:00"), 100000),
+                  (_d("2026-06-01 18:00:00"), 101200)]
+        self.assertEqual(best_series(points, UNIT_KM, "TURISMOS"), {0, 1})

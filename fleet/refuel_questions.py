@@ -79,9 +79,9 @@ from document_explorer.person_phone_service import (
 )
 from fleet.gasoges_rules import (
     MAX_CREDIBLE_HOURS,
-    MAX_HOURS_PER_DAY,
-    MAX_KM_PER_DAY,
     MIN_CREDIBLE_VALUE,
+    elapsed_text,
+    max_rise,
 )
 from fleet.gasoges_sync import accept_supply, build_readings
 from fleet.models import GasoGesSupply, GasoGesVehicle, RefuelQuestion
@@ -272,18 +272,6 @@ def _day(when):
     return timezone.localtime(when).strftime("%d/%m")
 
 
-def _days(days):
-    """
-    "1 día" / "21 días".
-
-    ---
-
-    Días en texto, en singular o plural.
-    """
-    days = round(days)
-    return "%d día%s" % (days, "" if days == 1 else "s")
-
-
 def value_problem(supply, value):
     """
     Why a value does not fit the vehicle's readings ("" if it fits).
@@ -314,7 +302,6 @@ def value_problem(supply, value):
     previous = _previous_reading(supply)
     if previous is not None:
         when, last = previous
-        days = max((supply.supplied_at - when).total_seconds() / 86400, 1)
         if value < last:
             if not hours and value * 5 < last:
                 return ("parecen horas, y este vehículo va por "
@@ -323,18 +310,22 @@ def value_problem(supply, value):
             return ("es menos de lo que marcaba el %s (%s %s), y %s no "
                     "puede bajar" % (_day(when), _format_value(last), word,
                                      meter))
-        limit = MAX_HOURS_PER_DAY if hours else MAX_KM_PER_DAY
-        if (value - last) / days > limit:
+        # S154, Miguel Ángel: no más horas de las que han pasado; un
+        # camión o una grúa, no más de 100 km por hora.
+        family = supply.vehicle.machine.family if (
+            supply.vehicle.machine_id) else ""
+        if value - last > max_rise(supply.vehicle.unit, when,
+                                   supply.supplied_at, family):
+            elapsed = elapsed_text(when, supply.supplied_at)
             if hours:
-                return ("son %s horas más que el %s (%s) en %s, y un "
-                        "horómetro no sube tanto: parecen kilómetros, y "
-                        "este vehículo va por horas"
-                        % (_format_value(value - last), _day(when),
-                           _format_value(last), _days(days)))
+                return ("son %s horas más que el %s (%s) y solo han "
+                        "pasado %s" % (_format_value(value - last),
+                                       _day(when), _format_value(last),
+                                       elapsed))
             return ("son %s km más que el %s (%s) en %s, y no da tiempo "
                     "a recorrerlos"
                     % (_format_value(value - last), _day(when),
-                       _format_value(last), _days(days)))
+                       _format_value(last), elapsed))
     following = _next_reading(supply)
     if following is not None and value > following[1]:
         return ("es más de lo que marcó después, el %s (%s %s)"

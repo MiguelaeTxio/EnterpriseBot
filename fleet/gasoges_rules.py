@@ -18,6 +18,7 @@ Las reglas de anomalía de este módulo son las primeras y provisionales:
 Miguel Ángel (S135) definirá las suyas con la media de litros (los
 litros los da la máquina y son exactos) y la pregunta por WhatsApp.
 """
+import math
 import unicodedata
 from statistics import median
 
@@ -36,6 +37,17 @@ MIN_DAYS_FOR_RATE = 7
 # Highest credible increase per day between two readings.
 MAX_KM_PER_DAY = 1500
 MAX_HOURS_PER_DAY = 24
+
+# S154 (sesión invasora), Miguel Ángel: entre dos repostajes, un horómetro
+# no sube más de las horas que han pasado (de las 10 de ayer a las 9 de
+# hoy, como mucho 23), y un camión o una grúa no hace más de 100 km por
+# hora (90 con tolerancia). Los turismos no llevan tacógrafo y no se les
+# pone velocidad: siguen con el máximo por día. Ni km ni horas bajan.
+# ---
+# Highest rise by elapsed time: hours by the clock, trucks at 100 km/h,
+# cars by the day.
+MAX_TRUCK_KM_PER_HOUR = 100
+CAR_FAMILIES = ("TURISMOS",)
 
 # Un número tan pequeño no es una lectura real (S135: Z01 con "1").
 # ---
@@ -232,23 +244,57 @@ def deduce_unit(has_odometer, has_engine_hours, points, code=""):
     return UNIT_UNKNOWN, "sube %.0f al día (puede ser km u horas)" % rate
 
 
-def _fits(earlier, later, limit):
+def max_rise(unit, earlier_when, later_when, family=""):
+    """
+    Highest credible rise of a meter between two moments.
+
+    ---
+
+    Lo máximo que puede subir un contador entre dos repostajes (S154):
+    un horómetro, las horas que han pasado (redondeadas hacia arriba,
+    marca horas enteras); un camión o una grúa, 100 km por hora; un
+    turismo, 1.500 km por día (como mínimo un día).
+    """
+    hours = max((later_when - earlier_when).total_seconds() / 3600, 0)
+    if unit != UNIT_KM:
+        return math.ceil(hours)
+    if str(family or "").upper() in CAR_FAMILIES:
+        return MAX_KM_PER_DAY * max(hours / 24, 1)
+    return MAX_TRUCK_KM_PER_HOUR * hours
+
+
+def elapsed_text(earlier_when, later_when):
+    """
+    "3 horas" / "5 días" between two moments, in Spanish.
+
+    ---
+
+    Tiempo entre dos repostajes en texto: en horas hasta dos días, en
+    días a partir de ahí.
+    """
+    hours = (later_when - earlier_when).total_seconds() / 3600
+    if hours < 48:
+        hours = round(hours)
+        return "%d hora%s" % (hours, "" if hours == 1 else "s")
+    return "%d días" % round(hours / 24)
+
+
+def _fits(earlier, later, unit, family=""):
     """
     True if `later` can follow `earlier` in a real meter series.
 
     ---
 
     True si `later` puede ir detrás de `earlier` en un contador real:
-    no baja y no sube más de lo creíble por día (como mínimo un día).
+    no baja y no sube más de lo que da el tiempo (`max_rise`).
     """
     (when_a, value_a), (when_b, value_b) = earlier, later
     if value_b < value_a:
         return False
-    days = max((when_b - when_a).total_seconds() / 86400, 1)
-    return (value_b - value_a) / days <= limit
+    return value_b - value_a <= max_rise(unit, when_a, when_b, family)
 
 
-def best_series(points, unit):
+def best_series(points, unit, family=""):
     """
     Indexes of the points forming the vehicle's real meter series.
 
@@ -269,7 +315,6 @@ def best_series(points, unit):
     suelto, esté donde esté. A igualdad, gana la cadena que acaba más
     tarde.
     """
-    limit = MAX_KM_PER_DAY if unit == UNIT_KM else MAX_HOURS_PER_DAY
     # S163 (23/11, B27): en un vehículo de horas, los kilómetros que se
     # tecleaban antes (247.000...) no forman serie. Hacían la cadena más
     # larga y dejaban dudosas las primeras horas de verdad (25.734 y
@@ -281,7 +326,7 @@ def best_series(points, unit):
     for pos, i in enumerate(usable):
         best, best_from = 0, None
         for j in usable[:pos]:
-            if score[j] > best and _fits(points[j], points[i], limit):
+            if score[j] > best and _fits(points[j], points[i], unit, family):
                 best, best_from = score[j], j
         score[i], back[i] = best + 1, best_from
     if not score:
@@ -294,7 +339,7 @@ def best_series(points, unit):
     return chain
 
 
-def series_reason(points, index, chain, unit):
+def series_reason(points, index, chain, unit, family=""):
     """
     Why a point outside the series is doubtful (Spanish, one line).
 
@@ -310,7 +355,6 @@ def series_reason(points, index, chain, unit):
         return "número demasiado pequeño (%s)" % value
     if unit != UNIT_KM and value >= MAX_CREDIBLE_HOURS:
         return "más de lo que marca un horómetro: parecen kilómetros"
-    limit = MAX_KM_PER_DAY if unit == UNIT_KM else MAX_HOURS_PER_DAY
     before = [i for i in chain if i < index]
     after = [i for i in chain if i > index]
     prev_value = points[max(before)][1] if before else None
@@ -319,9 +363,9 @@ def series_reason(points, index, chain, unit):
         return "menor que la lectura anterior (%s)" % prev_value
     if next_value is not None and value > next_value:
         return "mayor que la lectura siguiente (%s)" % next_value
-    if before and not _fits(points[max(before)], points[index], limit):
+    if before and not _fits(points[max(before)], points[index], unit,
+                            family):
         prev_when = points[max(before)][0]
-        days = max((when - prev_when).total_seconds() / 86400, 1)
-        return "sube %s en %.0f días desde %s" % (
-            value - prev_value, days, prev_value)
+        return "sube %s en %s desde %s" % (
+            value - prev_value, elapsed_text(prev_when, when), prev_value)
     return "no encaja con el resto de lecturas del vehículo"

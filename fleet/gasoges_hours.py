@@ -14,9 +14,10 @@ cada repostaje que no se convirtió en lectura queda en uno de estos
 grupos (GasoGesSupply.hours_issue):
 - Sin anotar: KM vacío, 0 o un número demasiado pequeño para ser una
   lectura.
-- Km en vez de horas: sube más de 24 al día desde el repostaje anterior
-  con un dato válido, cosa que un horómetro no puede hacer (S135:
-  MAX_HOURS_PER_DAY). En la práctica son los km del cuentakilómetros
+- Km en vez de horas: sube más horas de las que han pasado desde el
+  repostaje anterior con un dato válido, cosa que un horómetro no puede
+  hacer (S135; S154: `max_rise`, por horas de
+  reloj). En la práctica son los km del cuentakilómetros
   (B32: 305.000-314.000, unos 100 al día).
 Los que se convirtieron en lectura, los de vehículos de km o sin unidad
 y los de contador averiado no llevan marca.
@@ -25,10 +26,10 @@ Se recalcula entero cada vez que se rehacen las lecturas
 (gasoges_sync.build_readings), así que un cambio de unidad o una
 respuesta del chófer lo corrige solo.
 """
-from fleet.gasoges_rules import MAX_HOURS_PER_DAY, MIN_CREDIBLE_VALUE
+from fleet.gasoges_rules import MIN_CREDIBLE_VALUE
+from fleet.gasoges_rules import UNIT_HOURS
+from fleet.gasoges_rules import max_rise
 from fleet.models import GasoGesSupply, GasoGesVehicle
-
-SECONDS_PER_DAY = 86400
 
 
 def classify_points(points):
@@ -52,9 +53,8 @@ def classify_points(points):
                 issue = GasoGesSupply.HOURS_ISSUE_EMPTY
         elif (status != GasoGesSupply.STATUS_READING
               and previous is not None and value > previous[1]):
-            days = max((when - previous[0]).total_seconds()
-                       / SECONDS_PER_DAY, 1)
-            if (value - previous[1]) / days > MAX_HOURS_PER_DAY:
+            if value - previous[1] > max_rise(UNIT_HOURS, previous[0],
+                                              when):
                 issue = GasoGesSupply.HOURS_ISSUE_KM
         if credible and status != GasoGesSupply.STATUS_BROKEN_METER:
             previous = (when, value)
