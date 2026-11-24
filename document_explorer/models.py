@@ -2407,6 +2407,17 @@ class CompanyFiscalProfile(models.Model):
             "lo suyo es leer contratos [...] e informar desde ahí\")."
         ),
     )
+    # S156 (CAE). Miguel Ángel: "habrá que ampliar los requisitos y
+    # dosieres para que también se puedan asignar a cada empresa del
+    # grupo". Mismo catálogo JobPosition que personas y centros de
+    # gasto; los documentos de la empresa se enlazan por el enlace
+    # genérico del índice (cae_documents.type_cae_entry).
+    document_requirements = models.ManyToManyField(
+        "document_explorer.JobPosition",
+        blank=True,
+        related_name="companies",
+        verbose_name="Requisitos de documentación",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -3038,9 +3049,12 @@ class PersonalDossierTemplate(models.Model):
 
     SCOPE_PERSONAL = "PERSONAL"
     SCOPE_MACHINE = "MACHINE"
+    # S156 (CAE): dosieres de la documentación de una empresa del grupo.
+    SCOPE_COMPANY = "COMPANY"
     SCOPE_CHOICES = [
         (SCOPE_PERSONAL, "Personal"),
         (SCOPE_MACHINE, "Maquinaria"),
+        (SCOPE_COMPANY, "Empresa"),
     ]
 
     # H30 (S119), punto 6: plantillas de dossier también para la ficha de
