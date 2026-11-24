@@ -50,7 +50,7 @@ nueva interfaz (no comparte nada con la pestaña de la antigua).
                 <td>
                     <span class="badge {% if row.status == 'found' %}text-bg-success{% elif row.status == 'expired' or row.status == 'needs_new' %}text-bg-warning{% elif row.status == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status_label }}</span>
                     {% if row.demand.document_type %}<div class="text-muted">{{ row.demand.document_type.label }}</div>{% endif %}
-                    {% if row.entry %}<div>{{ row.entry.name }}{% if row.entry.expiry_date %} · caduca {{ row.entry.expiry_date|date:"d/m/Y" }}{% elif row.entry.issue_date %} · del {{ row.entry.issue_date|date:"d/m/Y" }}{% endif %}</div>{% endif %}
+                    {% if row.entry %}<div><a href="{% url 'new_ui:document_file' row.entry.pk %}" target="_blank" rel="noopener" title="Abrir el documento para verlo"><i class="bi bi-eye me-1"></i>{{ row.entry.name }}</a>{% if row.entry.expiry_date %} · caduca {{ row.entry.expiry_date|date:"d/m/Y" }}{% elif row.entry.issue_date %} · del {{ row.entry.issue_date|date:"d/m/Y" }}{% endif %}</div>{% endif %}
                 </td>
             </tr>
             {% endfor %}
