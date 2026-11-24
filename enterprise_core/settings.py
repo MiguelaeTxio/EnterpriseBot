@@ -171,6 +171,9 @@ INSTALLED_APPS = [
     # and signed by the client -- albaranes de trabajo de las grúas
     # (H11, S162).
     'crane_albaranes',
+    # CAE platform notices forwarded by Yolanda and uploaded by the mail
+    # agent -- avisos de plataformas CAE (H31, S156).
+    'cae_mail',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
@@ -591,6 +594,13 @@ CELERY_BEAT_SCHEDULE = {
     # se procesan.
     'sweep-invoice-folder': {
         'task':     'supplier_invoices.tasks.sweep_invoice_folder_task',
+        'schedule': crontab(minute='*/5'),
+    },
+
+    # H31 (S156): avisos de plataformas CAE que el agente de correos sube
+    # al cubo (CORREOS DOCUMENTACION/NUEVOS) -> se leen con Gemini.
+    'sweep-cae-mails': {
+        'task':     'cae_mail.tasks.sweep_cae_mails_task',
         'schedule': crontab(minute='*/5'),
     },
 }
