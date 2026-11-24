@@ -392,6 +392,31 @@ INSURANCE_SIBLING_FOLDERS = (
 )
 
 
+# S156 (CAE): carpetas de la documentacion mensual de las empresas
+# que piden las plataformas de coordinacion (egestiona, Cellnex,
+# Nalanda, Quioo), relativas a DOCUMENTS_ROOT_NAME, para "Vigilar
+# carpetas CAE". Encontradas en el PC de Miguel Angel el 24/11/2026.
+# Fuera quedan REMESAS (transferencias de nominas) y CERTIF. ANTIGUOS
+# (2013-2018); la de seguros ya va en INSURANCE_FOLDERS. Llevan el
+# ano en el nombre: en enero hay que anadir las de 2027.
+# ---
+# Monthly company documentation folders requested by the CAE
+# platforms, relative to DOCUMENTS_ROOT_NAME, for "watch CAE folders".
+CAE_FOLDERS = (
+    "00 DOCUMENTACION MENSUAL 2026/TCs Y RECIBOS",
+    "00 DOCUMENTACION MENSUAL 2026/CERTIFICADOS TGSS",
+    "00 DOCUMENTACION MENSUAL 2026/CERTIFICADO AEAT NOMINATIVOS",
+    "00 DOCUMENTACION MENSUAL 2026/ITAs",
+    "00 DOCUMENTACION MENSUAL 2026/2026 PRL ERL PAP CERTIFICADOS MPE",
+    "00 DOCUMENTACION MENSUAL 2026/REA REGISTRO DE EMPRESAS ACREDITADAS",
+    "00 DOCUMENTACION MENSUAL 2026/IAE",
+    "00 DOCUMENTACION MENSUAL 2026/FRATERNIDAD MUPRESPA",
+    "00 DOCUMENTACION MENSUAL 2026/CERTIFICADOS HABERES PAGOS NOMINAS",
+    "00 DOCUMENTACION MENSUAL 2026/EPIS",
+    "00 OBRAS EN EJECUCION 2026",
+)
+
+
 def get_agent_root_dir():
     """Return the directory the agent (script or .exe) runs from.
     Only meaningful for things that SHOULD stay tied to the running

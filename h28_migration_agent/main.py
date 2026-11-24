@@ -38,6 +38,7 @@ from auditor import (
 )
 from catchup import sweep_folder
 from config import (
+    CAE_FOLDERS,
     CATCHUP_HEARTBEAT_EVERY_SWEEPS,
     CATCHUP_INTERVAL_SECONDS,
     DIRTY_BUCKET_NAME,
@@ -719,37 +720,18 @@ def _documents_root():
     return None
 
 
-def _watch_insurance_folders(icon, _menu_item):
-    """Reconcile and watch the companies' insurance folders (S152).
+def _watch_folder_group(icon, locations, label, destination):
+    """Reconcile and watch a fixed group of documentation folders.
     ---
-    Reconcilia y deja vigiladas las carpetas de polizas y recibos de
-    seguros de las empresas (config.INSURANCE_FOLDERS y, desde S164,
-    config.INSURANCE_SIBLING_FOLDERS), para que la
-    pestana Seguros del panel tenga la documentacion al dia. Mismo
-    camino que "Vigilar carpeta ya migrada": lo que falte en el cubo
-    va a la cuarentena (con su ruta desde DOCUMENTOS GRUPO ALVAREZ) y
-    el panel lo clasifica en DOC. EMPRESA/SEGUROS. Las que no existen
-    en este equipo o ya se vigilan se saltan.
+    Reconcilia y deja vigilado un grupo fijo de carpetas (seguros,
+    CAE). Mismo camino que "Vigilar carpeta ya migrada": lo que falte
+    en el cubo va a la cuarentena con su ruta desde DOCUMENTOS GRUPO
+    ALVAREZ. Las que no existen en este equipo o ya se vigilan se
+    saltan. `locations` son pares (carpeta base, ruta relativa con
+    "/"); `label` nombra el grupo en los mensajes y `destination`
+    dice que hace el panel con lo subido.
     """
     root = _get_tk_root()
-    documents_root = _documents_root()
-    if documents_root is None:
-        messagebox.showerror(
-            "Agente H28",
-            f"No encuentro la carpeta «{DOCUMENTS_ROOT_NAME}»: ninguna "
-            "carpeta vigilada cuelga de ella.",
-            parent=root,
-        )
-        return
-
-    # S164: las de config.INSURANCE_SIBLING_FOLDERS cuelgan de la
-    # carpeta padre de la raiz ("Documentos compartidos\seguros").
-    shared_root = os.path.dirname(documents_root)
-    locations = [
-        (documents_root, relative) for relative in INSURANCE_FOLDERS
-    ] + [
-        (shared_root, relative) for relative in INSURANCE_SIBLING_FOLDERS
-    ]
     pending = []
     missing = []
     for base, relative in locations:
@@ -765,7 +747,7 @@ def _watch_insurance_folders(icon, _menu_item):
     if not pending:
         messagebox.showinfo(
             "Agente H28",
-            "Todas las carpetas de seguros que hay en este equipo ya "
+            f"Todas las carpetas de {label} que hay en este equipo ya "
             "se estan vigilando."
             + (f"\n\nNo existen aqui: {len(missing)}." if missing
                else ""),
@@ -776,12 +758,11 @@ def _watch_insurance_folders(icon, _menu_item):
     confirmed = messagebox.askyesno(
         "Agente H28",
         f"Se van a reconciliar y dejar vigiladas {len(pending)} "
-        "carpetas de seguros de las empresas"
+        f"carpetas de {label}"
         + (f" ({len(missing)} no existen en este equipo y se saltan)"
            if missing else "")
-        + ".\n\nLo que falte en el cubo va a la cuarentena y el panel "
-        "lo clasifica en DOC. EMPRESA/SEGUROS. Puede tardar varios "
-        "minutos.\n\n¿Continuar?",
+        + f".\n\nLo que falte en el cubo va a la cuarentena{destination}"
+        ". Puede tardar varios minutos.\n\n¿Continuar?",
         parent=root,
     )
     if not confirmed:
@@ -793,12 +774,13 @@ def _watch_insurance_folders(icon, _menu_item):
         messagebox.showerror("Agente H28", str(error), parent=root)
         return
 
+    title = label[:1].upper() + label[1:]
     for number, folder in enumerate(pending, start=1):
         logger.info(
-            "Seguros %d/%d: reconciliando %s", number, len(pending),
+            "%s %d/%d: reconciliando %s", title, number, len(pending),
             folder)
         icon.notify(
-            f"Seguros {number}/{len(pending)}: reconciliando "
+            f"{title} {number}/{len(pending)}: reconciliando "
             f"{os.path.basename(folder)}...",
             title="Agente H28",
         )
@@ -806,17 +788,76 @@ def _watch_insurance_folders(icon, _menu_item):
         _watched_folders.append(folder)
         save_watched_folders(_watched_folders)
         append_event(
-            "Vigilancia de seguros", folder,
+            f"Vigilancia de {label}", folder,
             "Reconciliada y anadida a carpetas vigiladas",
         )
     for relative in missing:
-        logger.info("Seguros: no existe en este equipo: %s", relative)
+        logger.info("%s: no existe en este equipo: %s", title, relative)
 
     _start_catchup_thread(icon)
     icon.notify(
-        f"Carpetas de seguros vigiladas: {len(pending)}.",
+        f"Carpetas de {label} vigiladas: {len(pending)}.",
         title="Agente H28",
     )
+
+
+def _require_documents_root():
+    """Documentation root, or None after telling the user.
+    ---
+    Raiz de la documentacion, o None tras avisar al usuario.
+    """
+    documents_root = _documents_root()
+    if documents_root is None:
+        messagebox.showerror(
+            "Agente H28",
+            f"No encuentro la carpeta «{DOCUMENTS_ROOT_NAME}»: ninguna "
+            "carpeta vigilada cuelga de ella.",
+            parent=_get_tk_root(),
+        )
+    return documents_root
+
+
+def _watch_insurance_folders(icon, _menu_item):
+    """Reconcile and watch the companies' insurance folders (S152).
+    ---
+    Reconcilia y deja vigiladas las carpetas de polizas y recibos de
+    seguros de las empresas (config.INSURANCE_FOLDERS y, desde S164,
+    config.INSURANCE_SIBLING_FOLDERS), para que la pestana Seguros
+    del panel tenga la documentacion al dia; el panel lo clasifica
+    en DOC. EMPRESA/SEGUROS.
+    """
+    documents_root = _require_documents_root()
+    if documents_root is None:
+        return
+    # S164: las de config.INSURANCE_SIBLING_FOLDERS cuelgan de la
+    # carpeta padre de la raiz ("Documentos compartidos\seguros").
+    shared_root = os.path.dirname(documents_root)
+    locations = [
+        (documents_root, relative) for relative in INSURANCE_FOLDERS
+    ] + [
+        (shared_root, relative) for relative in INSURANCE_SIBLING_FOLDERS
+    ]
+    _watch_folder_group(
+        icon, locations, "seguros",
+        " y el panel lo clasifica en DOC. EMPRESA/SEGUROS",
+    )
+
+
+def _watch_cae_folders(icon, _menu_item):
+    """Reconcile and watch the CAE monthly documentation (S156).
+    ---
+    Reconcilia y deja vigiladas las carpetas de documentacion mensual
+    de las empresas que piden las plataformas de coordinacion
+    (config.CAE_FOLDERS): TC, certificados de la TGSS y la AEAT, ITA,
+    PRL, REA... y las obras en ejecucion.
+    """
+    documents_root = _require_documents_root()
+    if documents_root is None:
+        return
+    locations = [
+        (documents_root, relative) for relative in CAE_FOLDERS
+    ]
+    _watch_folder_group(icon, locations, "documentacion CAE", "")
 
 
 def _select_folder_and_copy(icon, _menu_item):
@@ -1306,6 +1347,9 @@ def main():
         ),
         pystray.MenuItem(
             "Vigilar carpetas de seguros", _watch_insurance_folders
+        ),
+        pystray.MenuItem(
+            "Vigilar carpetas CAE", _watch_cae_folders
         ),
         pystray.MenuItem("Poner al día ahora", _catchup_now),
         pystray.MenuItem("Auditar carpeta (Fase 2)", _audit_folder),
