@@ -248,6 +248,52 @@ def _list_context(request):
     }
 
 
+VIEW_FILTER_KEYS = ("q", "periodo", "cual", "desde", "hasta", "estado",
+                    "empresa", "grupo", "seccion")
+
+
+def _view_filters(company_user, section):
+    """
+    Common filters saved per tab of a section: {tab: {key: value}}.
+
+    ---
+
+    Los filtros comunes guardados por pestaña (vista) de una sección.
+    """
+    views = get_saved_state_key(company_user, "nui_filters_" + section,
+                                "views", {})
+    if not isinstance(views, dict):
+        return {}
+    return {tab: values for tab, values in views.items()
+            if isinstance(values, dict)}
+
+
+def _save_view_filters(request, section, tab):
+    """
+    Save the common filters of the request under its tab, and the
+    tab's own filters ("x_<tab>_<filter>") as before.
+
+    ---
+
+    Guarda los filtros comunes de la petición en su pestaña (cada vista
+    los suyos) y los propios de las pestañas como hasta ahora.
+    """
+    if "q" not in request.GET or not tab or len(tab) > 60:
+        return
+    company_user = _company_user(request)
+    views = _view_filters(company_user, section)
+    views[tab] = {k: request.GET.get(k, "")[:100]
+                  for k in VIEW_FILTER_KEYS}
+    own = get_saved_state_key(company_user, "nui_filters_" + section,
+                              "filters", {})
+    own = {k: v for k, v in (own if isinstance(own, dict) else {}).items()
+           if k.startswith("x_")}
+    own.update({k: v for k, v in request.GET.items()
+                if k.startswith("x_") and len(v) < 100})
+    _save_keys(company_user, "nui_filters_" + section, {
+        "filters": own, "views": views})
+
+
 def _section_context(company_user, section):
     """
     Context of Documentos, Personal or Centros de gasto in the shell.
@@ -270,6 +316,14 @@ def _section_context(company_user, section):
     saved = get_saved_state_key(company_user, "nui_filters_" + section,
                                 "filters", {})
     saved = saved if isinstance(saved, dict) else {}
+    # S163 (24/11, Miguel Ángel: «los filtros tienen que ser por vista»):
+    # buscar, periodo, estado, empresa, grupo y sección se guardan por
+    # pestaña; al entrar se pintan los de la pestaña que estaba abierta.
+    views = _view_filters(company_user, section)
+    tabs_saved = get_saved_state_key(company_user, SCREEN_KEY, "tabs", {})
+    open_tab = (tabs_saved or {}).get(section + ":listado", "") if \
+        isinstance(tabs_saved, dict) else ""
+    current = views.get(open_tab) or {}
     cols = get_saved_state_key(company_user, SCREEN_KEY,
                                    "cols_" + section, {}) or {}
     tabs_cols = []
@@ -299,8 +353,9 @@ def _section_context(company_user, section):
                                 "scope_" + section, None)
     kind = MACHINE_KIND if section == "cdg" else PERSON_KIND
     return {
-        "f": saved,
-        "period": period_context(saved),
+        "f": current,
+        "view_filters": views,
+        "period": period_context(current),
         "opts": filter_options(section, company_user.company, company_user),
         "tabs_cols": tabs_cols,
         "entity_tabs": ENTITY_TABS.get(section, ()),
@@ -685,6 +740,8 @@ class NewUiListView(SuperuserRequiredMixin, View):
 
         section = request.GET.get("s", "")
         tab = request.GET.get("t", "")
+        if section in SECTIONS and section != PERMISSIONS:
+            _save_view_filters(request, section, tab)
         if (section, tab) == ("per", "alta_fichaje") and _check_view(
                 request, section, tab):
             # Vista propia (no es un listado de modelo): S163.
@@ -751,14 +808,6 @@ class NewUiListView(SuperuserRequiredMixin, View):
         if definition is None or not _check_view(request, section, tab):
             return HttpResponseBadRequest("Listado no disponible.")
         company_user = _company_user(request)
-        saved_filters = {k: request.GET.get(k, "") for k in PERM_FILTER_KEYS
-                         if k != "sort"}
-        # Filtros propios de las pestañas ("x_<pestaña>_<filtro>"): se
-        # guardan todos, cada uno se aplica solo en su pestaña.
-        saved_filters.update({k: v for k, v in request.GET.items()
-                              if k.startswith("x_") and len(v) < 100})
-        _save_keys(company_user, "nui_filters_" + section, {
-            "filters": saved_filters})
         cols = get_saved_state_key(company_user, SCREEN_KEY,
                                    "cols_" + section, {})
         columns = visible_columns(

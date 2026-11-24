@@ -1372,8 +1372,15 @@
         // listados; solo se ven con ella elegida.
         const entityTabs = Array.from(listPanel.querySelectorAll("[data-nui-entity-tab]")).map(b => b.dataset.nuiTab);
         function isEntityTab(t) { return entityTabs.indexOf(t) !== -1; }
+        const VIEW_KEYS = ["q", "periodo", "cual", "desde", "hasta", "estado", "empresa", "grupo", "seccion"];
+        const viewFilters = json("nui-view-filters", {});
+        // La que pintó el servidor: la pestaña que estaba abierta.
+        let shownView = tabs[section + ":listado"] || tab();
+        let typing = null;
         function load() {
             const t = tab();
+            if (t !== shownView) switchView(t);
+            if (shownView) viewFilters[shownView] = readView();
             if (isEntityTab(t)) { loadCard(); return; }
             const box = pane(t);
             if (!box) return;
@@ -1392,6 +1399,39 @@
                 });
         }
         submitFilters = load;
+        // S163 (24/11, Miguel Ángel: «los filtros tienen que ser por
+        // vista»): buscar, periodo, estado, empresa, grupo y sección son
+        // de cada pestaña. Al cambiar de pestaña se guardan los de la que
+        // se deja y se ponen los de la que se abre (o los de entrada).
+        function readView() {
+            const values = {};
+            VIEW_KEYS.forEach(function (k) { const el = form.elements[k]; values[k] = el ? el.value : ""; });
+            return values;
+        }
+        function applyView(t) {
+            const values = viewFilters[t] || {};
+            VIEW_KEYS.forEach(function (k) {
+                const el = form.elements[k];
+                if (!el) return;
+                let v = values[k] || "";
+                if (!v && k === "estado") v = "1";
+                if (!v && k === "cual") v = "actual";
+                if (el.tagName === "SELECT" && v && !el.querySelector('option[value="' + CSS.escape(v) + '"]')) v = k === "estado" ? "1" : "";
+                el.value = v;
+                if (el.tagName === "SELECT" && el.selectedIndex < 0) el.selectedIndex = 0;
+            });
+            const unit = form.elements.periodo ? form.elements.periodo.value : "";
+            const cual = form.elements.cual ? form.elements.cual.value : "actual";
+            form.querySelectorAll("[data-period-unit]").forEach(b => b.classList.toggle("active", !!unit && b.dataset.periodUnit === unit));
+            form.querySelectorAll("[data-period-which]").forEach(b => b.classList.toggle("active", !!unit && b.dataset.periodWhich === cual));
+        }
+        function switchView(t) {
+            if (t === shownView) return;
+            clearTimeout(typing);
+            if (shownView) viewFilters[shownView] = readView();
+            applyView(t);
+            shownView = t;
+        }
         function paintOwnFilters(t, label) {
             const ownTab = document.getElementById("nui-own-filters-tab");
             if (!ownTab) return;
@@ -1405,7 +1445,6 @@
             if (tabButton) paintOwnFilters(tab(), tabButton.textContent.trim());
             load();
         });
-        let typing = null;
         form.addEventListener("change", function (ev) {
             if (ev.target.id === "nui-q") return;
             load();
