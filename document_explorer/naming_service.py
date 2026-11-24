@@ -179,6 +179,25 @@ def build_filename_company(
     return _build_filename([document_type_code], date, ordinal, extension)
 
 
+def build_filename_group_company(
+    company_token: str, document_type_code: str, date, ordinal=None,
+    extension="pdf",
+) -> str:
+    """
+    Canonical filename of a document of one group company (CAE).
+
+    ---
+
+    S156. Nombre canónico de un documento de una de las empresas del
+    grupo (documentación CAE): {EMPRESA}_{TIPO}_{AAAAMMDD}[_{ordinal}]
+    -- como el código en las máquinas, para que el TC1 de Transgrual y
+    el de Grúas Álvarez no se llamen igual.
+    """
+    return _build_filename(
+        [company_token, document_type_code], date, ordinal, extension,
+    )
+
+
 def build_person_folder_name(
     first_surname: str,
     second_surname: str,

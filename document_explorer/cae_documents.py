@@ -44,6 +44,17 @@ _TAX_TRANSGRUAL = "B92493022"
 _TAX_GRANADA = "B93261824"
 _TAX_GRUALDI = "B29739059"
 
+# Nombre corto de cada empresa en el nombre canónico (S156).
+_COMPANY_TOKENS = {
+    _TAX_GRUAS_ALVAREZ: "GRUAS_ALVAREZ",
+    _TAX_TRANSGRUAL: "TRANSGRUAL",
+    _TAX_GRANADA: "GRUAS_GRANADA",
+    _TAX_GRUALDI: "GRUALDI",
+}
+# Tipos que conservan su nombre de OneDrive: el certificado nominativo
+# de Hacienda es para un contratista concreto que solo dice el nombre.
+_KEEP_NAME_CODES = ("CERT_CONTRATISTAS_AEAT",)
+
 _MONTHS = {
     "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5,
     "JUNIO": 6, "JULIO": 7, "JULIIO": 7, "AGOSTO": 8,
@@ -258,4 +269,61 @@ def type_cae_entry(entry):
             fields.append("issue_date")
 
     entry.save(update_fields=fields)
+    rename_cae_entry(entry)
+    return True
+
+
+def canonical_name(entry):
+    """Canonical name for a typed CAE file, or None to keep its name.
+    ---
+    Nombre canónico de un archivo CAE ya tipado:
+    {EMPRESA}_{TIPO}_{FECHA}[_N] (sin empresa, {TIPO}_{FECHA}). None
+    si no tiene tipo o es de los que conservan su nombre (nominativos
+    de Hacienda). La fecha es la de validez si la hay; si no, la del
+    documento. Una colisión en la carpeta lleva ordinal.
+    """
+    from document_explorer import naming_service
+    from document_explorer.move_service import _virtual_location_taken
+
+    if entry.document_type_id is None:
+        return None
+    code = entry.document_type.code
+    if code in _KEEP_NAME_CODES:
+        return None
+    company = None
+    if entry.domain_object_id and entry.domain_content_type_id == (
+            ContentType.objects.get_for_model(CompanyFiscalProfile).pk):
+        company = CompanyFiscalProfile.objects.filter(
+            pk=entry.domain_object_id).first()
+    token = _COMPANY_TOKENS.get(company.tax_id) if company else None
+    date = entry.expiry_date or entry.issue_date
+    extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else "pdf"
+
+    def build(ordinal=None):
+        if token:
+            return naming_service.build_filename_group_company(
+                token, code, date, ordinal=ordinal, extension=extension)
+        return naming_service.build_filename_company(
+            code, date, ordinal=ordinal, extension=extension)
+
+    name = build()
+    ordinal = 1
+    while _virtual_location_taken(
+            entry.bucket, entry.parent_path, name, exclude_pk=entry.pk):
+        name = build(ordinal)
+        ordinal += 1
+    return name
+
+
+def rename_cae_entry(entry):
+    """Give a typed CAE file its canonical name. True if renamed.
+    ---
+    Pone a un archivo CAE tipado su nombre canónico (solo el nombre
+    virtual del índice; el objeto de GCS no se toca). True si cambió.
+    """
+    name = canonical_name(entry)
+    if not name or name == entry.name:
+        return False
+    entry.name = name
+    entry.save(update_fields=["name"])
     return True
