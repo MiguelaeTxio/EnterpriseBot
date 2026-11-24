@@ -962,6 +962,12 @@ class CircularSentSheetView(DocsUploadAccessMixin, View):
 
         ack = get_object_or_404(DocumentAcknowledgment.objects.select_related(
             "person", "document_type", "worksite"), pk=pk)
+        status_label = {
+            "queued": "en cola", "accepted": "aceptado", "sending":
+            "enviándose", "sent": "enviado", "delivered": "entregado",
+            "read": "leído", "failed": "fallido", "undelivered":
+            "no entregado"}.get((ack.whatsapp_status or "").lower(),
+                                ack.whatsapp_status)
         return render(request, "new_ui/circulars/_circular_sent.html", {
-            "ack": ack,
+            "ack": ack, "status_label": status_label,
         })

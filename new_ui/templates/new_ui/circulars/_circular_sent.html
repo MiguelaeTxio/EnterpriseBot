@@ -11,7 +11,7 @@ recibió y el contenido de la circular. Vista: CircularSentSheetView.
         el {{ ack.delivery_date|date:"d/m/Y" }}{% if ack.channel %} · {{ ack.get_channel_display }}{% endif %}{% if ack.worksite %} · obra {{ ack.worksite }}{% endif %}
     </div>
     <div class="mb-2">
-        {% if ack.whatsapp_status %}<span class="badge text-bg-light border">WhatsApp: {{ ack.whatsapp_status }}{% if ack.whatsapp_status_at %} ({{ ack.whatsapp_status_at|date:"d/m/Y H:i" }}){% endif %}</span>{% endif %}
+        {% if ack.whatsapp_status %}<span class="badge text-bg-light border">WhatsApp: {{ status_label }}{% if ack.whatsapp_status_at %} ({{ ack.whatsapp_status_at|date:"d/m/Y H:i" }}){% endif %}</span>{% endif %}
         {% if ack.whatsapp_read_at %}<span class="badge text-bg-success">Leída el {{ ack.whatsapp_read_at|date:"d/m/Y H:i" }}</span>{% else %}<span class="badge text-bg-secondary">Sin leer</span>{% endif %}
     </div>
     {% if ack.source_entry_id %}<div class="mb-2"><a href="{% url 'new_ui:document_file' ack.source_entry_id %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-text me-1"></i>Ver el documento que recibió</a></div>{% endif %}
