@@ -467,7 +467,7 @@ def _relocate_cae_entries():
     pasar por Gemini. Escritura de indice pura (move_entry). Devuelve
     cuantos archivos ha movido.
     """
-    from document_explorer import move_service
+    from document_explorer import cae_documents, move_service
     from document_explorer.buckets import (
         CAE_ROOT, PRIMARY_BUCKET, QUARANTINE_PREFIX, cae_quarantine_q,
     )
@@ -493,6 +493,13 @@ def _relocate_cae_entries():
             ensure_folder_chain(entry.bucket, destination)
             ready.add(destination)
         move_service.move_entry(entry, destination, ensure_folder=False)
+        try:
+            cae_documents.type_cae_entry(entry)
+        except Exception:
+            logger.exception(
+                "# [consume_quarantine_task] CAE: no se ha podido tipar "
+                "%s", entry.blob_name,
+            )
     if entries:
         logger.info(
             "# [consume_quarantine_task] Documentacion CAE: %d archivo(s) "
