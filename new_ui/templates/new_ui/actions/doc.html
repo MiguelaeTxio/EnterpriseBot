@@ -93,8 +93,7 @@ new_ui.js enseña el de la vista abierta. Formularios:
 </div>
 <div class="d-none" data-nui-actions-for="lista_requisitos">
     {# S163 (24/11, Miguel Ángel): en Acciones solo «Nuevo»; crear y modificar, en la ventana del requisito. #}
-    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:requirement_sheet' 0 %}" data-nui-viewer-title="Nuevo requisito"><i class="bi bi-plus-circle me-1"></i>Nuevo requisito</button>
-    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Los requisitos marcados</div>
+    <button type="button" class="btn btn-sm btn-success" data-nui-viewer-url="{% url 'new_ui:requirement_sheet' 0 %}" data-nui-viewer-title="Nuevo requisito"><i class="bi bi-plus-circle me-1"></i>Nuevo requisito</button>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:requirement_bulk' %}" class="d-flex flex-wrap gap-1">
         {% csrf_token %}
         <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success">Activar</button>
