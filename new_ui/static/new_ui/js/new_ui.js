@@ -989,7 +989,11 @@
         // marcados para pedir por WhatsApp, y Limpiar.
         function paintNoticeCount() {
             const out = document.querySelector("[data-nui-notice-count]");
-            if (out) out.textContent = document.querySelectorAll("[data-nui-notice-check]:checked").length;
+            if (!out) return;
+            // Solo si cambia: escribirlo siempre dispararía el observador
+            // otra vez (bucle sin fin).
+            const n = String(document.querySelectorAll("[data-nui-notice-check]:checked").length);
+            if (out.textContent !== n) out.textContent = n;
         }
         root.addEventListener("change", function (ev) { if (ev.target.matches("[data-nui-notice-check]")) paintNoticeCount(); });
         root.addEventListener("click", function (ev) {
@@ -1003,7 +1007,8 @@
         function paintCounts(f) {
             f.querySelectorAll("[data-nui-count-of]").forEach(function (span) {
                 const n = f.querySelectorAll('[name="' + span.dataset.nuiCountOf + '"]:checked').length;
-                span.textContent = "(" + n + " marcado" + (n === 1 ? "" : "s") + ")";
+                const text = "(" + n + " marcado" + (n === 1 ? "" : "s") + ")";
+                if (span.textContent !== text) span.textContent = text;
             });
         }
         function dirtyChange(ev) {
