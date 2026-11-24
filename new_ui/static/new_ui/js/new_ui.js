@@ -1204,16 +1204,7 @@
             if (batch) {
                 const items = new Set(batch.dataset.nuiEpiBatch.split(",").filter(Boolean));
                 batch.closest("form").querySelectorAll('[name="epi_ids"]').forEach(c => { c.checked = items.has(c.value); });
-                return;
             }
-            const edit = ev.target.closest("[data-nui-epi-batch-edit]");
-            const fresh = ev.target.closest("[data-nui-epi-batch-new]");
-            if (!edit && !fresh) return;
-            const form = (edit || fresh).closest("form");
-            form.querySelector('[name="batch_pk"]').value = edit ? edit.dataset.nuiEpiBatchEdit : "";
-            form.querySelector('[name="name"]').value = edit ? edit.dataset.name : "";
-            const items = new Set(edit ? edit.dataset.items.split(",").filter(Boolean) : []);
-            form.querySelectorAll('[name="item_ids"]').forEach(c => { c.checked = items.has(c.value); });
         });
         document.addEventListener("click", function (ev) {
             const link = ev.target.closest('a[href^="#nui-epi-history:"]');

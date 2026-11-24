@@ -203,6 +203,13 @@ urlpatterns = [
          name="epi_batch_delete"),
     path("epis/ficha-tecnica/", views_epis.NuiEpiSheetUploadView.as_view(),
          name="epi_sheet_upload"),
+    path("epis/lotes/borrar-marcados/",
+         views_epis.NuiEpiBatchesDeleteView.as_view(),
+         name="epi_batches_delete"),
+    path("epis/catalogo/<int:pk>/ver/", views_epis.EpiItemSheetView
+         .as_view(), name="epi_item_sheet"),
+    path("epis/lotes/<int:pk>/ver/", views_epis.EpiBatchSheetView
+         .as_view(), name="epi_batch_sheet"),
     # Bajas médicas (S163).
     path("bajas/nueva/", views_medical.MedicalLeaveAddView.as_view(),
          name="medical_add"),

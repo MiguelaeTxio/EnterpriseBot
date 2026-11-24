@@ -1,0 +1,28 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_epi_item.html -- S163 (24/11): un EPI del catálogo en el visor (Empresa › EPIs › Catálogo): sus datos, sus fichas técnicas para abrirlas y subir otra. Vista: new_ui/views_epis.py (EpiItemSheetView). #}
+<div class="small">
+    <table class="table table-sm mb-2">
+        <tbody>
+            <tr><th class="w-25">EPI</th><td>{{ epi.label }}</td></tr>
+            <tr><th>Familia</th><td>{{ epi.family }}</td></tr>
+            <tr><th>Revisión periódica</th><td>{% if epi.requires_periodic_review %}Sí (lleva historial de revisiones){% else %}No (entrega puntual){% endif %}</td></tr>
+            <tr><th>Entregas</th><td>{{ deliveries }} <span class="text-muted">(se ven en Personal › EPIs › Entregas)</span></td></tr>
+        </tbody>
+    </table>
+    <div class="fw-semibold mb-1">Fichas técnicas y manuales</div>
+    {% if sheets %}
+    <ul class="mb-2">
+        {% for entry, url in sheets %}<li><a href="{{ url }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-text me-1"></i>{{ entry.name }}</a></li>{% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-muted mb-2">Todavía no tiene ninguna.</p>
+    {% endif %}
+    <form data-nui-action-form action="{% url 'new_ui:epi_sheet_upload' %}" enctype="multipart/form-data" class="border rounded p-2">
+        {% csrf_token %}<input type="hidden" name="selected" value="{{ epi.pk }}">
+        <div class="fw-semibold mb-1"><i class="bi bi-file-earmark-arrow-up me-1"></i>Subir ficha técnica o manual</div>
+        <div class="d-flex flex-wrap gap-1">
+            <input type="file" name="file" required class="form-control form-control-sm" style="max-width: 20rem;" aria-label="Ficha técnica">
+            <button type="submit" class="btn btn-sm btn-success">Subir</button>
+        </div>
+        <p class="text-muted mt-1 mb-0">Se añade, nunca sustituye: un EPI puede tener ficha técnica y declaración de conformidad.</p>
+    </form>
+</div>

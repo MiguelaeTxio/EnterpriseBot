@@ -447,6 +447,93 @@ class NuiEpiSheetUploadView(EpiSheetUploadView):
         return _say(response, "Ficha técnica subida.")
 
 
+class NuiEpiBatchesDeleteView(DocsUploadAccessMixin, View):
+    """
+    POST `selected`: delete the marked batches (deliveries untouched).
+
+    ---
+
+    S163 (24/11): borra los lotes marcados (Acciones, lista y 5 s); las
+    entregas hechas no se tocan.
+    """
+
+    def post(self, request):
+        batches = EpiDeliveryBatchTemplate.objects.filter(pk__in=[
+            v for v in request.POST.getlist("selected") if v.isdigit()])
+        names = list(batches.values_list("name", flat=True))
+        if not names:
+            return JsonResponse({"ok": False, "message": (
+                "Marca primero los lotes a borrar.")}, status=400)
+        batches.delete()
+        return JsonResponse({"ok": True, "message": (
+            "Lotes borrados (%d): %s. Las entregas hechas no se tocan."
+            % (len(names), ", ".join(names)))})
+
+
+def _epi_families():
+    """[(familia, [(pk, nombre)])] de los EPIs activos."""
+    groups, order = {}, []
+    for epi in EpiItemCatalog.objects.filter(is_active=True).order_by(
+            "family", "label"):
+        if epi.family not in groups:
+            groups[epi.family] = []
+            order.append(epi.family)
+        groups[epi.family].append((epi.pk, epi.label))
+    return [(family, groups[family]) for family in order]
+
+
+class EpiItemSheetView(DocsUploadAccessMixin, View):
+    """
+    GET: one EPI of the catalogue in the viewer (sheets and upload).
+
+    ---
+
+    S163 (24/11): un EPI del catálogo en el visor: sus datos, sus fichas
+    técnicas para abrirlas y subir otra.
+    """
+
+    def get(self, request, pk):
+        from django.shortcuts import render
+
+        epi = get_object_or_404(EpiItemCatalog, pk=pk)
+        sheets = DocumentIndexEntry.objects.filter(
+            domain_content_type=ContentType.objects.get_for_model(epi),
+            domain_object_id=epi.pk, deleted_at__isnull=True,
+            purged_at__isnull=True).order_by("pk")
+        return render(request, "new_ui/_epi_item.html", {
+            "epi": epi,
+            "sheets": [(entry, reverse("new_ui:document_file",
+                                       args=[entry.pk]))
+                       for entry in sheets],
+            "deliveries": epi.deliveries.count(),
+        })
+
+
+class EpiBatchSheetView(DocsUploadAccessMixin, View):
+    """
+    GET: one EPI batch in the viewer (0 = a new one).
+
+    ---
+
+    S163 (24/11): un lote de EPIs en el visor: nombre y EPIs por
+    familias, para crearlo o modificarlo, y borrarlo (5 s).
+    """
+
+    def get(self, request, pk):
+        from django.shortcuts import render
+
+        batch = get_object_or_404(EpiDeliveryBatchTemplate, pk=pk) \
+            if pk else None
+        chosen = set(batch.items.values_list("pk", flat=True)) \
+            if batch else set()
+        return render(request, "new_ui/_epi_batch.html", {
+            "batch": batch,
+            "chosen": chosen,
+            "families": _epi_families(),
+            "open_tpl": reverse("new_ui:epi_batch_sheet", args=[0]),
+        })
+
+
 def epis_context(section):
     """EPIs y lotes para las acciones de Personal."""
     # S163 (23/11): el catálogo de EPIs está en Empresa.

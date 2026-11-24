@@ -831,6 +831,50 @@ def _epi_sheets(epi):
         purged_at__isnull=True).values_list("pk", flat=True))
 
 
+def _epi_family_extra(path):
+    """Filtro «Familia» de los EPIs (catálogo o entregas, por `path`)."""
+    def options(company):
+        families = apps.get_model("document_explorer.EpiItemCatalog") \
+            .objects.filter(is_active=True).order_by("family") \
+            .values_list("family", flat=True).distinct()
+        return [(f, f) for f in families]
+
+    return Extra("familia", "Familia", options,
+                 lambda qs, value: qs.filter(**{path: value}))
+
+
+def _epi_batches_def():
+    """
+    Empresa › EPIs › Lotes de EPIs.
+
+    ---
+
+    S163 (24/11): los lotes (ayuda para marcar varios EPIs al entregar).
+    Pulsar uno lo abre para cambiar su nombre o sus EPIs.
+    """
+    return ListDef(
+        "Lotes de EPIs",
+        lambda company: apps.get_model(
+            "document_explorer.EpiDeliveryBatchTemplate").objects
+        .prefetch_related("items"),
+        [
+            Col("nombre", "Lote", lambda r: r.name, "name"),
+            Col("cuantos", "EPIs", lambda r: len(r.items.all()), "",
+                "text-end"),
+            Col("epis", "Lleva", lambda r: short(", ".join(
+                i.label for i in sorted(r.items.all(),
+                                        key=lambda i: i.label)), 160)),
+            Col("editado", "Modificado", lambda r: fmt_datetime(
+                r.updated_at), "updated_at", "text-nowrap"),
+        ],
+        search=("name",), default_order=("name",),
+        actions=lambda r: [],
+        row_url=lambda r: reverse("new_ui:epi_batch_sheet", args=[r.pk]),
+        row_title="Lote de EPIs",
+        note="Pulsa un lote para cambiar su nombre o sus EPIs. El "
+             "periodo no se aplica a este listado.")
+
+
 def _epi_delivery_actions(delivery):
     """
     Row actions of an EPI delivery.
@@ -1805,7 +1849,6 @@ def _per_lists():
             [
                 Col("epi", "EPI", lambda r: r.label, "label"),
                 Col("familia", "Familia", lambda r: r.family, "family"),
-                Col("codigo", "Código", lambda r: r.code, "code"),
                 Col("revision", "Revisión periódica", lambda r: "Sí"
                     if r.requires_periodic_review else "",
                     "requires_periodic_review"),
@@ -1814,13 +1857,16 @@ def _per_lists():
                 Col("entregas", "Entregas", lambda r: r.deliveries.count()
                     if hasattr(r, "deliveries") else "", "", "text-end"),
             ],
-            search=("label", "code", "family"),
+            search=("label", "family"),
             default_order=("family", "label"),
-            actions=lambda r: [
-                ("Ficha técnica %d" % (n + 1), "bi-file-earmark-text",
-                 reverse("new_ui:document_file", args=[entry_pk]))
-                for n, entry_pk in enumerate(_epi_sheets(r))],
-            note="El periodo no se aplica a este listado."),
+            actions=lambda r: [],
+            extras=[_epi_family_extra("family")],
+            # S163 (24/11): pulsar un EPI abre su ventana (fichas técnicas).
+            row_url=lambda r: reverse("new_ui:epi_item_sheet",
+                                      args=[r.pk]),
+            row_title="EPI",
+            note="Pulsa un EPI para ver sus fichas técnicas y subir otra. "
+                 "El periodo no se aplica a este listado."),
         "requisitos": ListDef(
             "Requisitos",
             lambda company: persons_base().prefetch_related(
@@ -3164,6 +3210,11 @@ def list_def(section, tab):
         # S163 (23/11): Nóminas, en Empresa, por entregas y con su acceso.
         _CACHE["per"].pop("nominas", None)
         _CACHE["doc"]["nominas"] = _payslips_def()
+        # S163 (24/11): Empresa › EPIs › Lotes; «Familia» en las entregas.
+        _CACHE["doc"]["lotes_epis"] = _epi_batches_def()
+        _CACHE["per"]["epis"].extras = list(
+            _CACHE["per"]["epis"].extras) + [_epi_family_extra(
+                "epi__family")]
         # S163 (24/11): Empresa › Vacaciones, dos listados.
         _CACHE["doc"]["vacaciones"] = _vacation_rules_def()
         _CACHE["doc"]["tipos_ausencia"] = _absence_types_def()

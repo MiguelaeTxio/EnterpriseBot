@@ -1,33 +1,20 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_epi_catalog.html -- S163 (23/11): catálogo de EPIs (lotes y fichas técnicas) en Empresa › EPIs, antes en Personal (copia de _epis.html). Vista: new_ui/views_epis.py. #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_epi_catalog.html -- S163 (24/11): Acciones de Empresa › EPIs. Catálogo: nada (pulsar un EPI abre su ventana con sus fichas técnicas). Lotes: «Nuevo lote» abre la ventana; borrar los marcados con lista y 5 s. Vista: new_ui/views_epis.py. #}
 <div class="d-none" data-nui-actions-for="catalogo_epis">
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:epi_sheet_upload' %}" class="mb-3">
+    <p class="small text-muted mb-0">Pulsa un EPI para ver sus fichas técnicas y subir otra. Los EPIs no se crean aquí; se entregan desde Personal (Acciones › Entregar EPIs).</p>
+</div>
+<div class="d-none" data-nui-actions-for="lotes_epis">
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:epi_batch_sheet' 0 %}" data-nui-viewer-title="Nuevo lote de EPIs"><i class="bi bi-plus-circle me-1"></i>Nuevo lote</button>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:epi_batches_delete' %}" class="d-flex flex-wrap gap-1">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-arrow-up me-1"></i>Ficha técnica o manual del EPI seleccionado</div>
-        <div class="d-flex flex-wrap gap-1">
-            <input type="file" name="file" required class="form-control form-control-sm" style="max-width: 18rem;" aria-label="Ficha técnica">
-            <button type="submit" class="btn btn-sm btn-success">Subir</button>
-        </div>
-        <p class="small text-muted mt-1 mb-0">Se añade (nunca sustituye): un EPI puede tener ficha técnica y declaración de conformidad. Se ven en su menú (botón derecho sobre el EPI).</p>
-    </form>
-    <form data-nui-action-form action="{% url 'new_ui:epi_batch_save' %}" id="nui-epi-batch-form">
-        {% csrf_token %}
-        <input type="hidden" name="batch_pk" value="" data-nui-pk>
-        <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Lotes de EPIs</div>
-        <div class="d-flex flex-wrap gap-1 small mb-1">
-            <span class="text-muted">Modificar:</span>
-            {% for b in epi_batches %}<button type="button" class="btn btn-sm btn-outline-secondary py-0" data-nui-epi-batch-edit="{{ b.pk }}" data-name="{{ b.name }}" data-items="{{ b.items }}">{{ b.name }}</button>{% empty %}<span class="text-muted">no hay lotes todavía</span>{% endfor %}
-            <button type="button" class="btn btn-sm btn-link py-0" data-nui-epi-batch-new>Nuevo</button>
-        </div>
-        <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Nombre del lote (p. ej. Gruista nuevo)" aria-label="Nombre del lote" required>
-        <div class="border rounded px-2 py-1 mb-1 small" style="max-height: 10rem; overflow-y: auto;">
-            {% for family, items in epi_groups %}
-            <div class="fw-semibold text-muted mt-1">{{ family }}</div>
-            <div class="d-flex flex-wrap column-gap-3">{% for pk, label in items %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="item_ids" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}</div>
-            {% endfor %}
-        </div>
-        <div class="d-flex flex-wrap gap-1">
-            <button type="submit" class="btn btn-sm btn-success">Guardar lote</button>
-            <button type="submit" formaction="{% url 'new_ui:epi_batch_delete' %}" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar este lote? Las entregas hechas no se tocan.">Borrar este lote</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-trash me-1"></i>Borrar los marcados</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 w-100 d-none" data-nui-countdown-box>
+            Se van a borrar estos lotes (las entregas hechas no se tocan):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-nui-countdown-go disabled>Borrar <span data-nui-countdown-left></span></button>
+            </div>
         </div>
     </form>
+    <p class="small text-muted mt-2 mb-0">Pulsa un lote para cambiar su nombre o sus EPIs.</p>
 </div>

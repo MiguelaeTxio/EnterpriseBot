@@ -1,0 +1,33 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_epi_batch.html -- S163 (24/11): un lote de EPIs en el visor (Empresa › EPIs › Lotes), nuevo (0) o al pulsarlo: nombre y EPIs por familias; borrar con 5 s. Las entregas hechas no se tocan. Vista: new_ui/views_epis.py (EpiBatchSheetView). #}
+<div class="small">
+    <form data-nui-action-form action="{% url 'new_ui:epi_batch_save' %}"{% if not batch %} data-nui-viewer-open-tpl="{{ open_tpl }}" data-nui-viewer-open-title="Lote de EPIs"{% endif %}>
+        {% csrf_token %}<input type="hidden" name="batch_pk" value="{{ batch.pk|default:'' }}">
+        <label class="form-label mb-0" for="nui-epib-name">Nombre del lote *</label>
+        <input type="text" id="nui-epib-name" name="name" value="{{ batch.name|default:'' }}" maxlength="150" class="form-control form-control-sm mb-2" placeholder="P. ej. Gruista nuevo" required>
+        <div class="text-muted mb-1">EPIs que lleva:</div>
+        <div class="border rounded px-2 py-1 mb-2" style="max-height: 22rem; overflow-y: auto;">
+            {% for family, items in families %}
+            <div class="fw-semibold text-muted mt-1">{{ family }}</div>
+            <div class="d-flex flex-wrap column-gap-3">{% for pk, label in items %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="item_ids" value="{{ pk }}"{% if pk in chosen %} checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>{% endfor %}</div>
+            {% empty %}
+            <div class="text-muted">No hay EPIs en el catálogo.</div>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar lote</button>
+    </form>
+    {% if batch %}
+    <form data-nui-action-form data-nui-viewer-close-on="delete" action="{% url 'new_ui:epi_batch_delete' %}" class="mt-2">
+        {% csrf_token %}<input type="hidden" name="batch_pk" value="{{ batch.pk }}">
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-trash me-1"></i>Borrar este lote</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 d-none" data-nui-countdown-box data-nui-countdown-single="{{ batch.name }}">
+            Se va a borrar este lote (las entregas hechas no se tocan):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-danger" name="op" value="delete" data-nui-countdown-go disabled>Borrar <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+    <p class="text-muted mt-2 mb-0">Un lote es una ayuda para marcar varios EPIs de golpe al entregar (Personal › Acciones › Entregar EPIs).</p>
+</div>
