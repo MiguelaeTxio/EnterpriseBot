@@ -54,8 +54,11 @@ SORTS = {
 }
 
 
-def _ok(message):
-    return JsonResponse({"ok": True, "message": message})
+def _ok(message, pk=None):
+    payload = {"ok": True, "message": message}
+    if pk:
+        payload["id"] = pk
+    return JsonResponse(payload)
 
 
 def _error(message):
@@ -503,55 +506,90 @@ class VacationOwnDaysView(SuperuserRequiredMixin, View):
         return _ok(message) if done else _error(message)
 
 
-class VacationSetupBlockView(SuperuserRequiredMixin, View):
+def _rule_sheet_context(company, rule=None, base_rule=None):
+    """Datos de la ventana de una regla (vista o nueva)."""
+    from django.urls import reverse
+
+    from document_explorer.models import PersonGroupTemplate
+
+    today = datetime.date.today()
+    return {
+        "rule": rule,
+        "base": base_rule,
+        "groups": PersonGroupTemplate.objects.order_by("name"),
+        "bases": Base.objects.filter(company=company).order_by("name"),
+        "day_kinds": VacationRule.DayKind.choices,
+        "today": today,
+        "valid_from": today if base_rule else datetime.date(today.year, 1,
+                                                            1),
+        "open_tpl": reverse("new_ui:vacation_rule_sheet", args=[0]),
+    }
+
+
+class VacationRuleSheetView(SuperuserRequiredMixin, View):
     """
-    GET: rules by section and absence types (block asked apart).
+    GET: one vacation rule in the viewer (0 = a new one, ?from=<pk>
+    prefilled from another).
 
     ---
 
-    GET: el bloque de reglas por sección (la vigente, marcada) y tipos
-    de ausencia, que se repinta tras cada cambio.
+    GET: una regla de vacaciones en el visor. Las reglas no se
+    modifican: la ventana de una regla la enseña y ofrece «Nueva a
+    partir de esta» (0 con ?from=) y «Borrar esta regla» (5 s).
     """
 
-    def get(self, request):
-        from ivr_config.models import AbsenceCategory
-
-        from document_explorer.models import PersonGroupTemplate
+    def get(self, request, pk):
+        from django.http import Http404
 
         company = _company(request)
-        # S163 (23/11): las de la empresa y de cada grupo; los días
-        # propios de cada trabajador se ven en Personal › Vacaciones.
-        rules = list(VacationRule.objects.filter(
+        rules = VacationRule.objects.filter(
             company=company, person__isnull=True).select_related(
-            "section", "group", "holiday_base").order_by(
-            "group__name", "section__name", "-valid_from"))
-        today = datetime.date.today()
-        in_force = {}
+            "group", "section", "holiday_base")
+        if pk:
+            rule = rules.filter(pk=pk).first()
+            if rule is None:
+                raise Http404
+            return render(request, "new_ui/_vacation_rule.html",
+                          _rule_sheet_context(company, rule=rule))
+        base_rule = rules.filter(pk=_int(request.GET.get("from"))).first() \
+            if request.GET.get("from") else None
+        return render(request, "new_ui/_vacation_rule.html",
+                      _rule_sheet_context(company, base_rule=base_rule))
 
-        def who(rule):
-            return (rule.group_id, rule.section_id)
 
-        for rule in sorted(rules, key=lambda r: r.valid_from):
-            if rule.valid_from <= today:
-                in_force[who(rule)] = rule.pk
-        for rule in rules:
-            rule.is_in_force = (in_force.get(who(rule)) == rule.pk
-                                and not rule.section_id)
-        return render(request, "new_ui/_vacation_setup.html", {
-            "rules": rules,
-            "groups": PersonGroupTemplate.objects.order_by("name"),
-            "bases": Base.objects.filter(company=company).order_by("name"),
-            "day_kinds": VacationRule.DayKind.choices,
-            "categories": AbsenceCategory.objects.filter(
-                company=company).order_by("order", "label"),
-            "today": today,
+class AbsenceTypeSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one absence type in the viewer (0 = a new one).
+
+    ---
+
+    GET: un tipo de ausencia en el visor, para crearlo o modificarlo,
+    activarlo o desactivarlo (no se borran).
+    """
+
+    def get(self, request, pk):
+        from django.http import Http404
+        from django.urls import reverse
+
+        from ivr_config.models import AbsenceCategory
+
+        category = None
+        if pk:
+            category = AbsenceCategory.objects.filter(
+                pk=pk, company=_company(request)).first()
+            if category is None:
+                raise Http404
+        return render(request, "new_ui/_absence_type.html", {
+            "category": category,
+            "open_tpl": reverse("new_ui:absence_type_sheet", args=[0]),
         })
 
 
 class VacationSetupSaveView(SuperuserRequiredMixin, View):
     """
-    POST `what`: rule_add, rule_remove, category_add, category_save,
-    category_toggle.
+    POST `what`: rule_add, rule_remove, rules_remove (selected),
+    category_add, category_save, category_toggle, categories_active
+    (selected, active=1|0).
 
     ---
 
@@ -584,7 +622,7 @@ class VacationSetupSaveView(SuperuserRequiredMixin, View):
                                    group=group)
             if errors:
                 return _error(" ".join(errors))
-            VacationRule.objects.create(
+            rule = VacationRule.objects.create(
                 company=company, group=group, valid_from=valid_from,
                 days_per_year=days, day_kind=post.get("day_kind"),
                 carry_over=post.get("carry_over") == "1",
@@ -593,7 +631,19 @@ class VacationSetupSaveView(SuperuserRequiredMixin, View):
                 created_by=request.user.company_user)
             return _ok("Regla guardada: %s desde %s." % (
                 "grupo «%s»" % group.name if group else "la empresa",
-                valid_from.strftime("%d/%m/%Y")))
+                valid_from.strftime("%d/%m/%Y")), rule.pk)
+        if what == "rules_remove":
+            rules = VacationRule.objects.filter(
+                company=company, person__isnull=True,
+                pk__in=[v for v in post.getlist("selected")
+                        if v.isdigit()])
+            labels = [str(rule) for rule in rules]
+            if not labels:
+                return _error("Marca primero las reglas a borrar.")
+            rules.delete()
+            return _ok("Reglas borradas (%d): %s. Los saldos se "
+                       "recalculan con las que quedan." % (
+                           len(labels), "; ".join(labels)))
         if what == "rule_remove":
             rule = VacationRule.objects.filter(
                 pk=_int(post.get("rule")), company=company).first()
@@ -610,12 +660,23 @@ class VacationSetupSaveView(SuperuserRequiredMixin, View):
             if AbsenceCategory.objects.filter(company=company,
                                               code=code).exists():
                 return _error("Ya existe un tipo con el código «%s»." % code)
-            AbsenceCategory.objects.create(
+            category = AbsenceCategory.objects.create(
                 company=company, code=code, label=label,
                 requires_note=bool(post.get("requires_note")),
                 is_justified=bool(post.get("is_justified")),
                 order=_int(post.get("order")) or 0, is_active=True)
-            return _ok("Tipo de ausencia «%s» creado." % label)
+            return _ok("Tipo de ausencia «%s» creado." % label,
+                       category.pk)
+        if what == "categories_active":
+            active = post.get("active") == "1"
+            changed = AbsenceCategory.objects.filter(
+                company=company, pk__in=[v for v in post.getlist("selected")
+                                         if v.isdigit()]).update(
+                is_active=active)
+            if not changed:
+                return _error("Marca primero los tipos de ausencia.")
+            return _ok("%d tipo(s) de ausencia %s." % (
+                changed, "activados" if active else "desactivados"))
         if what in ("category_save", "category_toggle"):
             category = AbsenceCategory.objects.filter(
                 pk=_int(post.get("category")), company=company).first()

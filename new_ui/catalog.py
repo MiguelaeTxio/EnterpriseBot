@@ -82,6 +82,8 @@ TAB_NOUNS = {
         "lista_horarios": ("horario", "horarios"),
         "tipos_fichaje": ("tipo de fichaje", "tipos de fichaje"),
         "catalogo_epis": ("EPI", "EPIs"),
+        "vacaciones": ("regla", "reglas", "f"),
+        "tipos_ausencia": ("tipo de ausencia", "tipos de ausencia"),
         "liquidaciones": ("liquidación", "liquidaciones", "f"),
     },
     "cdg": {
@@ -123,7 +125,7 @@ TAB_GROUPS = {
         # S156: avisos de las plataformas CAE (egestiona, Cellnex...).
         ("Coordinación", ("correos_cae",)),
         ("Fichaje", ("tipos_fichaje", "lista_horarios")),
-        ("Vacaciones", ("vacaciones",)),
+        ("Vacaciones", ("vacaciones", "tipos_ausencia")),
         ("EPIs", ("catalogo_epis",)),
         ("Nóminas", ("nominas",)),
         ("Horas y pagos", ("pagos_config", "liquidaciones")),
@@ -258,7 +260,8 @@ SECTIONS = OrderedDict([
         ("correos_cae", "Correos CAE"),
         ("tipos_fichaje", "Tipos de fichaje"),
         ("lista_horarios", "Horarios"),
-        ("vacaciones", "Vacaciones"),
+        ("vacaciones", "Días de vacaciones"),
+        ("tipos_ausencia", "Tipos de ausencia"),
         ("catalogo_epis", "Catálogo de EPIs"),
         ("nominas", "Nóminas"),
         ("pagos_config", "Qué se paga"),

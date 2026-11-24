@@ -1,0 +1,61 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_vacation_rule.html -- S163 (24/11): una regla de vacaciones en el visor (Empresa › Vacaciones › Días de vacaciones). Una regla no se modifica: la de una fila se enseña con «Nueva a partir de esta» y «Borrar esta regla» (5 s); la nueva (0, o 0?from=) es el formulario. Vista: new_ui/views_vacations.py (VacationRuleSheetView). #}
+<div class="small">
+{% if rule %}
+    <table class="table table-sm mb-2">
+        <tbody>
+            <tr><th class="w-25">Para</th><td>{{ rule.target_label }}</td></tr>
+            <tr><th>Vigente desde</th><td>{{ rule.valid_from|date:"d/m/Y" }}</td></tr>
+            <tr><th>Días al año</th><td>{{ rule.days_per_year|floatformat:"-1" }} {{ rule.get_day_kind_display|lower }}</td></tr>
+            <tr><th>Sobrantes</th><td>{% if rule.carry_over %}Pasan al año siguiente{% if rule.carry_over_deadline_day %}, hasta el {{ rule.carry_over_deadline_day }}/{{ rule.carry_over_deadline_month }}{% else %}, sin plazo{% endif %}{% else %}No pasan{% endif %}</td></tr>
+            <tr><th>Festivos</th><td>{{ rule.holiday_base.name|default:"Los de la base del trabajador" }}</td></tr>
+            <tr><th>Creada</th><td>{{ rule.created_at|date:"d/m/Y H:i" }}{% if rule.created_by %} por {{ rule.created_by }}{% endif %}</td></tr>
+        </tbody>
+    </table>
+    <p class="text-muted mb-2">Una regla no se modifica: para cambiar los días se crea otra con la fecha desde la que vale, y los años pasados se siguen calculando con esta.</p>
+    <div class="d-flex flex-wrap gap-1">
+        <button type="button" class="btn btn-sm btn-success" data-nui-viewer-url="{% url 'new_ui:vacation_rule_sheet' 0 %}?from={{ rule.pk }}" data-nui-viewer-title="Nueva regla de vacaciones"><i class="bi bi-plus-circle me-1"></i>Nueva a partir de esta</button>
+    </div>
+    <form data-nui-action-form data-nui-viewer-close-on="delete" action="{% url 'new_ui:vacation_setup_save' %}" class="mt-2">
+        {% csrf_token %}<input type="hidden" name="what" value="rule_remove"><input type="hidden" name="rule" value="{{ rule.pk }}">
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-trash me-1"></i>Borrar esta regla</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 d-none" data-nui-countdown-box data-nui-countdown-single="{{ rule }}">
+            Se va a borrar esta regla (los saldos se recalculan con las que queden):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-danger" name="op" value="delete" data-nui-countdown-go disabled>Borrar <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
+{% else %}
+    <form data-nui-action-form action="{% url 'new_ui:vacation_setup_save' %}" data-nui-viewer-open-tpl="{{ open_tpl }}" data-nui-viewer-open-title="Regla de vacaciones">
+        {% csrf_token %}<input type="hidden" name="what" value="rule_add">
+        {% if base %}<p class="text-muted mb-2">A partir de la regla de {{ base.target_label }} desde el {{ base.valid_from|date:"d/m/Y" }}: cambia lo que haga falta y la fecha desde la que vale.</p>{% endif %}
+        <div class="text-muted">Para:</div>
+        <div class="d-flex flex-wrap column-gap-3 mb-2" role="radiogroup" aria-label="Para">
+            <label class="form-check mb-0"><input class="form-check-input" type="radio" name="group_id" value=""{% if not base.group_id %} checked{% endif %}> La empresa</label>
+            {% for g in groups %}<label class="form-check mb-0"><input class="form-check-input" type="radio" name="group_id" value="{{ g.pk }}"{% if base.group_id == g.pk %} checked{% endif %}> Grupo «{{ g.name }}»</label>{% endfor %}
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <label class="mb-0 text-muted" for="nui-vr-from">Vigente desde *</label>
+            <input type="date" id="nui-vr-from" name="valid_from" value="{{ valid_from|date:'Y-m-d' }}" class="form-control form-control-sm" style="width: 10rem;" required>
+            <label class="mb-0 text-muted" for="nui-vr-days">Días al año *</label>
+            <input id="nui-vr-days" name="days_per_year" value="{% if base %}{{ base.days_per_year|floatformat:'-1' }}{% endif %}" inputmode="decimal" class="form-control form-control-sm" style="width: 5rem;" placeholder="30 o 22" required>
+            {% for value, label in day_kinds %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="day_kind" value="{{ value }}"{% if base.day_kind == value %} checked{% endif %} required> {{ label }}</label>{% endfor %}
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="carry_over" value="1"{% if not base or base.carry_over %} checked{% endif %}> Los sobrantes pasan al año siguiente</label>
+            <span class="text-muted">Plazo (día y mes del año siguiente; vacío, sin plazo)</span>
+            <input type="number" min="1" max="31" name="deadline_day" value="{{ base.carry_over_deadline_day|default_if_none:'' }}" class="form-control form-control-sm" style="width: 5rem;" placeholder="Día" aria-label="Día">
+            <input type="number" min="1" max="12" name="deadline_month" value="{{ base.carry_over_deadline_month|default_if_none:'' }}" class="form-control form-control-sm" style="width: 5rem;" placeholder="Mes" aria-label="Mes">
+        </div>
+        <div class="text-muted">Festivos (para los días laborables):</div>
+        <div class="d-flex flex-wrap column-gap-3 mb-2" role="radiogroup" aria-label="Festivos">
+            <label class="form-check mb-0"><input class="form-check-input" type="radio" name="holiday_base_id" value=""{% if not base.holiday_base_id %} checked{% endif %}> Los de la base del trabajador</label>
+            {% for b in bases %}<label class="form-check mb-0"><input class="form-check-input" type="radio" name="holiday_base_id" value="{{ b.pk }}"{% if base.holiday_base_id == b.pk %} checked{% endif %}> {{ b.name }}</label>{% endfor %}
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar regla</button>
+        <p class="text-muted mt-2 mb-0">Manda lo más concreto: los días propios del trabajador (Personal › Vacaciones); si no tiene, los de su grupo; si no, los de la empresa. Quien está en varios grupos con días distintos y no tiene los suyos, los de la empresa.</p>
+    </form>
+{% endif %}
+</div>

@@ -476,6 +476,108 @@ CURRENT_USER = contextvars.ContextVar("nui_current_user", default=None)
 
 
 # ------------------------------------------------------------ nóminas
+def _vacation_rules_def():
+    """
+    Empresa › Vacaciones › Días de vacaciones: company and group rules.
+
+    ---
+
+    S163 (24/11): las reglas de la empresa y de cada grupo (los días
+    propios de cada trabajador se ven en Personal › Vacaciones). Pulsar
+    una la abre; una regla no se modifica: se crea otra con su fecha.
+    """
+    def in_force(company):
+        today = datetime.date.today()
+        found = {}
+        for rule in apps.get_model("hr_calendar.VacationRule").objects \
+                .filter(company_id=company, person__isnull=True,
+                        section__isnull=True, valid_from__lte=today) \
+                .order_by("valid_from").values("pk", "group_id"):
+            found[rule["group_id"]] = rule["pk"]
+        return set(found.values())
+
+    def prepare(rows):
+        live = in_force(rows[0].company_id) if rows else set()
+        for row in rows:
+            row.nui_in_force = row.pk in live
+        return rows
+
+    def carry(r):
+        if not r.carry_over:
+            return "No pasan"
+        if r.carry_over_deadline_day:
+            return "Pasan hasta el %s/%s" % (r.carry_over_deadline_day,
+                                             r.carry_over_deadline_month)
+        return "Pasan"
+
+    return ListDef(
+        "Días de vacaciones",
+        lambda company: apps.get_model("hr_calendar.VacationRule")
+        .objects.filter(company=company, person__isnull=True)
+        .select_related("group", "section", "holiday_base"),
+        [
+            Col("para", "Para", lambda r: r.target_label(), "group__name"),
+            Col("vigente", "Vigente", lambda r: "Sí"
+                if getattr(r, "nui_in_force", False) else ""),
+            Col("desde", "Desde", lambda r: fmt_date(r.valid_from),
+                "valid_from", "text-nowrap"),
+            Col("dias", "Días al año", lambda r: fmt_num(
+                r.days_per_year, 1), "days_per_year",
+                "text-end"),
+            Col("tipo", "Tipo de días", lambda r: disp(r, "day_kind"),
+                "day_kind"),
+            Col("sobrantes", "Sobrantes", carry, "carry_over"),
+            Col("festivos", "Festivos", lambda r: r.holiday_base.name
+                if r.holiday_base_id else "La de su base",
+                "holiday_base__name"),
+        ],
+        search=("group__name",), default_order=("group__name",
+                                                "-valid_from"),
+        actions=lambda r: [], prepare=prepare,
+        row_url=lambda r: reverse("new_ui:vacation_rule_sheet",
+                                  args=[r.pk]),
+        row_title="Regla de vacaciones",
+        note="Pulsa una regla para verla. Una regla no se modifica: "
+             "se crea otra con su fecha («Nueva a partir de esta»). "
+             "El periodo no se aplica a este listado.")
+
+
+def _absence_types_def():
+    """
+    Empresa › Vacaciones › Tipos de ausencia.
+
+    ---
+
+    S163 (24/11): los tipos de ausencia de la empresa. Pulsar uno lo
+    abre para modificarlo; no se borran, se desactivan.
+    """
+    return ListDef(
+        "Tipos de ausencia",
+        lambda company: apps.get_model("ivr_config.AbsenceCategory")
+        .objects.filter(company=company),
+        [
+            Col("codigo", "Código", lambda r: r.code, "code"),
+            Col("nombre", "Nombre", lambda r: r.label, "label"),
+            Col("nota", "Con nota", lambda r: "Sí" if r.requires_note
+                else "No", "requires_note"),
+            Col("justificada", "Justificada", lambda r: "Sí"
+                if r.is_justified else "No", "is_justified"),
+            Col("activo", "Activo", lambda r: "Sí" if r.is_active
+                else "No", "is_active"),
+            Col("orden", "Orden", lambda r: r.order, "order", "text-end"),
+        ],
+        search=("code", "label"), default_order=("order", "label"),
+        actions=lambda r: [],
+        extras=[Extra("activo", "Activo", lambda company: [
+            ("si", "Activos"), ("no", "Desactivados")],
+            lambda qs, v: qs.filter(is_active=v == "si"))],
+        row_url=lambda r: reverse("new_ui:absence_type_sheet",
+                                  args=[r.pk]),
+        row_title="Tipo de ausencia",
+        note="Pulsa un tipo para modificarlo. No se borran: se "
+             "desactivan. El periodo no se aplica a este listado.")
+
+
 def _payslips_def():
     """
     Empresa › Nóminas: the payslips of the deliveries the user can see.
@@ -3061,6 +3163,9 @@ def list_def(section, tab):
         # S163 (23/11): Nóminas, en Empresa, por entregas y con su acceso.
         _CACHE["per"].pop("nominas", None)
         _CACHE["doc"]["nominas"] = _payslips_def()
+        # S163 (24/11): Empresa › Vacaciones, dos listados.
+        _CACHE["doc"]["vacaciones"] = _vacation_rules_def()
+        _CACHE["doc"]["tipos_ausencia"] = _absence_types_def()
         # S163 (23/11): en Fichajes, las correcciones son un filtro (ya
         # no una vista aparte del calendario): corregidos (el original
         # cambiado o anulado) o puestos al corregir.

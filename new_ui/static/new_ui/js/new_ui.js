@@ -576,16 +576,6 @@
             });
         }
         loadClockSettings();
-        // Reglas por sección y tipos de ausencia (Saldo de vacaciones).
-        function loadVacationSetup() {
-            document.querySelectorAll("[data-nui-vacset]").forEach(function (box) {
-                fetch(box.dataset.url, {credentials: "same-origin"})
-                    .then(r => r.ok ? r.text() : Promise.reject(r.status))
-                    .then(function (html) { box.innerHTML = html; })
-                    .catch(function () { box.innerHTML = '<p class="small text-danger mb-0">No se ha podido cargar.</p>'; });
-            });
-        }
-        loadVacationSetup();
         // S163 (23/11): Empresa › Nóminas › Nueva entrega: se crea, se
         // suben sus PDF uno a uno y empieza la lectura en segundo plano
         // (copia del flujo de panel/payslips/_pane.html).
@@ -677,7 +667,9 @@
             const left = box.querySelector("[data-nui-countdown-left]");
             clearInterval(countdownTimer);
             if (btn.hasAttribute("data-nui-countdown-cancel")) { box.classList.add("d-none"); return; }
-            const picked = Array.from(sel().entries());
+            // Una sola cosa (la abierta en la ventana): su nombre, sin marcar.
+            const single = box.dataset.nuiCountdownSingle;
+            const picked = single ? [["", single]] : Array.from(sel().entries());
             if (!picked.length) { result("Marca primero con la casilla, en la lista de abajo, a quién aplicarlo.", true); return; }
             const list = box.querySelector("[data-nui-countdown-list]");
             list.innerHTML = "";
@@ -750,7 +742,6 @@
                     if (data.scope && (section === "per" || section === "cdg")) setScope(data.scope);
                     if (f.hasAttribute("data-nui-tpl-reload")) loadScreenTpl();
                     if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
-                    if (f.hasAttribute("data-nui-vacset-reload")) loadVacationSetup();
                     f.querySelectorAll("[data-nui-countdown-box]").forEach(b => b.classList.add("d-none"));
                     if (f.hasAttribute("data-nui-dirty")) { const c = f.closest(".card"); const b = c && c.querySelector("[data-nui-dirty-badge]"); if (b) b.classList.add("d-none"); }
                     const closeOn = f.dataset.nuiViewerCloseOn;
@@ -766,7 +757,7 @@
                         result(data.message || "Hecho.", false);
                     } else if (f.dataset.nuiViewerOpenTpl && data.id && window.nuiOpenViewer) {
                         // Guardado con otro nombre: se abre el nuevo.
-                        window.nuiOpenViewer(f.dataset.nuiViewerOpenTpl.replace("/0/", "/" + data.id + "/"), data.message, "Requisito");
+                        window.nuiOpenViewer(f.dataset.nuiViewerOpenTpl.replace("/0/", "/" + data.id + "/"), data.message, f.dataset.nuiViewerOpenTitle || "Requisito");
                     } else if (f.hasAttribute("data-nui-sheet-form") && window.nuiOpenViewer) window.nuiOpenViewer(null, data.message);
                     else if (f.closest("#nui-viewer") && window.nuiOpenViewer) window.nuiOpenViewer(null, data.message);
                     if (f.hasAttribute("data-nui-fragment-reload")) {

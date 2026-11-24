@@ -1,0 +1,26 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_vacation_setup.html -- S163 (24/11): Acciones de Empresa › Vacaciones: «Nueva…» abre la ventana; con marcados, borrar reglas (lista y 5 s) o activar/desactivar tipos. Vista: new_ui/views_vacations.py (VacationSetupSaveView). #}
+<div class="d-none" data-nui-actions-for="vacaciones">
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:vacation_rule_sheet' 0 %}" data-nui-viewer-title="Nueva regla de vacaciones"><i class="bi bi-plus-circle me-1"></i>Nueva regla de vacaciones</button>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_setup_save' %}" class="d-flex flex-wrap gap-1">
+        {% csrf_token %}<input type="hidden" name="what" value="rules_remove">
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-trash me-1"></i>Borrar las marcadas</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 w-100 d-none" data-nui-countdown-box>
+            Se van a borrar estas reglas (los saldos se recalculan con las que queden):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-nui-countdown-go disabled>Borrar <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
+    <p class="small text-muted mt-2 mb-0">Pulsa una regla para verla o crear otra a partir de ella.</p>
+</div>
+<div class="d-none" data-nui-actions-for="tipos_ausencia">
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:absence_type_sheet' 0 %}" data-nui-viewer-title="Nuevo tipo de ausencia"><i class="bi bi-plus-circle me-1"></i>Nuevo tipo de ausencia</button>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_setup_save' %}" class="d-flex flex-wrap gap-1">
+        {% csrf_token %}<input type="hidden" name="what" value="categories_active">
+        <button type="submit" name="active" value="1" class="btn btn-sm btn-outline-success">Activar los marcados</button>
+        <button type="submit" name="active" value="0" class="btn btn-sm btn-outline-secondary">Desactivar los marcados</button>
+    </form>
+    <p class="small text-muted mt-2 mb-0">Pulsa un tipo para modificarlo. No se borran: se desactivan.</p>
+</div>

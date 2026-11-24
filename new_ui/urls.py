@@ -69,8 +69,12 @@ urlpatterns = [
     path("persona/<int:pk>/vacaciones/",
          views_vacations.VacationDetailActionView.as_view(),
          name="vacation_detail_action"),
-    path("vacaciones/ajustes/", views_vacations.VacationSetupBlockView
-         .as_view(), name="vacation_setup_block"),
+    path("vacaciones/reglas/<int:pk>/ver/",
+         views_vacations.VacationRuleSheetView.as_view(),
+         name="vacation_rule_sheet"),
+    path("vacaciones/tipos-ausencia/<int:pk>/ver/",
+         views_vacations.AbsenceTypeSheetView.as_view(),
+         name="absence_type_sheet"),
     path("vacaciones/ajustes/guardar/", views_vacations.VacationSetupSaveView
          .as_view(), name="vacation_setup_save"),
     path("vacaciones/dias-propios/",
