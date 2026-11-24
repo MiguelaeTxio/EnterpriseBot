@@ -1,0 +1,39 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_sig_signature.html #}
+{% comment %}
+S163 (24/11). Una firma guardada en el visor: su imagen y con qué
+certificado digital firma (botones; en la antigua era un desplegable).
+{% endcomment %}
+<div class="d-flex flex-wrap gap-3 align-items-start">
+    <img src="{% url 'new_ui:signature_image' signature.pk %}" alt="Firma de {{ signature.label }}" class="border rounded p-2 bg-white" style="max-width: 18rem; max-height: 9rem;">
+    <div class="small">
+        <div class="fw-semibold">{{ signature.label }} · {{ signature.company.legal_name }}</div>
+        <div class="text-muted">Guardada el {{ signature.created_at|date:"d/m/Y H:i" }}{% if signature.created_by %} por {{ signature.created_by.user.username }}{% endif %}</div>
+        {% if signature.certificate_cif %}
+        <div class="mt-1 {% if cert_entry.level == 'danger' %}text-danger{% elif cert_entry.level == 'warning' %}text-warning-emphasis{% else %}text-muted{% endif %}">
+            {% if cert_entry.current %}Firma con el certificado de {{ cert_entry.current.holder }}, válido hasta {{ cert_entry.current.expires|date:"d/m/Y" }}.{% elif cert_entry %}Sin certificado vigente: no se puede firmar digitalmente.{% else %}El ordenador de firmas no ve ningún certificado de este CIF.{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+<div class="small fw-semibold mt-3 mb-1">Con qué firma</div>
+<div class="d-flex flex-wrap gap-1">
+    <form data-nui-action-form action="{% url 'new_ui:sig_certificate' signature.pk %}" class="m-0">
+        {% csrf_token %}<input type="hidden" name="cif" value="">
+        <button type="submit" class="btn btn-sm {% if not signature.certificate_cif and not signature.certificate_alias %}btn-primary{% else %}btn-outline-primary{% endif %}">Solo la imagen (sin firma digital)</button>
+    </form>
+    {% if agents_v3 %}
+    {% for entry in company_certs %}
+    <form data-nui-action-form action="{% url 'new_ui:sig_certificate' signature.pk %}" class="m-0">
+        {% csrf_token %}<input type="hidden" name="cif" value="{{ entry.cif }}">
+        <button type="submit" class="btn btn-sm {% if entry.cif == signature.certificate_cif %}btn-primary{% else %}btn-outline-primary{% endif %}"{% if not entry.current and entry.cif != signature.certificate_cif %} disabled{% endif %}>{{ entry.company }} ({{ entry.cif }}) · {% if entry.current %}vigente hasta {{ entry.current.expires|date:"d/m/Y" }}{% else %}sin certificado vigente{% endif %}</button>
+    </form>
+    {% endfor %}
+    {% else %}
+    {% for alias in aliases %}
+    <form data-nui-action-form action="{% url 'new_ui:sig_certificate' signature.pk %}" class="m-0">
+        {% csrf_token %}<input type="hidden" name="alias" value="{{ alias }}">
+        <button type="submit" class="btn btn-sm {% if alias == signature.certificate_alias %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ alias }}</button>
+    </form>
+    {% endfor %}
+    {% endif %}
+</div>

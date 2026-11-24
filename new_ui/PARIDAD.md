@@ -285,8 +285,13 @@ Ficha, QR, Avisos, Revisiones, Lecturas, Averías y Libro historial
 - ✅ (S163, 23/11) Empresa › Nóminas: nueva entrega (carpeta, supervisor, lectura), entrega elegida (visto bueno y enviar, reintentar, avisar, anular, compartir), marcadas (descargar, fuera/dentro, poner trabajador); acceso de payslip_access
 
 ## Firmas y seguros
-- ⬜ Firmas: guardar, borrar, imagen, certificado, generar firmados, lotes
-  (estado, cancelar, descargar), agentes de firma, descargas, acciones
+- ✅ (S163) Firmas (Empresa › Firmas, solo con acceso a las firmas):
+  Documentos firmados (filtros Situación, Tipo y Empresa; descargar los
+  marcados; cancelar su lote; generar documentos firmados con firma de
+  imagen o certificado, trabajador y todas las páginas), Firmas (guardar,
+  borrar las marcadas; al pulsar una: imagen y con qué certificado firma),
+  Certificados (vigencia por empresa), Agentes (vincular un ordenador con
+  su código, dar de baja) y avisos de caducidad con «No mostrar más»
 - ⬜ Seguros: lista, libro mayor (subir, empresa), nuevo, acciones, exportar
 
 ## Centros de gasto

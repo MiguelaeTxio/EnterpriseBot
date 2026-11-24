@@ -1,0 +1,25 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_sig_certificates.html #}
+{% comment %}
+S163 (24/11). Empresa › Firmas › Certificados: los certificados digitales
+que ven los ordenadores de firmas, por empresa (copia del listado
+«Certificados» de la antigua).
+{% endcomment %}
+<div class="p-2">
+    <table class="table table-sm table-hover align-middle mb-1">
+        <thead class="table-light"><tr><th>Empresa</th><th>CIF</th><th>Titular</th><th>Válido hasta</th><th>Situación</th></tr></thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td>{{ row.entry.company }}</td>
+                <td class="text-nowrap">{{ row.entry.cif }}</td>
+                <td>{{ row.cert.holder }}</td>
+                <td class="text-nowrap">{{ row.cert.expires|date:"d/m/Y" }}</td>
+                <td><span class="badge {% if row.state == 'current' %}{% if row.warning %}bg-warning text-dark{% else %}bg-success{% endif %}{% elif row.state == 'valid' %}bg-info text-dark{% else %}bg-secondary{% endif %}">{{ row.state_label }}</span>{% if row.state == 'current' and row.entry.days is not None %} <span class="small text-muted">quedan {{ row.entry.days }} días</span>{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted small">Ningún ordenador de firmas ve certificados todavía.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p class="small text-muted mb-0">Los certificados los ve el ordenador de firmas (vista «Agentes»). Los avisos de caducidad salen en Acciones.</p>
+</div>

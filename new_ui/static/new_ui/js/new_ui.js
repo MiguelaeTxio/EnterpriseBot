@@ -1571,7 +1571,7 @@
         lists.addEventListener("click", function (ev) {
             const tr = ev.target.closest("tr[data-nui-open]");
             if (!tr || ev.target.closest("input, a, button, label, [data-nui-scope]")) return;
-            window.nuiOpenViewer(tr.dataset.nuiOpen);
+            window.nuiOpenViewer(tr.dataset.nuiOpen, null, tr.dataset.nuiOpenTitle);
         });
         // Vistas propias (no listados de modelo, p. ej. Alta en el
         // fichaje): sus botones de filtro van con la pestaña.

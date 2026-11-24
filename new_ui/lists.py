@@ -250,7 +250,8 @@ class ListDef:
                  default_order=("-pk",), actions=None, note="",
                  scope_filter=None, prepare=None, extras=(),
                  default_cols=None, col_templates=None,
-                 period_annotate=None, row_url=None, totals=None):
+                 period_annotate=None, row_url=None, totals=None,
+                 row_title="Parte"):
         self.label = label
         # S163 (23/11): period_annotate(qs, desde, hasta) añade a una
         # lista de trabajadores sus datos del periodo (repostajes,
@@ -259,6 +260,8 @@ class ListDef:
         # S163 (23/11): row_url(fila) -> lo que se abre en el visor al
         # pulsar la fila (p. ej. el documento del parte).
         self.row_url = row_url
+        # Título del visor al abrir una fila (S163, 24/11).
+        self.row_title = row_title
         # S163 (23/11): totals(qs) -> {clave de columna: texto}: la fila
         # TOTAL fija abajo, de todo lo filtrado (no solo lo pintado).
         self.totals = totals
@@ -1901,20 +1904,6 @@ def _doc_lists():
                     r.received_at), "received_at", "text-nowrap"),
             ], "created_at", search=("reason", "document_type__label"),
             default_order=("-created_at",), note="Periodo: fecha de petición."),
-        "firmas": fk(
-            "Firmas", "document_explorer.SignedFormJob",
-            ("person", "signature"), [
-                Col("tipo", "Tipo", lambda r: disp(r, "kind"), "kind"),
-                Col("firma", "Firma de empresa", lambda r: r.signature.label
-                    if r.signature_id else "", "signature__label"),
-                Col("estado", "Estado", lambda r: disp(r, "status"),
-                    "status"),
-                Col("creada", "Pedida", lambda r: fmt_datetime(r.created_at),
-                    "created_at", "text-nowrap"),
-                Col("terminada", "Terminada", lambda r: fmt_datetime(
-                    r.finished_at), "finished_at", "text-nowrap"),
-            ], "created_at", default_order=("-created_at",),
-            note="Periodo: fecha de la firma."),
         "seguros": fk(
             "Seguros", "insurance.InsuranceReport", ("created_by__user",), [
                 Col("titulo", "Informe", lambda r: r.title, "title"),
@@ -2410,6 +2399,199 @@ def _pay_person_list():
     return definition
 
 
+# ------------------------------------------------------------- firmas
+_SIG_STATES = (
+    ("pending", "Pendiente de firma"),
+    ("done", "Firmado"),
+    ("error", "Con error"),
+    ("cancelled", "Cancelado"),
+)
+
+
+def _sig_state(r):
+    """Situación de un documento firmado, como en la antigua."""
+    from document_explorer.models import SignedFormFile, SignedFormJob
+
+    if (r.job.status == SignedFormJob.STATUS_CANCELLED
+            and r.status != SignedFormFile.STATUS_DONE):
+        return "cancelled", "Cancelado"
+    if r.status in (SignedFormFile.STATUS_WAITING,
+                    SignedFormFile.STATUS_SIGNING,
+                    SignedFormFile.STATUS_PENDING):
+        return "pending", r.get_status_display()
+    return r.status, r.get_status_display()
+
+
+def _sig_state_filter(qs, value):
+    from django.db.models import Q as _Q
+
+    from document_explorer.models import SignedFormFile, SignedFormJob
+
+    cancelled = _Q(job__status=SignedFormJob.STATUS_CANCELLED) & ~_Q(
+        status=SignedFormFile.STATUS_DONE)
+    if value == "cancelled":
+        return qs.filter(cancelled)
+    qs = qs.exclude(cancelled)
+    if value == "pending":
+        return qs.filter(status__in=(SignedFormFile.STATUS_WAITING,
+                                     SignedFormFile.STATUS_SIGNING,
+                                     SignedFormFile.STATUS_PENDING))
+    return qs.filter(status=value)
+
+
+def _fiscal_options(company):
+    from document_explorer.models import CompanyFiscalProfile
+
+    return [(str(pk), name) for pk, name in
+            CompanyFiscalProfile.objects.order_by(
+                "legal_name").values_list("pk", "legal_name")]
+
+
+def _signed_docs_def():
+    """
+    Empresa › Firmas › Documentos firmados (digitales y normales).
+
+    ---
+
+    Los documentos de clientes firmados por la empresa: cuándo, de qué
+    empresa, con qué firma, para qué trabajador, tipo y situación.
+    """
+    from document_explorer.models import SignedFormFile, SignedFormJob
+
+    def queryset(company):
+        return SignedFormFile.objects.select_related(
+            "job__signature__company", "job__person").defer(
+            "unsigned_encrypted", "signed_encrypted")
+
+    def doc_name(r):
+        return r.name + (" · " + short(r.error, 120) if r.error else "")
+
+    def kind(r):
+        return r.job.get_kind_display() + (
+            " · todas las páginas" if r.job.all_pages else "")
+
+    return ListDef(
+        "Documentos firmados", queryset, [
+            Col("fecha", "Fecha", lambda r: fmt_datetime(r.job.created_at),
+                "job__created_at", "text-nowrap"),
+            Col("documento", "Documento", doc_name, "name"),
+            Col("empresa", "Empresa",
+                lambda r: r.job.signature.company.legal_name,
+                "job__signature__company__legal_name"),
+            Col("firma", "Firma", lambda r: r.job.signature.label,
+                "job__signature__label"),
+            Col("trabajador", "Trabajador",
+                lambda r: person_name(r.job.person) if r.job.person_id
+                else "", "job__person__first_surname"),
+            Col("tipo", "Tipo", kind, "job__kind"),
+            Col("situacion", "Situación", lambda r: _sig_state(r)[1],
+                "status"),
+        ],
+        search=("name", "job__signature__label",
+                "job__signature__company__legal_name",
+                "job__person__first_surname", "job__person__given_name"),
+        date_field="job__created_at", date_is_datetime=True,
+        default_order=("-job__created_at", "pk"), actions=lambda r: [],
+        extras=[
+            Extra("situacion", "Situación",
+                  lambda company: list(_SIG_STATES), _sig_state_filter),
+            Extra("tipo", "Tipo",
+                  lambda company: list(SignedFormJob.KIND_CHOICES),
+                  lambda qs, v: qs.filter(job__kind=v)),
+            Extra("empresa", "Empresa", _fiscal_options,
+                  lambda qs, v: qs.filter(job__signature__company_id=v)
+                  if v.isdigit() else qs),
+        ],
+        note="Periodo: fecha en que se generó. Marca los firmados y "
+             "descárgalos en Acciones.")
+
+
+def _signatures_def():
+    """
+    Empresa › Firmas › Firmas: las firmas guardadas de cada empresa.
+
+    ---
+
+    Pulsar una firma abre su imagen y con qué certificado firma.
+    """
+    from document_explorer.models import CompanySignature
+
+    def queryset(company):
+        return CompanySignature.objects.select_related(
+            "company", "created_by__user").defer("image_encrypted")
+
+    def cert(r):
+        if r.certificate_cif:
+            return "Certificado de " + r.certificate_cif
+        if r.certificate_alias:
+            return r.certificate_alias
+        return "Solo imagen"
+
+    return ListDef(
+        "Firmas", queryset, [
+            Col("empresa", "Empresa", lambda r: r.company.legal_name,
+                "company__legal_name"),
+            Col("quien", "Quién firma", lambda r: r.label, "label"),
+            Col("certificado", "Certificado digital", cert,
+                "certificate_cif"),
+            Col("guardada", "Guardada", lambda r: fmt_datetime(
+                r.created_at), "created_at", "text-nowrap"),
+        ],
+        search=("label", "company__legal_name", "certificate_cif"),
+        date_field="created_at", date_is_datetime=True,
+        default_order=("company__legal_name", "label"),
+        actions=lambda r: [],
+        extras=[Extra("empresa", "Empresa", _fiscal_options,
+                      lambda qs, v: qs.filter(company_id=v)
+                      if v.isdigit() else qs)],
+        row_url=lambda r: reverse("new_ui:signature_sheet", args=[r.pk]),
+        row_title="Firma",
+        note="Pulsa una firma para ver su imagen y elegir con qué "
+             "certificado digital firma.")
+
+
+def _agents_def():
+    """
+    Empresa › Firmas › Agentes: los ordenadores que firman.
+
+    ---
+
+    Los agentes de firma activos: si están conectados, su equipo, el
+    último contacto, AutoFirma y cuántos certificados ven.
+    """
+    from document_explorer import signing_agent_service as agents
+    from document_explorer.models import SigningAgent
+
+    def queryset(company):
+        return SigningAgent.objects.filter(is_active=True)
+
+    def name(r):
+        return r.name + (" · " + short(r.last_error, 120)
+                         if r.last_error else "")
+
+    def certs(r):
+        return str(len(r.aliases or [])) + (
+            "" if r.certificates else " (agente antiguo)")
+
+    return ListDef(
+        "Agentes", queryset, [
+            Col("conexion", "Conexión", lambda r: "Conectado"
+                if agents.is_online(r) else "Desconectado"),
+            Col("ordenador", "Ordenador", name, "name"),
+            Col("equipo", "Equipo", lambda r: r.host, "host"),
+            Col("contacto", "Último contacto", lambda r: fmt_datetime(
+                r.last_seen_at) if r.last_seen_at else "nunca",
+                "last_seen_at", "text-nowrap"),
+            Col("autofirma", "AutoFirma", lambda r: r.autofirma_version
+                or "no encontrado", "autofirma_version"),
+            Col("certificados", "Certificados", certs),
+        ],
+        search=("name", "host"), date_field="last_seen_at",
+        date_is_datetime=True, default_order=("name",),
+        actions=lambda r: [],
+        note="Periodo: último contacto.")
+
+
 def _pay_periods_def():
     """
     Empresa › Horas y pagos › Liquidaciones: the closed periods.
@@ -2723,6 +2905,10 @@ def list_def(section, tab):
         _CACHE["per"]["pagos_trab"] = _pay_person_list()
         _CACHE["per"]["pagos_partes"] = _pay_partes_def()
         _CACHE["doc"]["liquidaciones"] = _pay_periods_def()
+        # S163 (24/11): Firmas, como la pestaña Firmas de la antigua.
+        _CACHE["doc"]["firmas"] = _signed_docs_def()
+        _CACHE["doc"]["firmas_guardadas"] = _signatures_def()
+        _CACHE["doc"]["agentes_firma"] = _agents_def()
         _CACHE["per"]["pedidos"] = _CACHE["doc"]["pedir"]
         _CACHE["per"]["circulares_rec"] = _CACHE["doc"]["circulares"]
     return _CACHE.get(section, {}).get(tab)
@@ -2889,6 +3075,7 @@ def rows_for(definition, rows, columns):
             "entity_label": label,
             "label": item or (cells[0]["value"] if cells else ""),
             "actions": definition.actions(row),
+            "open_title": definition.row_title,
             "open_url": definition.row_url(row) if definition.row_url
             else "",
         })

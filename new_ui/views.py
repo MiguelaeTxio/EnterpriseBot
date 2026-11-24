@@ -44,6 +44,7 @@ from new_ui.views_payslips_nui import payslips_context
 from new_ui.views_safety import safety_context
 from new_ui.views_pay import pay_context
 from new_ui.views_partes import partes_context
+from new_ui.views_signatures_nui import signatures_context
 from new_ui.views_epis import epis_context
 from new_ui.views_accessories import accessories_context
 from new_ui.views_vacations import VacationSetupBlockView, vacations_context
@@ -324,6 +325,7 @@ def _section_context(company_user, section):
         **safety_context(section),
         **pay_context(section, company_user.company),
         **partes_context(section, company_user),
+        **signatures_context(section, company_user),
         **epis_context(section),
         **machines_context(section, company_user.company),
         **(logbook_context() if section == "cdg" else {}),
@@ -708,6 +710,21 @@ class NewUiListView(SuperuserRequiredMixin, View):
             from new_ui.views_notices import render_config
 
             return render_config(request)
+        if section == "doc" and tab in ("firmas", "firmas_guardadas",
+                                        "certificados", "agentes_firma"):
+            # S163 (24/11): las firmas, solo para quien tiene acceso a
+            # ellas (como en la antigua).
+            from new_ui.views_signatures_nui import (
+                can_sign, render_certificates,
+            )
+
+            if not can_sign(_company_user(request)):
+                return HttpResponse(
+                    '<p class="p-2 text-muted small mb-0">Las firmas no '
+                    'son para tu usuario.</p>')
+            if tab == "certificados" and _check_view(request, section,
+                                                     tab):
+                return render_certificates(request)
         if (section, tab) == ("doc", "pagos_config") and _check_view(
                 request, section, tab):
             # S163 (23/11): Horas y pagos › Qué se paga.

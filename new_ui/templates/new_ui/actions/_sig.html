@@ -1,0 +1,94 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_sig.html #}
+{% comment %}
+S163 (24/11). Acciones de Empresa › Firmas, copia de la pestaña Firmas
+de la antigua (panel/templates/panel/signatures/_pane.html): generar
+documentos firmados, descargar y cancelar los marcados, guardar y borrar
+firmas, vincular y dar de baja ordenadores, y los avisos de certificado.
+Solo para quien tiene acceso a las firmas (sig_can). Sin desplegables:
+firma y empresa se eligen con botones.
+{% endcomment %}
+{% if sig_can %}
+{% if sig_alerts %}
+<div class="d-none" data-nui-actions-for="firmas firmas_guardadas certificados agentes_firma">
+    {% for entry in sig_alerts %}
+    <div class="alert {% if entry.level == 'danger' %}alert-danger{% else %}alert-warning{% endif %} small py-1 px-2 mb-2 d-flex align-items-center gap-2">
+        <span class="flex-grow-1"><i class="bi bi-shield-exclamation me-1"></i><strong>{{ entry.company }} ({{ entry.cif }})</strong>:
+        {% if entry.current %}su certificado digital caduca el {{ entry.current.expires|date:"d/m/Y" }} (dentro de {{ entry.days }} días). Conviene renovarlo ya.
+        {% else %}no tiene ningún certificado digital vigente{% if entry.last_expired %} (el último caducó el {{ entry.last_expired|date:"d/m/Y" }}){% endif %}; no puede firmar digitalmente hasta que tenga uno nuevo.{% endif %}</span>
+        <form data-nui-action-form action="{% url 'new_ui:sig_alert_dismiss' %}" class="m-0">
+            {% csrf_token %}<input type="hidden" name="cif" value="{{ entry.cif }}"><input type="hidden" name="key" value="{{ entry.alert_key }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary py-0 text-nowrap">No mostrar más</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+<div class="d-none" data-nui-actions-for="firmas">
+    <form data-nui-action-form data-nui-download action="{% url 'new_ui:sig_generate' %}" class="mb-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-check me-1"></i>Generar documentos firmados</div>
+        <input type="file" name="documents" accept="application/pdf,.pdf" multiple class="form-control form-control-sm mb-1" aria-label="Documentos del cliente (PDF)" required>
+        <div class="small text-muted mb-1">Con qué firma (y de qué empresa):</div>
+        {% if sig_signatures %}
+        <div class="d-flex flex-wrap gap-1 mb-1" role="radiogroup" aria-label="Firma">
+            {% for s in sig_signatures %}
+            <input type="radio" class="btn-check" name="signature" value="{{ s.pk }}" id="nui-sig-{{ s.pk }}" autocomplete="off" required>
+            <label class="btn btn-sm btn-outline-primary" for="nui-sig-{{ s.pk }}">{{ s.label }} · {{ s.company.legal_name }}{% if s.certificate_cif or s.certificate_alias %} <i class="bi bi-shield-check" title="Firma digital"></i>{% endif %}</label>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="small text-danger mb-1">No hay ninguna firma guardada: guárdala en la vista «Firmas».</p>
+        {% endif %}
+        <input type="text" name="person" list="nui-sig-people" class="form-control form-control-sm mb-1" placeholder="Trabajador (solo si el documento lo pide): escribe su nombre" aria-label="Trabajador">
+        <datalist id="nui-sig-people">{% for p in sig_people %}<option value="{{ p.first_surname }}{% if p.second_surname %} {{ p.second_surname }}{% endif %}, {{ p.given_name }}">{% endfor %}</datalist>
+        <label class="form-check small mb-1"><input class="form-check-input" type="checkbox" name="all_pages" value="1"> <span class="form-check-label">Firma digital en todas las páginas (al pie de cada una)</span></label>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-pen me-1"></i>Generar</button>
+        <p class="small text-muted mt-1 mb-0">Con firma de imagen se descargan ya firmados; con certificado van al ordenador de firmas y se descargan aquí cuando estén.</p>
+    </form>
+    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Los documentos marcados</div>
+    <div class="d-flex flex-wrap gap-1">
+        <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:sig_download' %}">
+            {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-download me-1"></i>Descargar los marcados</button>
+        </form>
+        <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:sig_cancel' %}">
+            {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle me-1"></i>Cancelar su lote</button>
+        </form>
+    </div>
+</div>
+<div class="d-none" data-nui-actions-for="firmas_guardadas">
+    <form data-nui-action-form action="{% url 'new_ui:sig_save' %}" class="mb-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-plus-circle me-1"></i>Guardar una firma</div>
+        <div class="small text-muted mb-1">Empresa:</div>
+        <div class="d-flex flex-wrap gap-1 mb-1" role="radiogroup" aria-label="Empresa">
+            {% for p in sig_profiles %}
+            <input type="radio" class="btn-check" name="company" value="{{ p.pk }}" id="nui-sigco-{{ p.pk }}" autocomplete="off" required>
+            <label class="btn btn-sm btn-outline-primary" for="nui-sigco-{{ p.pk }}">{{ p.legal_name }}</label>
+            {% endfor %}
+        </div>
+        <input type="text" name="label" maxlength="120" class="form-control form-control-sm mb-1" placeholder="Quién firma (p. ej. Adolfo)" aria-label="Quién firma" required>
+        <input type="file" name="image" accept="image/*" class="form-control form-control-sm mb-1" aria-label="Imagen de la firma" required>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-save me-1"></i>Guardar</button>
+    </form>
+    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Las firmas marcadas</div>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:sig_mass' %}">
+        {% csrf_token %}<input type="hidden" name="what" value="delete_signatures">
+        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Borrar las marcadas</button>
+    </form>
+    <p class="small text-muted mt-2 mb-0">Pulsa una firma en la lista para ver su imagen y elegir con qué certificado digital firma.</p>
+</div>
+<div class="d-none" data-nui-actions-for="agentes_firma">
+    <form data-nui-action-form action="{% url 'new_ui:sig_agent_create' %}" class="mb-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-shield-lock me-1"></i>Vincular un ordenador</div>
+        <input type="text" name="name" maxlength="120" class="form-control form-control-sm mb-1" placeholder="Nombre (p. ej. Ordenador de Yolanda)" aria-label="Nombre del ordenador">
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-key me-1"></i>Generar código de vinculación</button>
+        <p class="small text-muted mt-1 mb-0">El código sale aquí una sola vez: pégalo en el agente de firmas al instalarlo.</p>
+    </form>
+    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Los ordenadores marcados</div>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:sig_mass' %}">
+        {% csrf_token %}<input type="hidden" name="what" value="disable_agents">
+        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-power me-1"></i>Dar de baja</button>
+    </form>
+</div>
+{% endif %}
