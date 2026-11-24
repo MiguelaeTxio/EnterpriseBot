@@ -253,6 +253,9 @@ class ListDef:
                  period_annotate=None, row_url=None, totals=None,
                  row_title="Parte"):
         self.label = label
+        # S163 (24/11): row_tint(fila) -> tono (0-360) con que se pinta la
+        # fila (p. ej. la familia de un EPI), o None.
+        self.row_tint = None
         # S163 (23/11): period_annotate(qs, desde, hasta) añade a una
         # lista de trabajadores sus datos del periodo (repostajes,
         # partes...) como columnas que se pueden ordenar.
@@ -831,6 +834,20 @@ def _epi_sheets(epi):
         purged_at__isnull=True).values_list("pk", flat=True))
 
 
+def epi_family_hues():
+    """
+    {familia: tono} de los EPIs activos, como en la antigua (S113,
+    Miguel Ángel: «meterle colores por las distintas familias de
+    EPIs»): por orden de familia, ángulo áureo (137,508°) para que los
+    tonos queden lo más separados posible. Misma familia, mismo color.
+    """
+    families = apps.get_model("document_explorer.EpiItemCatalog") \
+        .objects.filter(is_active=True).order_by("family") \
+        .values_list("family", flat=True).distinct()
+    return {family: round((n * 137.508) % 360)
+            for n, family in enumerate(families)}
+
+
 def _epi_family_extra(path):
     """Filtro «Familia» de los EPIs (catálogo o entregas, por `path`)."""
     def options(company):
@@ -841,6 +858,21 @@ def _epi_family_extra(path):
 
     return Extra("familia", "Familia", options,
                  lambda qs, value: qs.filter(**{path: value}))
+
+
+def _epi_row_tint(family_of):
+    """row_tint por familia de EPI; los tonos se releen cada 30 s como
+    mucho (no una consulta por fila)."""
+    import time
+
+    cache = {"at": 0.0, "hues": {}}
+
+    def tint(row):
+        if time.monotonic() - cache["at"] > 30:
+            cache["hues"] = epi_family_hues()
+            cache["at"] = time.monotonic()
+        return cache["hues"].get(family_of(row))
+    return tint
 
 
 def _epi_batches_def():
@@ -3212,6 +3244,8 @@ def list_def(section, tab):
         _CACHE["doc"]["nominas"] = _payslips_def()
         # S163 (24/11): Empresa › EPIs › Lotes; «Familia» en las entregas.
         _CACHE["doc"]["lotes_epis"] = _epi_batches_def()
+        _CACHE["doc"]["catalogo_epis"].row_tint = _epi_row_tint(
+            lambda r: r.family)
         _CACHE["per"]["epis"].extras = list(
             _CACHE["per"]["epis"].extras) + [_epi_family_extra(
                 "epi__family")]
@@ -3438,6 +3472,8 @@ def rows_for(definition, rows, columns):
             "label": item or (cells[0]["value"] if cells else ""),
             "actions": definition.actions(row),
             "open_title": definition.row_title,
+            "tint": definition.row_tint(row) if definition.row_tint
+            else None,
             "open_url": definition.row_url(row) if definition.row_url
             else "",
         })

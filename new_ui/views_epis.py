@@ -471,7 +471,11 @@ class NuiEpiBatchesDeleteView(DocsUploadAccessMixin, View):
 
 
 def _epi_families():
-    """[(familia, [(pk, nombre)])] de los EPIs activos."""
+    """[(familia, [(pk, nombre)], tono)] de los EPIs activos; el tono,
+    el de su familia (mismo color que en el catálogo)."""
+    from new_ui.lists import epi_family_hues
+
+    hues = epi_family_hues()
     groups, order = {}, []
     for epi in EpiItemCatalog.objects.filter(is_active=True).order_by(
             "family", "label"):
@@ -479,7 +483,8 @@ def _epi_families():
             groups[epi.family] = []
             order.append(epi.family)
         groups[epi.family].append((epi.pk, epi.label))
-    return [(family, groups[family]) for family in order]
+    return [(family, groups[family], hues.get(family, 0))
+            for family in order]
 
 
 class EpiItemSheetView(DocsUploadAccessMixin, View):
@@ -539,13 +544,6 @@ def epis_context(section):
     # S163 (23/11): el catálogo de EPIs está en Empresa.
     if section not in ("per", "doc"):
         return {}
-    groups, order = {}, []
-    for epi in EpiItemCatalog.objects.filter(is_active=True).order_by(
-            "family", "label"):
-        if epi.family not in groups:
-            groups[epi.family] = []
-            order.append(epi.family)
-        groups[epi.family].append((epi.pk, epi.label))
     batches = [
         {"pk": b.pk, "name": b.name,
          "items": ",".join(str(pk) for pk in b.items.values_list(
@@ -553,7 +551,7 @@ def epis_context(section):
         for b in EpiDeliveryBatchTemplate.objects.order_by("name")
     ]
     return {
-        "epi_groups": [(family, groups[family]) for family in order],
+        "epi_groups": _epi_families(),
         "epi_batches": batches,
         "nui_today": timezone.localdate().isoformat(),
     }

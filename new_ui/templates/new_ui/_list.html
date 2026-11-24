@@ -20,7 +20,7 @@ Acciones › Esta fila al marcarla, y en su botón derecho.
     </thead>
     <tbody>
         {% for row in rows %}
-        <tr{% if row.open_url %} data-nui-open="{{ row.open_url }}" data-nui-open-title="{{ row.open_title|default:'Parte' }}" class="nui-openable" title="Pulsa para verlo"{% endif %}>
+        <tr{% if row.open_url %} data-nui-open="{{ row.open_url }}" data-nui-open-title="{{ row.open_title|default:'Parte' }}" class="nui-openable" title="Pulsa para verlo"{% endif %}{% if row.tint is not None %} data-nui-tint style="--nui-hue: {{ row.tint }}"{% endif %}>
             <td><input type="checkbox" class="form-check-input nui-rowmark" value="{{ row.pk }}" data-label="{{ row.label }}" aria-label="Seleccionar {{ row.label }}"></td>
             {% for cell in row.cells %}
             {% if cell.entity and row.entity_pk %}

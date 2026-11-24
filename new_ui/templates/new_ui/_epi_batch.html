@@ -6,9 +6,11 @@
         <input type="text" id="nui-epib-name" name="name" value="{{ batch.name|default:'' }}" maxlength="150" class="form-control form-control-sm mb-2" placeholder="P. ej. Gruista nuevo" required>
         <div class="text-muted mb-1">EPIs que lleva:</div>
         <div class="border rounded px-2 py-1 mb-2" style="max-height: 22rem; overflow-y: auto;">
-            {% for family, items in families %}
-            <div class="fw-semibold text-muted mt-1">{{ family }}</div>
+            {% for family, items, hue in families %}
+            <div class="nui-family-tint mt-1" style="--nui-hue: {{ hue }}">
+            <div class="fw-semibold text-muted">{{ family }}</div>
             <div class="d-flex flex-wrap column-gap-3">{% for pk, label in items %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="item_ids" value="{{ pk }}"{% if pk in chosen %} checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>{% endfor %}</div>
+            </div>
             {% empty %}
             <div class="text-muted">No hay EPIs en el catálogo.</div>
             {% endfor %}
