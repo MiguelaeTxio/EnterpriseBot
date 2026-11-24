@@ -1624,14 +1624,15 @@
             clearInterval(reqCountdown);
             if (ask.hasAttribute("data-nui-req-delete-cancel")) { panel.classList.add("d-none"); return; }
             panel.classList.remove("d-none");
-            let n = 5;
-            btn.disabled = true; left.textContent = "(" + n + ")";
+            // Cuenta por reloj (no por ticks), para que sean 5 s de verdad.
+            const end = Date.now() + 5000;
+            btn.disabled = true; left.textContent = "(5)";
             reqCountdown = setInterval(function () {
-                n -= 1;
+                const n = Math.ceil((end - Date.now()) / 1000);
                 if (n > 0) { left.textContent = "(" + n + ")"; return; }
                 clearInterval(reqCountdown);
                 left.textContent = ""; btn.disabled = false;
-            }, 1000);
+            }, 200);
         });
         document.addEventListener("click", function (ev) {
             const btn = ev.target.closest("[data-nui-req-swap]");
