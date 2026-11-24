@@ -549,6 +549,12 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'document_explorer.tasks.consume_quarantine_task',
         'schedule': crontab(minute='*/5'),
     },
+    # S156: nombres canónicos al día (los «_SINFECHA» que ya tienen fecha
+    # y la documentación CAE tipada), cada 10 minutos.
+    'canonical-names': {
+        'task':     'document_explorer.tasks.canonical_names_task',
+        'schedule': crontab(minute='3-59/10'),
+    },
 
     # H30 (S123), punto 7: alerta por WhatsApp si el agente H28 lleva
     # más de 15 minutos sin latido (una vez por caída, y al volver).

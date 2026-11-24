@@ -508,6 +508,29 @@ def _relocate_cae_entries():
     return len(entries)
 
 
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def canonical_names_task(self) -> str:
+    """
+    Periodic sweep keeping canonical names in step (S156).
+    ---
+    Barrido periódico de nombres canónicos (S156): los «_SINFECHA» de
+    personas y máquinas que ya tienen fecha y la documentación CAE
+    tipada que aún tiene el nombre de OneDrive.
+    """
+    from document_explorer.canonical_names import (
+        rename_cae, rename_dated_sinfecha,
+    )
+
+    dated = rename_dated_sinfecha()
+    cae = rename_cae()
+    if dated or cae:
+        logger.info(
+            "# [canonical_names_task] %d «_SINFECHA» con fecha y %d CAE "
+            "renombrados.", dated, cae,
+        )
+    return "%d/%d" % (dated, cae)
+
+
 def _is_transient_gemini_error(text):
     """
     Whether a classification error text is a transient Gemini failure.
