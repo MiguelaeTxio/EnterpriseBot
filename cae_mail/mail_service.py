@@ -354,6 +354,17 @@ def _ask_gemini(original):
     return json.loads(response.text.strip())
 
 
+def _bmp(text):
+    """Text without characters outside the BMP (emojis).
+    ---
+    Texto sin caracteres fuera del plano básico (emojis): las columnas
+    de MySQL de esta base no los admiten (aviso 2, «👍» en el cuerpo:
+    OperationalError 1366). Se cambian por «?».
+    """
+    return "".join(
+        char if ord(char) <= 0xFFFF else "?" for char in (text or ""))
+
+
 def process_mail(mail_id, final=False):
     """
     Read one notice and store what it asks for.
@@ -375,11 +386,11 @@ def process_mail(mail_id, final=False):
         mail.error = "No se pudo abrir el correo: %s" % exc
         mail.save(update_fields=["status", "error"])
         return mail.status
-    mail.sender_name = original["sender_name"][:255]
-    mail.sender_address = original["sender_address"][:255]
-    mail.subject = original["subject"][:500]
+    mail.sender_name = _bmp(original["sender_name"])[:255]
+    mail.sender_address = _bmp(original["sender_address"])[:255]
+    mail.subject = _bmp(original["subject"])[:500]
     mail.received_at = original["received_at"]
-    mail.body_text = original["body_text"]
+    mail.body_text = _bmp(original["body_text"])
     try:
         result = _ask_gemini(original)
     except Exception as exc:  # noqa: BLE001
@@ -398,7 +409,7 @@ def process_mail(mail_id, final=False):
                          or result.get("platform", ""))[:100]
         mail.client = result.get("client", "")[:255]
         mail.our_company = result.get("our_company", "")[:255]
-        mail.summary = result.get("summary", "")
+        mail.summary = _bmp(result.get("summary", ""))
         demands = result.get("demands") or []
         mail.has_detail = bool(result.get("has_detail")) and bool(demands)
         mail.status = CaeMail.STATUS_PROCESSED
