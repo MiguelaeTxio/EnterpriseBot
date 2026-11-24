@@ -171,6 +171,31 @@ def _type_code(section, rest, name):
     return None
 
 
+def _history_type_code(name):
+    """Catalogue code of a file of a past month, by its name, or None.
+    ---
+    Tipo de un archivo de un mes anterior (carpeta «CERTIF. SS. SS.,
+    TC´S Y HACIENDA/<año>/<mes>» de cada empresa) por su nombre: «TC1 TR
+    ABRIL», «CERT AEAT TRANSGRUAL», «CERTIF CORRIENTE TRANSGRU», «ITA
+    TRANSGRUAL», «VIDA LABORAL ...». Los que solo traen un número o
+    dicen «TGSS» a secas no se saben: sin tipo.
+    """
+    words = set(re.split(r"[^A-Z0-9]+", name))
+    if "TC1" in words:
+        return "TC1_EMPRESA"
+    if "TC2" in words:
+        return "TC2_EMPRESA"
+    if "VIDA LABORAL" in name:
+        return "VIDA_LABORAL_EMPRESA"
+    if "ITA" in words:
+        return "ITA_EMPRESA"
+    if "AEAT" in words or "HACIENDA" in words:
+        return "CERT_CORRIENTE_AEAT"
+    if "CORRIENT" in name or "CERTF" in words or "CERTIF" in words:
+        return "CERT_CORRIENTE_SS_EMPRESA"
+    return None
+
+
 def _file_date(name, folders):
     """Date of a CAE file from its name, else from its month folder.
     ---
@@ -230,14 +255,18 @@ def type_cae_entry(entry):
     folders = [
         _plain(part) for part in entry.parent_path[len(prefix):].split("/")
     ]
-    # [0] = "00 DOCUMENTACION MENSUAL 2026" / "00 OBRAS EN EJECUCION 2026".
-    if len(folders) < 2 or "DOCUMENTACION MENSUAL" not in folders[0]:
-        return False
-    section = folders[1]
-    rest = " / ".join(folders[2:])
     name = _plain(entry.name)
-
-    code = _type_code(section, rest, name)
+    # [0] = "00 DOCUMENTACION MENSUAL 2026" / "00 OBRAS EN EJECUCION 2026".
+    if len(folders) >= 2 and "DOCUMENTACION MENSUAL" in folders[0]:
+        code = _type_code(folders[1], " / ".join(folders[2:]), name)
+        company_text = " / ".join(folders[1:] + [name])
+    elif any("Y HACIENDA" in folder for folder in folders):
+        # Meses anteriores en la carpeta de cada empresa: la empresa, por
+        # la ruta (el nombre lleva abreviaturas como «TR»).
+        code = _history_type_code(name)
+        company_text = " / ".join(folders)
+    else:
+        return False
     if code is None:
         return False
     document_type = DocumentTypeCatalog.objects.filter(code=code).first()
@@ -248,7 +277,7 @@ def type_cae_entry(entry):
     fields = ["document_type"]
     entry.document_type = document_type
 
-    tax_id = _company_tax_id(" / ".join(folders[1:] + [name]))
+    tax_id = _company_tax_id(company_text)
     company = (
         CompanyFiscalProfile.objects.filter(tax_id=tax_id).first()
         if tax_id else None

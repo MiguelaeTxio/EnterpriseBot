@@ -156,6 +156,9 @@ CAE_QUARANTINE_PREFIXES = (
     QUARANTINE_PREFIX + "00 OBRAS EN EJECUCION",
 )
 CAE_CLASSIFIED_MARK = "/SEGURO ACCIDENTE Y RC EMPRESARIAL Y PATRONAL"
+# S156: meses anteriores (2023-2025) en la carpeta de cada empresa:
+# DOC. <EMPRESA>/.../CERTIF. SS. SS., TC´S Y HACIENDA/<año>/<mes>.
+CAE_HISTORY_MARK = "S Y HACIENDA/20"
 # Carpeta propia del cubo donde se dejan, con su ruta de OneDrive.
 CAE_ROOT = "DOC. EMPRESA/DOCUMENTACION CAE"
 
@@ -173,6 +176,8 @@ def cae_quarantine_q(field="parent_path"):
     matched = Q()
     for prefix in CAE_QUARANTINE_PREFIXES:
         matched |= Q(**{field + "__startswith": prefix})
+    matched |= Q(**{field + "__startswith": QUARANTINE_PREFIX + "DOC. "}) & Q(
+        **{field + "__contains": CAE_HISTORY_MARK})
     return matched & ~Q(**{field + "__contains": CAE_CLASSIFIED_MARK})
 
 
