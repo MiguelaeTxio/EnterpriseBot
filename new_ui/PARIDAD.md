@@ -292,7 +292,7 @@ Ficha, QR, Avisos, Revisiones, Lecturas, Averías y Libro historial
   borrar las marcadas; al pulsar una: imagen y con qué certificado firma),
   Certificados (vigencia por empresa), Agentes (vincular un ordenador con
   su código, dar de baja) y avisos de caducidad con «No mostrar más»
-- ⬜ Seguros: lista, libro mayor (subir, empresa), nuevo, acciones, exportar
+- ✅ (S163, 24/11) Seguros (solo con acceso a seguros): lista con las columnas y filtros de la antigua; al pulsar un informe, su ventana (meses, empresas, libros, estado que se actualiza solo, Ver, HTML, Excel, PDF, Word, volver a generar, borrar con 5 s); Nuevo informe en ventana (meses, empresas, título, libros mayores: marcar, subir y elegir empresa con botones)
 
 ## Coordinación (CAE)
 - ⬜ (S156) Correos CAE (Empresa › Coordinación › Correos CAE): lista de
