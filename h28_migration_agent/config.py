@@ -414,6 +414,20 @@ CAE_FOLDERS = (
     "00 DOCUMENTACION MENSUAL 2026/CERTIFICADOS HABERES PAGOS NOMINAS",
     "00 DOCUMENTACION MENSUAL 2026/EPIS",
     "00 OBRAS EN EJECUCION 2026",
+) + tuple(
+    # S156: TC, certificados de la SS y de Hacienda, ITA y vida laboral
+    # de meses anteriores (las plataformas piden desde 2023), en la
+    # carpeta de cada empresa.
+    "%s/%s" % (company_folder, year)
+    for company_folder in (
+        "DOC. GRUAS ALVAREZ/GRUAS ALVAREZ/CERTIF. SS. SS., TC\u00b4S Y "
+        "HACIENDA",
+        "DOC. TRANSGRUAL/TRANSGRUAL/CERTIF. SS.SS., TC\u00b4S Y HACIENDA",
+        "DOC. GRUALDI/CERTIF. SS. SS., TC\u00b4S Y HACIENDA",
+        "DOC. ASISTENCIA Y GRUAS GRANADA/CERTIF. SS. SS., TC\u00b4S Y "
+        "HACIENDA",
+    )
+    for year in ("2023", "2024", "2025")
 )
 
 
