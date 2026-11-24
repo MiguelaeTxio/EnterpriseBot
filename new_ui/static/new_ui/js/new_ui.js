@@ -526,8 +526,8 @@
                     title.textContent = "Con " + who;
                     // Marcado uno solo sin abrirlo: lo suyo sale al abrirlo.
                     const closed = mark && !hasRow && !scoped && !forced;
-                    hint.textContent = closed ? "Pulsa su nombre en la lista para ver aquí todo lo suyo (o usa las acciones de «Con 1 … seleccionado»)." : "";
-                    hint.classList.toggle("d-none", !closed);
+                    hint.textContent = closed && section !== "doc" ? "Pulsa su nombre en la lista para ver aquí todo lo suyo (o usa las acciones de «Con 1 … seleccionado»)." : "";
+                    hint.classList.toggle("d-none", !hint.textContent);
                 } else {
                     if (section === "doc") {
                         // En Empresa no hay personas ni máquinas abiertas.
@@ -1222,6 +1222,16 @@
             const mark = map.size === 1 && listBox ? listBox.querySelector('.nui-rowmark[value="' + CSS.escape(Array.from(map.keys())[0]) + '"]') : null;
             // «Ver su ficha» no se repite aquí: es el botón derecho.
             const items = mark ? Array.from(mark.closest("tr").querySelectorAll("[data-nui-row-actions] .dropdown-item")).filter(i => !i.hasAttribute("data-nui-scope")) : [];
+            // S163 (24/11): una fila que se abre en el visor (un requisito,
+            // un parte, una firma...) tiene aquí su «Abrir».
+            const tr = mark ? mark.closest("tr[data-nui-open]") : null;
+            if (tr) {
+                const open = document.createElement("a");
+                open.href = "#";
+                open.innerHTML = '<i class="bi bi-box-arrow-up-right me-1"></i>Abrir';
+                open.addEventListener("click", function (ev) { ev.preventDefault(); window.nuiOpenViewer(tr.dataset.nuiOpen, null, tr.dataset.nuiOpenTitle); });
+                items.unshift(open);
+            }
             if (!items.length) {
                 box.setAttribute("data-nui-empty", "");
                 return;
