@@ -1,0 +1,52 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_safety_deliver.html #}
+{% comment %}
+S163 (24/11). Ventana «Entregar extintores y botiquines»: destino (los
+centros de gasto marcados), a quién (DNI con autocompletar), fecha y una
+línea por elemento (botiquín o extintor, nº de serie y fechas). Al
+entregar: una entrega por elemento y centro de gasto, un documento de
+entrega para firmar y la confirmación por WhatsApp. Vista:
+new_ui/views_safety.py (SafetyDeliverFormView / SafetyDeliverView).
+{% endcomment %}
+<form data-nui-action-form data-nui-viewer-close-after action="{% url 'new_ui:safety_deliver' %}" class="small" data-nui-lines>
+    {% csrf_token %}
+    <div class="mb-2">
+        <span class="fw-semibold">Destino:</span>
+        {% for m in machines %}<input type="hidden" name="machine_ids" value="{{ m.pk }}"><span class="badge text-bg-light border me-1">{{ m.code }} {{ m.brand_model }}</span>{% endfor %}
+    </div>
+    <div class="row g-2 mb-2">
+        <div class="col-12 col-md-7">
+            <label class="text-muted d-block" for="nui-sd-dni">A quién se entrega (DNI) *</label>
+            <input id="nui-sd-dni" name="dni" list="nui-sd-people" class="form-control form-control-sm" placeholder="Escribe el DNI" autocomplete="off" required>
+            <datalist id="nui-sd-people">{% for p in people %}<option value="{{ p.dni }}">{{ p.first_surname }} {{ p.second_surname }}, {{ p.given_name }}</option>{% endfor %}</datalist>
+        </div>
+        <div class="col-12 col-md-5">
+            <label class="text-muted d-block" for="nui-sd-date">Fecha de entrega *</label>
+            <input id="nui-sd-date" type="date" name="delivery_date" value="{{ today }}" class="form-control form-control-sm" required>
+        </div>
+    </div>
+    <div class="fw-semibold mb-1">Qué se entrega</div>
+    <div data-nui-line-box>
+        <div class="border rounded p-2 mb-2" data-nui-line>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Qué">
+                    {% for item in items %}
+                    <input type="radio" class="btn-check" name="epi_id_0" value="{{ item.pk }}" id="nui-sd-0-{{ item.pk }}" autocomplete="off" required>
+                    <label class="btn btn-outline-primary py-0" for="nui-sd-0-{{ item.pk }}">{{ item.label }}</label>
+                    {% endfor %}
+                </div>
+                <button type="button" class="btn btn-sm btn-link text-danger ms-auto py-0" data-nui-line-remove>Quitar esta línea</button>
+            </div>
+            <div class="row g-1">
+                <div class="col-12 col-md-3"><label class="text-muted d-block">Nº de serie o matrícula</label><input name="serial_0" class="form-control form-control-sm"></div>
+                <div class="col-4 col-md-3"><label class="text-muted d-block">Caducidad</label><input type="date" name="expiry_0" class="form-control form-control-sm"></div>
+                <div class="col-4 col-md-3"><label class="text-muted d-block">Próxima revisión</label><input type="date" name="review_0" class="form-control form-control-sm"></div>
+                <div class="col-4 col-md-3"><label class="text-muted d-block">Retimbrado</label><input type="date" name="retimbrado_0" class="form-control form-control-sm"></div>
+            </div>
+        </div>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-primary mb-2" data-nui-line-add><i class="bi bi-plus-circle me-1"></i>Añadir otro extintor o botiquín</button>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Entregar</button>
+        <span class="text-muted">Se genera un documento de entrega para firmar (en los documentos de la persona) y se le manda la confirmación por WhatsApp. Las fechas son opcionales y avisan 30 días antes{% if machines|length > 1 %}; con varios centros de gasto, sin número de serie{% endif %}.</span>
+    </div>
+</form>

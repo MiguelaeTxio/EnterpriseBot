@@ -32,7 +32,7 @@ from django.views import View
 
 from document_explorer import document_notice_service as notices
 from document_explorer.models import (
-    DocumentTypeCatalog, JobPosition, NoticeAppointmentRequest,
+    DocumentTypeCatalog, EpiDelivery, JobPosition, NoticeAppointmentRequest,
     NoticeRecipientScope, PersonGroupTemplate, PersonIdentity,
     RequirementAlertRule,
 )
@@ -238,7 +238,13 @@ def _texts(notice):
     Las dos líneas de cada aviso (cuándo y qué), resueltas aquí para
     que la plantilla solo pinte.
     """
-    if getattr(notice, "is_service", False):
+    if getattr(notice, "safety_delivery_id", None):
+        # S163 (24/11): extintores y botiquines.
+        notice.when_text = ("vencido" if notice.kind == notices.KIND_EXPIRED
+                            else "próximo")
+        notice.what_text = "%s — %s" % (notice.document_label,
+                                        notice.service_text)
+    elif getattr(notice, "is_service", False):
         notice.when_text = ("revisión vencida"
                             if notice.kind == notices.KIND_EXPIRED
                             else "revisión próxima")
@@ -703,8 +709,12 @@ class NoticeSheetView(SuperuserRequiredMixin, View):
             "upload_domain": "personal" if is_personal else "machine",
             "is_missing": notice.kind == notices.KIND_MISSING,
             "goto_section": "per" if is_personal else "cdg",
-            "goto_tab": ("revisiones" if notice.is_service
+            "goto_tab": ("seguridad_reg" if notice.safety_delivery_id
+                         else "revisiones" if notice.is_service
                          else "documentos"),
+            "safety": (EpiDelivery.objects.select_related("epi", "person")
+                       .filter(pk=notice.safety_delivery_id).first()
+                       if notice.safety_delivery_id else None),
         })
 
 

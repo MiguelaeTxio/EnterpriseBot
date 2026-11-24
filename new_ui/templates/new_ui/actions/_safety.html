@@ -1,22 +1,8 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_safety.html -- S163 (23/11): Centros de gasto › Seguridad: entregar un extintor o botiquín para los marcados (o el abierto) y, en su ficha, cambiar las fechas o quitarlos. Vista: new_ui/views_safety.py. #}
 <div class="d-none" data-nui-actions-for="seguridad">
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_deliver' %}" class="mb-3" data-nui-reset-after>
-        {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-fire me-1"></i>Entregar un extintor o botiquín</div>
-        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Qué">
-            {% for item in nui_safety_items %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="epi_id" value="{{ item.pk }}" required> {{ item.label }}</label>{% endfor %}
-        </div>
-        <div class="row g-1 small mb-1">
-            <div class="col-7"><label class="text-muted d-block">A quién se entrega *</label><input name="person" class="form-control form-control-sm" placeholder="DNI o nombre y apellido" required></div>
-            <div class="col-5"><label class="text-muted d-block">Fecha *</label><input type="date" name="delivery_date" class="form-control form-control-sm" required></div>
-            <div class="col-12"><label class="text-muted d-block">Nº de serie o matrícula (con número, un solo centro)</label><input name="serial_number" class="form-control form-control-sm"></div>
-            <div class="col-4"><label class="text-muted d-block">Caducidad</label><input type="date" name="expiry_date" class="form-control form-control-sm"></div>
-            <div class="col-4"><label class="text-muted d-block">Próxima revisión</label><input type="date" name="review_date" class="form-control form-control-sm"></div>
-            <div class="col-4"><label class="text-muted d-block">Retimbrado</label><input type="date" name="retimbrado_date" class="form-control form-control-sm"></div>
-        </div>
-        <button type="submit" class="btn btn-sm btn-primary">Entregar</button>
-        <p class="small text-muted mb-0">Las fechas, todas opcionales; avisan 30 días antes.</p>
-    </form>
+    {# S163 (24/11): entregar abre su ventana (varios elementos, documento para firmar y WhatsApp). #}
+    <button type="button" class="btn btn-sm btn-success" data-nui-viewer-url="{% url 'new_ui:safety_deliver_form' %}" data-nui-viewer-title="Entregar extintores y botiquines" data-nui-with-selection><i class="bi bi-fire me-1"></i>Entregar extintores o botiquines…</button>
+    <p class="small text-muted mt-1 mb-0">Para los centros de gasto marcados (o el abierto).</p>
 </div>
 <div class="d-none" data-nui-actions-for="seguridad_reg">
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_rows' %}" class="mb-3" data-nui-reset-after>
@@ -30,9 +16,19 @@
         <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
         <span class="small text-muted">Las que dejes vacías no cambian.</span>
     </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_rows' %}" class="mb-3">
-        {% csrf_token %}<input type="hidden" name="action" value="delete">
-        <div class="small fw-semibold mb-1"><i class="bi bi-trash me-1"></i>Quitar</div>
-        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Quitar los marcados? Se borran sus entregas.">Quitar los marcados</button>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_rows' %}" class="mb-3" data-nui-reset-after>
+        {% csrf_token %}<input type="hidden" name="action" value="retire">
+        <div class="small fw-semibold mb-1"><i class="bi bi-box-arrow-right me-1"></i>Retirar o sustituir</div>
+        <div class="row g-1 small mb-1">
+            <div class="col-5"><label class="text-muted d-block">Fecha</label><input type="date" name="retired_at" class="form-control form-control-sm"></div>
+            <div class="col-7"><label class="text-muted d-block">Motivo</label><input name="retired_note" maxlength="200" class="form-control form-control-sm" placeholder="p. ej. caducado, sustituido por otro"></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Retirar los marcados</button>
+        <span class="small text-muted">Quedan en el historial y dejan de avisar. Sin fecha, hoy.</span>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_rows' %}" class="mb-3 d-flex flex-wrap gap-1">
+        {% csrf_token %}
+        <button type="submit" name="action" value="unretire" class="btn btn-sm btn-outline-success">Volver a ponerlos en uso</button>
+        <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar los marcados? Solo si la entrega se registró por error: desaparece del historial.">Borrar (registrado por error)</button>
     </form>
 </div>

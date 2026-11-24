@@ -209,6 +209,9 @@ urlpatterns = [
     # Centros de gasto › Seguridad (S163, 23/11).
     path("seguridad/entregar/", views_safety.SafetyDeliverView.as_view(),
          name="safety_deliver"),
+    path("seguridad/entregar/ventana/",
+         views_safety.SafetyDeliverFormView.as_view(),
+         name="safety_deliver_form"),
     path("seguridad/marcados/", views_safety.SafetyRowsView.as_view(),
          name="safety_rows"),
     # Empresa › Nóminas (S163, 23/11).

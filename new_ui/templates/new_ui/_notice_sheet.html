@@ -57,5 +57,31 @@ médico e ir a su ficha. Vista: new_ui/views_notices.py (NoticeSheetView).
     </form>
     {% endif %}
 
-    <button type="button" class="btn btn-sm btn-outline-primary" data-nui-goto="{{ goto_section }}" data-tab="{{ goto_tab }}" data-pk="{{ notice.subject_id }}" data-label="{{ notice.subject_label }}"><i class="bi bi-box-arrow-up-right me-1"></i>Ir a su ficha ({% if notice.is_service %}revisiones{% else %}documentos{% endif %})</button>
+    {% if safety %}
+    <div class="border rounded p-2 mb-2">
+        <div class="fw-semibold mb-1"><i class="bi bi-fire me-1"></i>{{ safety.epi.label }}{% if safety.serial_number %} nº {{ safety.serial_number }}{% endif %}</div>
+        <div class="text-muted mb-1">Entregado a {{ safety.person.given_name }} {{ safety.person.first_surname }} el {{ safety.delivery_date|date:"d/m/Y" }}.{% if safety.source_entry_id %} <a href="{% url 'new_ui:document_file' safety.source_entry_id %}" target="_blank" rel="noopener">Ver el documento de entrega</a>{% endif %}</div>
+        <form data-nui-action-form action="{% url 'new_ui:safety_rows' %}" class="mb-2">
+            {% csrf_token %}<input type="hidden" name="pk" value="{{ safety.pk }}"><input type="hidden" name="action" value="dates">
+            <div class="fw-semibold">Cambiar las fechas (lo revisado, retimbrado o renovado)</div>
+            <div class="d-flex flex-wrap align-items-end gap-1">
+                <div><label class="text-muted d-block">Caducidad</label><input type="date" name="expiry_date" value="{{ safety.expiry_date|date:'Y-m-d' }}" class="form-control form-control-sm"></div>
+                <div><label class="text-muted d-block">Próxima revisión</label><input type="date" name="review_date" value="{{ safety.review_date|date:'Y-m-d' }}" class="form-control form-control-sm"></div>
+                <div><label class="text-muted d-block">Retimbrado</label><input type="date" name="retimbrado_date" value="{{ safety.retimbrado_date|date:'Y-m-d' }}" class="form-control form-control-sm"></div>
+                <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
+            </div>
+        </form>
+        <form data-nui-action-form action="{% url 'new_ui:safety_rows' %}">
+            {% csrf_token %}<input type="hidden" name="pk" value="{{ safety.pk }}"><input type="hidden" name="action" value="retire">
+            <div class="fw-semibold">Retirarlo o sustituirlo</div>
+            <div class="d-flex flex-wrap align-items-end gap-1">
+                <div><label class="text-muted d-block">Fecha</label><input type="date" name="retired_at" class="form-control form-control-sm"></div>
+                <div class="flex-grow-1"><label class="text-muted d-block">Motivo</label><input name="retired_note" maxlength="200" class="form-control form-control-sm" placeholder="p. ej. sustituido por el nº …"></div>
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Retirar</button>
+            </div>
+            <div class="text-muted mt-1">Queda en el historial y deja de avisar. Para dar el nuevo: su ficha › Seguridad › Entregar.</div>
+        </form>
+    </div>
+    {% endif %}
+    <button type="button" class="btn btn-sm btn-outline-primary" data-nui-goto="{{ goto_section }}" data-tab="{{ goto_tab }}" data-pk="{{ notice.subject_id }}" data-label="{{ notice.subject_label }}"><i class="bi bi-box-arrow-up-right me-1"></i>Ir a su ficha ({% if safety %}seguridad{% elif notice.is_service %}revisiones{% else %}documentos{% endif %})</button>
 </div>

@@ -108,6 +108,8 @@ class DocumentNotice:
     # (fleet.service_plan_service). `service_due` (lectura a la que
     # toca) entra en la clave: una revisión nueva cambia el aviso.
     is_service: bool = False
+    # S163 (24/11): aviso de un extintor o botiquín (su entrega).
+    safety_delivery_id: int = None
     service_due: str = ""
     service_text: str = ""
 
@@ -397,6 +399,13 @@ def compute_notices(domain, include_service=False):
         from fleet.service_plan_service import compute_service_notices
 
         pending.extend(compute_service_notices())
+        # S163 (24/11): caducidad, revisión y retimbrado de los
+        # extintores y botiquines de cada centro de gasto.
+        from document_explorer.safety_notice_service import (
+            compute_safety_notices,
+        )
+
+        pending.extend(compute_safety_notices())
         pending.sort(key=_pending_sort_key)
     return pending, scheduled, calendar_items
 

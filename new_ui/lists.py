@@ -1677,7 +1677,19 @@ def _per_lists():
                     "delivery_date", "text-nowrap"),
                 Col("maquina", "Máquina", lambda r: machine_label(
                     r.destination_machine), "destination_machine__code"),
-            ], "delivery_date", search=("epi__label",),
+                # S163 (24/11): de los extintores y botiquines.
+                Col("serie", "Nº de serie o matrícula",
+                    lambda r: r.serial_number, "serial_number"),
+                Col("caducidad", "Caducidad", lambda r: fmt_date(
+                    r.expiry_date), "expiry_date", "text-nowrap"),
+                Col("revision", "Próxima revisión", lambda r: fmt_date(
+                    r.review_date), "review_date", "text-nowrap"),
+                Col("retimbrado", "Retimbrado", lambda r: fmt_date(
+                    r.retimbrado_date), "retimbrado_date", "text-nowrap"),
+                Col("situacion", "Situación", lambda r: (
+                    "Retirado el %s" % fmt_date(r.retired_at))
+                    if r.retired_at else "", "retired_at"),
+            ], "delivery_date", search=("epi__label", "serial_number"),
             default_order=("-delivery_date",),
             actions=_epi_delivery_actions,
             note="Periodo: fecha de entrega."),
@@ -2150,7 +2162,8 @@ def _annotate_seguridad(qs, start, end):
     from new_ui.views_safety import safety_q
 
     rows = apps.get_model("document_explorer.EpiDelivery").objects.filter(
-        safety_q(), destination_machine=OuterRef("pk"))
+        safety_q(), destination_machine=OuterRef("pk"),
+        retired_at__isnull=True)
 
     def first(field):
         return Subquery(rows.exclude(**{field: None}).order_by().values(
@@ -2159,10 +2172,12 @@ def _annotate_seguridad(qs, start, end):
     return qs.annotate(
         nui_ext=_count("document_explorer.EpiDelivery",
                        "destination_machine", "", None, None, extra={
-                           "epi__label__icontains": "extint"}),
+                           "epi__label__icontains": "extint",
+                           "retired_at__isnull": True}),
         nui_bot=_count("document_explorer.EpiDelivery",
                        "destination_machine", "", None, None, extra={
-                           "epi__label__icontains": "botiqu"}),
+                           "epi__label__icontains": "botiqu",
+                           "retired_at__isnull": True}),
         nui_cad=first("expiry_date"), nui_revi=first("review_date"),
         nui_ret=first("retimbrado_date"))
 
@@ -2251,24 +2266,41 @@ def _safety_records_def(order=("-delivery_date",)):
             Col("retimbrado", "Retimbrado",
                 lambda r: fmt_date(r.retimbrado_date), "retimbrado_date",
                 "text-nowrap"),
-            Col("proxima", "Próxima fecha", lambda r: _next_safety_date(
-                r, ("expiry_date", "review_date", "retimbrado_date"))),
-        ], "delivery_date", search=("serial_number", "epi__label"),
+            Col("proxima", "Próxima fecha", lambda r: "" if r.retired_at
+                else _next_safety_date(
+                    r, ("expiry_date", "review_date", "retimbrado_date"))),
+            # S163 (24/11): los retirados se quedan, con su fecha y motivo.
+            Col("situacion", "Situación", lambda r: (
+                "Retirado el %s%s" % (fmt_date(r.retired_at),
+                                      ": " + r.retired_note
+                                      if r.retired_note else ""))
+                if r.retired_at else "En uso", "retired_at"),
+            Col("documento", "Documento de entrega", lambda r: "Sí"
+                if r.source_entry_id else "", "source_entry"),
+        ], "delivery_date", search=("serial_number", "epi__label",
+                                    "person__dni", "person__first_surname"),
         default_order=order,
-        note="Periodo: fecha de entrega.")
+        note="Periodo: fecha de entrega. Los retirados siguen en la lista "
+             "(Situación) y no avisan.")
     base = definition.queryset
     definition.queryset = lambda company: base(company).filter(safety_q())
+    definition.actions = _epi_delivery_actions
 
     def soon(qs, value):
         limit = timezone.localdate() + datetime.timedelta(days=WARN_DAYS)
         near = (Q(expiry_date__lte=limit) | Q(review_date__lte=limit)
                 | Q(retimbrado_date__lte=limit))
+        qs = qs.filter(retired_at__isnull=True)
         return qs.filter(near) if value == "si" else qs.exclude(near)
 
     definition.extras.append(Extra(
         "vence", "Vence", lambda company: [
             ("si", "En 30 días o ya vencido"), ("no", "Más adelante")],
         apply=soon))
+    definition.extras.append(Extra(
+        "situacion", "Situación", lambda company: [
+            ("uso", "En uso"), ("retirado", "Retirados")],
+        apply=lambda qs, v: qs.filter(retired_at__isnull=v == "uso")))
     return definition
 
 

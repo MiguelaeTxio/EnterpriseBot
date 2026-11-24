@@ -754,7 +754,12 @@
                     f.querySelectorAll("[data-nui-countdown-box]").forEach(b => b.classList.add("d-none"));
                     if (f.hasAttribute("data-nui-dirty")) { const c = f.closest(".card"); const b = c && c.querySelector("[data-nui-dirty-badge]"); if (b) b.classList.add("d-none"); }
                     const closeOn = f.dataset.nuiViewerCloseOn;
-                    if (closeOn && submitter && submitter.value === closeOn) {
+                    if (f.hasAttribute("data-nui-viewer-close-after")) {
+                        // Hecho lo de la ventana (p. ej. una entrega): se cierra.
+                        const modal = document.getElementById("nui-viewer");
+                        if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
+                        result(data.message || "Hecho.", false);
+                    } else if (closeOn && submitter && submitter.value === closeOn) {
                         // Lo abierto en el visor ya no existe (p. ej. requisito eliminado).
                         const modal = document.getElementById("nui-viewer");
                         if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
@@ -985,6 +990,30 @@
             const subject = uploadForm.querySelector('[name="subject_pk"]');
             if (!subject.value && scope && scope.pk) subject.value = scope.pk;
         }, true);
+        // S163 (24/11): formularios con líneas (entregar extintores y
+        // botiquines): añadir una línea copia la primera con otro número.
+        root.addEventListener("click", function (ev) {
+            const add = ev.target.closest("[data-nui-line-add]");
+            const remove = ev.target.closest("[data-nui-line-remove]");
+            if (!add && !remove) return;
+            const f = (add || remove).closest("[data-nui-lines]");
+            if (!f) return;
+            const box = f.querySelector("[data-nui-line-box]");
+            if (remove) {
+                if (box.querySelectorAll("[data-nui-line]").length > 1) remove.closest("[data-nui-line]").remove();
+                return;
+            }
+            const n = Number(f.dataset.nuiLineNext || "1");
+            f.dataset.nuiLineNext = String(n + 1);
+            const line = box.querySelector("[data-nui-line]").cloneNode(true);
+            line.querySelectorAll("[name]").forEach(function (el) {
+                el.name = el.name.replace(/_\d+$/, "_" + n);
+                if (el.type === "radio" || el.type === "checkbox") el.checked = false; else el.value = "";
+            });
+            line.querySelectorAll("[id]").forEach(el => { el.id = el.id.replace(/^(nui-sd-)\d+-/, "$1" + n + "-"); });
+            line.querySelectorAll("label[for]").forEach(el => { el.htmlFor = el.htmlFor.replace(/^(nui-sd-)\d+-/, "$1" + n + "-"); });
+            box.appendChild(line);
+        });
         // S163 (24/11): Avisos pendientes › Acciones: cuántos avisos hay
         // marcados para pedir por WhatsApp, y Limpiar.
         function paintNoticeCount() {
@@ -1779,7 +1808,15 @@
             const opener = ev.target.closest("[data-nui-viewer-url]");
             if (!opener) return;
             ev.preventDefault();
-            window.nuiOpenViewer(opener.dataset.nuiViewerUrl, null, opener.dataset.nuiViewerTitle);
+            let url = opener.dataset.nuiViewerUrl;
+            if (opener.hasAttribute("data-nui-with-selection")) {
+                // S163 (24/11): la ventana es para los marcados (o el abierto).
+                let ids = Array.from(sel().keys());
+                if (!ids.length && scope && scope.pk) ids = [scope.pk];
+                if (!ids.length) { result("Marca primero con la casilla, en la lista de abajo, a quién aplicarlo.", true); return; }
+                url += (url.indexOf("?") === -1 ? "?" : "&") + "ids=" + encodeURIComponent(ids.join(","));
+            }
+            window.nuiOpenViewer(url, null, opener.dataset.nuiViewerTitle);
         });
         lists.addEventListener("click", function (ev) {
             const tr = ev.target.closest("tr[data-nui-open]");
