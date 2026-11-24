@@ -8,8 +8,8 @@
 {% include "new_ui/actions/_dossier_subjects.html" with noun="persona" section="per" %}
 {% include "new_ui/actions/_schedules.html" %}
 <div class="d-none" data-nui-actions-for="general">
-    {# S163: «Volver a sacar la foto» de los seleccionados (antes, en la pestaña Personal). #}
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:person_photo_queue' %}" class="mt-3">
+    {# S163: «Volver a sacar la foto» de los seleccionados (antes, en la pestaña Personal). Con un trabajador abierto no sale (24/11): lo de su foto está en su ficha, pulsando la foto. #}
+    <form data-nui-action-form data-nui-needs-selection data-nui-no-person action="{% url 'new_ui:person_photo_queue' %}" class="mt-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-person-bounding-box me-1"></i>Volver a sacar su foto</div>
         <button type="submit" class="btn btn-sm btn-outline-secondary">Volver a sacar la foto</button>

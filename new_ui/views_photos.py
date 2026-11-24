@@ -136,6 +136,11 @@ def photo_panel_context(person):
     # S163: y la revisión del contrato vigente (antes, en su ficha).
     reviewer = person.contract_reviewed_by
     return {
+        # S163 (24/11): lo de la ventana «Foto de perfil» antigua.
+        "id_photo": id_photo,
+        "avatar_pk": person.avatar_document_id if id_photo is None else None,
+        "photo_sources": list(photos.candidates(person).select_related(
+            "document_type")),
         "person": person, "photo_url": photo_url, "source": source,
         "reviewed_at": person.contract_reviewed_at,
         "reviewed_by": (reviewer.user.get_full_name()

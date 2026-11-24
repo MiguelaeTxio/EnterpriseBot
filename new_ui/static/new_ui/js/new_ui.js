@@ -1470,7 +1470,7 @@
             function up() {
                 window.removeEventListener("pointermove", move);
                 window.removeEventListener("pointerup", up);
-                const panel = area.parentElement;
+                const panel = area.closest("[data-nui-crop-panel]") || area.parentElement;
                 const link = panel.querySelector("[data-nui-crop-download]");
                 const frac = (boxEl.dataset.frac || "").split(",").map(Number);
                 const clear = panel.querySelector("[data-nui-crop-clear]");
@@ -1488,11 +1488,11 @@
         root.addEventListener("click", function (ev) {
             const clear = ev.target.closest("[data-nui-crop-clear]");
             if (!clear) return;
-            const panel = clear.closest("div.d-flex").parentElement.parentElement;
+            const panel = clear.closest("[data-nui-crop-panel]") || clear.closest("div.d-flex").parentElement.parentElement;
             panel.querySelector("[data-nui-crop-box]").classList.add("d-none");
             const link = panel.querySelector("[data-nui-crop-download]");
             link.href = link.dataset.base;
-            panel.querySelector("[data-nui-crop-label]").textContent = "Descargar para plataformas";
+            panel.querySelector("[data-nui-crop-label]").textContent = "Foto para plataforma (PNG, 128 KB)";
             clear.classList.add("d-none");
         });
         // Acciones de fila que se hacen sin más (#nui-post:<url>:<datos>).
