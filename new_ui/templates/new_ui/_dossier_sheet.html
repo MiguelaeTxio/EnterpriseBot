@@ -1,0 +1,69 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_dossier_sheet.html #}
+{% comment %}
+S163 (24/11). Una plantilla de dosier en el visor, como el gestor antiguo
+(panel/_doc_type_picker.html): nombre y Guardar (otro nombre crea una
+nueva), borrar con su espera, los tipos por familias con su color y, en
+Personal, los EPIs; se marcan al vuelo y a la derecha sale lo que lleva.
+El comportamiento está en new_ui.js (data-nui-req-sheet).
+{% endcomment %}
+<div data-nui-req-sheet data-save-url="{% url 'new_ui:dossier_template_save' %}" data-pk-field="template_pk" data-pk="{{ template.pk|default:'' }}" data-name="{{ template.name }}">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <form data-nui-action-form action="{% url 'new_ui:dossier_template_save' %}" id="nui-dossier-sheet-form" data-nui-viewer-open-tpl="{% url 'new_ui:dossier_sheet' 0 %}" class="m-0 flex-grow-1" style="max-width: 32rem;">
+            {% csrf_token %}
+            <input type="hidden" name="template_pk" value="{{ template.pk|default:'' }}">
+            <input type="hidden" name="scope" value="{{ template.scope }}">
+            <input type="hidden" name="rename_as_new" value="1">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text">Nombre</span>
+                <input type="text" name="name" class="form-control" value="{{ template.name }}" placeholder="Dossier N (automático si se deja en blanco)" aria-label="Nombre">
+                <button type="submit" class="btn btn-primary">Guardar</button>
+            </div>
+        </form>
+        <span class="badge text-bg-light border">{% if is_person %}De personas{% else %}De máquinas{% endif %}</span>
+        {% if template.pk %}<button type="button" class="btn btn-sm btn-outline-danger" data-nui-req-delete-ask>Eliminar</button>{% endif %}
+    </div>
+    {% if template.pk %}
+    <form data-nui-action-form action="{% url 'new_ui:dossier_template_delete' %}" data-nui-viewer-close-on="delete" class="alert alert-danger small py-2 px-2 mb-2 d-none" data-nui-req-delete-box>
+        {% csrf_token %}<input type="hidden" name="selected" value="{{ template.pk }}">
+        Se va a eliminar la plantilla <strong>{{ template.name }}</strong>. Los documentos no se tocan.
+        <div class="d-flex gap-1 mt-2">
+            <button type="button" class="btn btn-sm btn-secondary" data-nui-req-delete-cancel>Cancelar</button>
+            <button type="submit" name="action" value="delete" class="btn btn-sm btn-danger" data-nui-countdown disabled>Eliminar <span data-nui-countdown-left></span></button>
+        </div>
+    </form>
+    {% endif %}
+    <p class="small text-muted mb-2">{% if not template.pk %}Marca lo que lleva y pulsa Guardar para crearla. {% else %}Lo que marques se guarda al momento. {% endif %}Al usarla va siempre el documento vigente de cada tipo, y el formato se elige entonces. Con otro nombre y Guardar se crea una plantilla nueva y esta no se toca.</p>
+    <div class="row g-2">
+        <div class="col-lg-9">
+            <div class="card">
+                <div class="card-header py-1 small fw-bold">Documentos (marca o desmarca al vuelo) <span class="fw-normal text-success" data-nui-req-status></span></div>
+                <div class="card-body p-2 small" style="max-height: 60vh; overflow-y: auto;">
+                    {% for s in sections %}
+                    <div class="rounded px-2 py-1 mb-2" style="background: {{ s.color }};">
+                        <div class="fw-semibold mb-1">{{ s.title }}</div>
+                        <div class="row row-cols-1 row-cols-md-3 g-0">
+                            {% for item in s.items %}<div class="col pe-2"><label class="form-check mb-0"><input class="form-check-input" type="checkbox" form="nui-dossier-sheet-form" name="document_type_ids" value="{{ item.pk }}" data-nui-req-label="{{ item.label }}"{% if item.on %} checked{% endif %}> <span class="form-check-label">{{ item.label }}</span></label></div>{% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% for s in epis %}
+                    <div class="rounded px-2 py-1 mb-2 border">
+                        <div class="fw-semibold mb-1">{{ s.title }}</div>
+                        <div class="row row-cols-1 row-cols-md-3 g-0">
+                            {% for item in s.items %}<div class="col pe-2"><label class="form-check mb-0"><input class="form-check-input" type="checkbox" form="nui-dossier-sheet-form" name="epi_item_ids" value="{{ item.pk }}" data-nui-req-label="EPI: {{ item.label }}"{% if item.on %} checked{% endif %}> <span class="form-check-label">{{ item.label }}</span></label></div>{% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3">
+            <div class="card">
+                <div class="card-header py-1 small fw-bold d-flex justify-content-between"><span>{{ template.name|default:"Nueva plantilla" }}</span><span class="badge text-bg-secondary" data-nui-req-count>{{ chosen|length }}</span></div>
+                <div class="card-body p-2 small" style="max-height: 60vh; overflow-y: auto;">
+                    <ul class="mb-1 ps-3" data-nui-req-chosen>{% for label in chosen %}<li>{{ label }}</li>{% empty %}<li class="text-muted list-unstyled">Nada marcado todavía.</li>{% endfor %}</ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

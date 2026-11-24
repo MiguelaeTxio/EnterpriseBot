@@ -1703,14 +1703,16 @@
             });
         }
         function reqSheetPaint(box) {
-            const docs = Array.from(box.querySelectorAll('[name="document_type_ids"]:checked')).map(i => i.dataset.nuiReqLabel);
+            // Lo marcado (tipos de documento y, en dosieres, EPIs).
+            const docs = Array.from(box.querySelectorAll("[data-nui-req-label]:checked")).map(i => i.dataset.nuiReqLabel);
             const list = box.querySelector("[data-nui-req-chosen]");
             list.innerHTML = "";
             docs.forEach(function (label) { const li = document.createElement("li"); li.textContent = label; list.appendChild(li); });
             if (!docs.length) list.innerHTML = '<li class="text-muted list-unstyled">Ningún documento marcado.</li>';
             box.querySelector("[data-nui-req-count]").textContent = docs.length;
             const codes = Array.from(box.querySelectorAll('[name="driving_category_ids"]:checked')).map(i => i.dataset.nuiReqCode);
-            box.querySelector("[data-nui-req-chosen-driving]").textContent = codes.length ? "Permiso: " + codes.join(", ") : "";
+            const driving = box.querySelector("[data-nui-req-chosen-driving]");
+            if (driving) driving.textContent = codes.length ? "Permiso: " + codes.join(", ") : "";
         }
         function reqSheetPost(box, url, body) {
             const status = box.querySelector("[data-nui-req-status]");
@@ -1724,7 +1726,7 @@
             const box = ev.target.closest("[data-nui-req-sheet]");
             if (!box) return;
             if (ev.target.matches("[data-nui-req-sheet-view], [data-nui-req-sheet-catedit]")) { reqSheetView(box); return; }
-            if (!ev.target.matches('[name="document_type_ids"], [name="driving_category_ids"]')) return;
+            if (!ev.target.matches('[name="document_type_ids"], [name="driving_category_ids"], [name="epi_item_ids"]')) return;
             if (!box.dataset.pk) {
                 // Nuevo: se guarda todo junto al pulsar Guardar.
                 reqSheetPaint(box);
@@ -1733,9 +1735,10 @@
                 return;
             }
             const body = new FormData();
-            body.append("position_pk", box.dataset.pk);
+            // Requisitos: position_pk; dosieres: template_pk (data-pk-field).
+            body.append(box.dataset.pkField || "position_pk", box.dataset.pk);
             body.append("name", box.dataset.name);
-            box.querySelectorAll('[name="document_type_ids"]:checked, [name="driving_category_ids"]:checked').forEach(i => body.append(i.name, i.value));
+            box.querySelectorAll('[name="document_type_ids"]:checked, [name="driving_category_ids"]:checked, [name="epi_item_ids"]:checked').forEach(i => body.append(i.name, i.value));
             reqSheetPaint(box);
             const input = ev.target;
             reqSheetPost(box, box.dataset.saveUrl, body).catch(function () { input.checked = !input.checked; reqSheetPaint(box); });

@@ -1848,16 +1848,17 @@ def _doc_lists():
                 Col("ambito", "Ámbito", lambda r: disp(r, "scope"), "scope"),
                 Col("tipos", "Tipos de documento",
                     lambda r: r.document_types.count()),
+                Col("epis", "EPIs", lambda r: r.epi_items.count() or ""),
                 Col("creado", "Creada por", lambda r: r.created_by.user
                     .get_full_name() if r.created_by_id else ""),
                 Col("fecha", "Fecha", lambda r: fmt_datetime(r.created_at),
                     "created_at", "text-nowrap"),
             ], "created_at", search=("name",), default_order=("name",),
             company_field="company", person=False,
-            # S163: «Modificar» la carga en el editor de Acciones.
-            actions=lambda r: [("Modificar", "bi-pencil-square",
-                                "#nui-dossier-edit-%d" % r.pk)],
-            note="Periodo: fecha de creación."),
+            # S163 (24/11): pulsar una plantilla la abre en su ventana.
+            actions=lambda r: [],
+            note="Pulsa una plantilla para ver y marcar lo que lleva. "
+                 "Periodo: fecha de creación."),
         # S163: el catálogo de requisitos (de personas y de máquinas).
         "lista_requisitos": ListDef(
             "Requisitos",
@@ -3034,6 +3035,9 @@ def list_def(section, tab):
         _CACHE["per"]["pagos_partes"] = _pay_partes_def()
         _CACHE["doc"]["liquidaciones"] = _pay_periods_def()
         # S163 (24/11): Firmas, como la pestaña Firmas de la antigua.
+        _CACHE["doc"]["dosieres"].row_url = lambda r: reverse(
+            "new_ui:dossier_sheet", args=[r.pk])
+        _CACHE["doc"]["dosieres"].row_title = "Plantilla de dosier"
         _CACHE["doc"]["firmas"] = _signed_docs_def()
         _CACHE["doc"]["firmas_guardadas"] = _signatures_def()
         _CACHE["doc"]["agentes_firma"] = _agents_def()

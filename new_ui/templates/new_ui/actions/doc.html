@@ -42,53 +42,22 @@ new_ui.js enseña el de la vista abierta. Formularios:
     <p class="small text-muted mt-2 mb-0">Editar, generar para una persona y descargar en PDF o Word: marca una sola plantilla: salen arriba, en «Con …».</p>
 </div>
 <div class="d-none" data-nui-actions-for="dosieres">
-    {# S163: plantillas de dosier (antes, página aparte de la interfaz antigua). #}
-    <form data-nui-action-form action="{% url 'new_ui:dossier_template_save' %}" id="nui-dossier-form" data-data-url="{% url 'new_ui:dossier_template_data' 0 %}">
+    {# S163 (24/11): en Acciones solo «Nueva»; crear y modificar, en la ventana de la plantilla. #}
+    <div class="d-flex flex-wrap gap-1">
+        <button type="button" class="btn btn-sm btn-success" data-nui-viewer-url="{% url 'new_ui:dossier_sheet' 0 %}?scope=PERSONAL" data-nui-viewer-title="Nueva plantilla de dosier (personas)"><i class="bi bi-plus-circle me-1"></i>Nueva plantilla de personas</button>
+        <button type="button" class="btn btn-sm btn-success" data-nui-viewer-url="{% url 'new_ui:dossier_sheet' 0 %}?scope=MACHINE" data-nui-viewer-title="Nueva plantilla de dosier (máquinas)"><i class="bi bi-plus-circle me-1"></i>Nueva plantilla de máquinas</button>
+    </div>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:dossier_template_delete' %}" class="d-flex flex-wrap gap-1">
         {% csrf_token %}
-        <input type="hidden" name="template_pk" value="" data-nui-pk>
-        <div class="d-flex align-items-center gap-2 mb-1">
-            <div class="small fw-semibold" data-nui-dossier-title><i class="bi bi-plus-circle me-1"></i>Nueva plantilla</div>
-            <button type="button" class="btn btn-sm btn-link py-0 ms-auto" data-nui-dossier-new>Empezar una nueva</button>
-        </div>
-        <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Nombre (si lo dejas vacío: Dossier N)" aria-label="Nombre">
-        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Ámbito">
-            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="scope" value="PERSONAL" checked> <span class="form-check-label">De personas</span></label>
-            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="scope" value="MACHINE"> <span class="form-check-label">De máquinas</span></label>
-        </div>
-        <div data-nui-dossier-scope="PERSONAL">
-            {% for s in dossier_person_sections %}
-            <div class="rounded px-2 py-1 mb-1" style="background: {{ s.color }};">
-                <div class="small fw-semibold">{{ s.title }}</div>
-                <div class="d-flex flex-wrap column-gap-3 small">
-                    {% for pk, label in s.items %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="document_type_ids" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
-                </div>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-trash me-1"></i>Borrar las marcadas</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 w-100 d-none" data-nui-countdown-box>
+            Se van a borrar estas plantillas (los documentos no se tocan):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-nui-countdown-go disabled>Borrar <span data-nui-countdown-left></span></button>
             </div>
-            {% endfor %}
-            {% for s in dossier_epi_sections %}
-            <div class="rounded px-2 py-1 mb-1 border">
-                <div class="small fw-semibold">{{ s.title }}</div>
-                <div class="d-flex flex-wrap column-gap-3 small">
-                    {% for pk, label in s.items %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="epi_item_ids" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
-                </div>
-            </div>
-            {% endfor %}
         </div>
-        <div data-nui-dossier-scope="MACHINE" class="d-none">
-            {% for s in dossier_machine_sections %}
-            <div class="rounded px-2 py-1 mb-1" style="background: {{ s.color }};">
-                <div class="small fw-semibold">{{ s.title }}</div>
-                <div class="d-flex flex-wrap column-gap-3 small">
-                    {% for pk, label in s.items %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="document_type_ids" value="{{ pk }}" disabled> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar plantilla</button>
-        <p class="small text-muted mt-1 mb-2">Al usarla siempre va el documento vigente de cada tipo, y el formato se elige en ese momento (Personal o Centros de gasto › General). Para modificar una: márcala y pulsa «Modificar» arriba, en «Con …».</p>
-    </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:dossier_template_delete' %}">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las plantillas seleccionadas? Los documentos no se tocan."><i class="bi bi-trash me-1"></i>Borrar las seleccionadas</button>
     </form>
 </div>
 <div class="d-none" data-nui-actions-for="lista_requisitos">

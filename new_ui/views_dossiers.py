@@ -24,7 +24,7 @@ from collections import OrderedDict
 
 from django.contrib.contenttypes.models import ContentType
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views import View
 
@@ -251,6 +251,14 @@ class DossierTemplateSaveView(SuperuserRequiredMixin, View):
             else [])
         if not type_ids and not epi_ids:
             return _error("Marca al menos un tipo de documento o un EPI.")
+        # S163 (24/11), como en la antigua: desde la ventana, con otro
+        # nombre se crea una plantilla nueva y la original no se toca.
+        if (template.pk and request.POST.get("rename_as_new") == "1"
+                and request.POST.get("name", "").strip()
+                and name != template.name):
+            template = PersonalDossierTemplate(
+                company=company, created_by=request.user.company_user,
+                scope=template.scope)
         created = not template.pk
         template.name = name
         template.save()
@@ -430,4 +438,59 @@ class DossierMissingCheckView(SuperuserRequiredMixin, View):
                     " · ".join(lines)))
         return JsonResponse({
             "ok": True, "missing": missing, "message": message,
+        })
+
+
+class DossierSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one dossier template in the viewer (0 = a new one).
+
+    ---
+
+    GET: una plantilla de dosier en el visor (S163, 24/11), como el
+    gestor antiguo: nombre y Guardar (otro nombre crea una nueva), los
+    tipos por familias con su color y, en Personal, los EPIs; se marca y
+    desmarca al vuelo y a la derecha sale lo que lleva; borrar con su
+    espera. `pk` 0 con `?scope=`: una nueva (se guarda con Guardar).
+    """
+
+    def get(self, request, pk):
+        company = _company(request)
+        if pk:
+            template = get_object_or_404(PersonalDossierTemplate, pk=pk,
+                                         company=company)
+            type_ids = set(template.document_types.values_list(
+                "pk", flat=True))
+            epi_ids = set(template.epi_items.values_list("pk", flat=True))
+        else:
+            scope = request.GET.get("scope", "")
+            template = PersonalDossierTemplate(
+                company=company, name="",
+                scope=(scope if scope in dict(
+                    PersonalDossierTemplate.SCOPE_CHOICES)
+                    else PersonalDossierTemplate.SCOPE_PERSONAL))
+            type_ids, epi_ids = set(), set()
+        is_person = (template.scope
+                     == PersonalDossierTemplate.SCOPE_PERSONAL)
+        sections = [{
+            "title": sec["title"], "color": sec["color"],
+            "items": [{"pk": item_pk, "label": label,
+                       "on": item_pk in type_ids}
+                      for item_pk, label in sec["items"]],
+        } for sec in _family_sections(is_person)]
+        epis = [{
+            "title": sec["title"],
+            "items": [{"pk": item_pk, "label": label,
+                       "on": item_pk in epi_ids}
+                      for item_pk, label in sec["items"]],
+        } for sec in (_epi_sections() if is_person else [])]
+        chosen = [i["label"] for sec in sections for i in sec["items"]
+                  if i["on"]] + ["EPI: %s" % i["label"] for sec in epis
+                                 for i in sec["items"] if i["on"]]
+        return render(request, "new_ui/_dossier_sheet.html", {
+            "template": template,
+            "is_person": is_person,
+            "sections": sections,
+            "epis": epis,
+            "chosen": chosen,
         })

@@ -405,6 +405,8 @@ urlpatterns = [
     path("dosieres/plantilla/<int:pk>/",
          views_dossiers.DossierTemplateDataView.as_view(),
          name="dossier_template_data"),
+    path("dosieres/plantillas/<int:pk>/ver/",
+         views_dossiers.DossierSheetView.as_view(), name="dossier_sheet"),
     path("dosieres/plantilla/guardar/",
          views_dossiers.DossierTemplateSaveView.as_view(),
          name="dossier_template_save"),
