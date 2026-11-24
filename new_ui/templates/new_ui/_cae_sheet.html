@@ -26,7 +26,7 @@ nueva interfaz (no comparte nada con la pestaña de la antigua).
 {% if rows %}
 <div class="d-flex flex-wrap gap-1 mb-2 small">
     {% for key, label, count in counts %}
-    <span class="badge {% if key == 'found' %}text-bg-success{% elif key == 'expired' %}text-bg-warning{% elif key == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ label }}: {{ count }}</span>
+    <span class="badge {% if key == 'found' %}text-bg-success{% elif key == 'expired' or key == 'needs_new' %}text-bg-warning{% elif key == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ label }}: {{ count }}</span>
     {% endfor %}
 </div>
 <form data-nui-action-form data-nui-download action="{% url 'new_ui:cae_download' %}">
@@ -48,7 +48,7 @@ nueva interfaz (no comparte nada con la pestaña de la antigua).
                     <div class="text-muted">{% if row.demand.state %}{{ row.demand.state }}{% endif %}{% if row.demand.due_date %} · hasta {{ row.demand.due_date|date:"d/m/Y" }}{% endif %}{% if row.demand.site %} · {{ row.demand.site }}{% endif %}</div>
                 </td>
                 <td>
-                    <span class="badge {% if row.status == 'found' %}text-bg-success{% elif row.status == 'expired' %}text-bg-warning{% elif row.status == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status_label }}</span>
+                    <span class="badge {% if row.status == 'found' %}text-bg-success{% elif row.status == 'expired' or row.status == 'needs_new' %}text-bg-warning{% elif row.status == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status_label }}</span>
                     {% if row.demand.document_type %}<div class="text-muted">{{ row.demand.document_type.label }}</div>{% endif %}
                     {% if row.entry %}<div>{{ row.entry.name }}{% if row.entry.expiry_date %} · caduca {{ row.entry.expiry_date|date:"d/m/Y" }}{% elif row.entry.issue_date %} · del {{ row.entry.issue_date|date:"d/m/Y" }}{% endif %}</div>{% endif %}
                 </td>

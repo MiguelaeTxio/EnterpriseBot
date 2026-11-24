@@ -27,7 +27,7 @@ from django.utils import timezone
 from django.views import View
 
 from cae_mail.models import CaeMail
-from cae_mail.resolution import STATUS_LABELS, resolve_mail
+from cae_mail.resolution import FOUND, STATUS_LABELS, resolve_mail
 from document_explorer.confidential import can_open, open_bytes
 from document_explorer.models import DocumentIndexEntry
 from new_ui.mixins import SuperuserRequiredMixin
@@ -106,16 +106,17 @@ class CaeBulkView(SuperuserRequiredMixin, View):
 
 
 def _found_entries(mails):
-    """Documents we have (current or expired) for the notices.
+    """Documents we have and still valid for the notices.
     ---
-    Los documentos que tenemos (vigentes o caducados) de lo que piden
-    los avisos, sin repetir.
+    Los documentos que tenemos y valen (ni caducados ni el mismo que
+    caduca en la fecha del aviso) de lo que piden los avisos, sin
+    repetir.
     """
     seen = {}
     for mail in mails:
         rows, _counts = resolve_mail(mail)
         for row in rows:
-            if row["entry"] is not None:
+            if row["status"] == FOUND:
                 seen[row["entry"].pk] = row["entry"]
     return list(seen.values())
 

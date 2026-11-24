@@ -27,6 +27,7 @@ from document_explorer.models import DocumentIndexEntry
 # Estados de cada documento pedido en la pantalla.
 FOUND = "found"
 EXPIRED = "expired"
+NEEDS_NEW = "needs_new"
 MISSING = "missing"
 NO_TYPE = "no_type"
 NO_HOLDER = "no_holder"
@@ -34,6 +35,7 @@ NO_HOLDER = "no_holder"
 STATUS_LABELS = {
     FOUND: "Lo tenemos",
     EXPIRED: "Lo tenemos, caducado",
+    NEEDS_NEW: "Falta el nuevo",
     MISSING: "No lo tenemos",
     NO_TYPE: "Sin tipo",
     NO_HOLDER: "Sin titular",
@@ -83,7 +85,8 @@ def resolve_demand(demand, today=None):
     """(status, entry) for one demand.
     ---
     (estado, documento) de un documento pedido: el documento solo
-    cuando lo tenemos (vigente o caducado).
+    cuando lo tenemos (vigente, caducado o el mismo que la plataforma
+    ya tiene y caduca en la fecha del aviso).
     """
     today = today or datetime.date.today()
     if demand.document_type_id is None:
@@ -96,6 +99,12 @@ def resolve_demand(demand, today=None):
         return MISSING, None
     if entry.expiry_date and entry.expiry_date < today:
         return EXPIRED, entry
+    # S156: el aviso dice hasta cuándo vale lo que tiene la plataforma
+    # («próximo a caducar el 15/12»). Si lo nuestro no pasa de esa
+    # fecha, es el mismo documento: hace falta el nuevo.
+    if (demand.due_date and entry.expiry_date
+            and entry.expiry_date <= demand.due_date):
+        return NEEDS_NEW, entry
     return FOUND, entry
 
 
