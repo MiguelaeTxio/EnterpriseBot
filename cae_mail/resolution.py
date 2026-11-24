@@ -18,6 +18,8 @@ tiene, por fecha de emisión. La pantalla lo ofrece para descargar o
 dice qué falta para saberlo.
 """
 import datetime
+import re
+import unicodedata
 
 from django.contrib.contenttypes.models import ContentType
 
@@ -56,11 +58,40 @@ def holder_of(demand):
     return demand.company
 
 
-def current_document(holder, document_type):
+_MONTHS = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5,
+    "JUNIO": 6, "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9,
+    "SETIEMBRE": 9, "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
+# «TC1 ... (Septiembre 2026)»: el documento de un mes concreto.
+_PERIOD_RE = re.compile(r"\(\s*([A-Z]+)\s+(20\d{2})\s*\)")
+
+
+def demand_period(demand):
+    """(year, month) a monthly demand is for, or None.
+    ---
+    Mes concreto que pide un documento mensual («TC1 (Septiembre
+    2026)», «Certificado ... (Agosto 2023)»), o None.
+    """
+    text = unicodedata.normalize("NFKD", demand.document or "")
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    for name, year in _PERIOD_RE.findall(text.upper()):
+        if name in _MONTHS:
+            return int(year), _MONTHS[name]
+    return None
+
+
+def _in_period(entry, period):
+    day = entry.issue_date or entry.expiry_date
+    return day is not None and (day.year, day.month) == period
+
+
+def current_document(holder, document_type, period=None):
     """Most recent live document of a type for a holder, or None.
     ---
     El documento vivo más reciente de un tipo para un titular: primero
-    los no obsoletos; por caducidad y, si no tiene, por emisión.
+    los no obsoletos; por caducidad y, si no tiene, por emisión. Con
+    `period` (año, mes), solo el de ese mes.
     """
     entries = list(DocumentIndexEntry.objects.filter(
         bucket=PRIMARY_BUCKET,
@@ -72,6 +103,8 @@ def current_document(holder, document_type):
         domain_object_id=holder.pk,
         document_type=document_type,
     ))
+    if period is not None:
+        entries = [entry for entry in entries if _in_period(entry, period)]
     if not entries:
         return None
     return max(entries, key=lambda entry: (
@@ -94,9 +127,13 @@ def resolve_demand(demand, today=None):
     holder = holder_of(demand)
     if holder is None:
         return NO_HOLDER, None
-    entry = current_document(holder, demand.document_type)
+    period = demand_period(demand)
+    entry = current_document(holder, demand.document_type, period)
     if entry is None:
         return MISSING, None
+    # El de un mes concreto no caduca: es ese o no lo es.
+    if period is not None:
+        return FOUND, entry
     if entry.expiry_date and entry.expiry_date < today:
         return EXPIRED, entry
     # S156: el aviso dice hasta cuándo vale lo que tiene la plataforma
