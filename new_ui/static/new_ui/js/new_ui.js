@@ -1977,11 +1977,21 @@
                 noun: machines ? "máquina" : "persona",
                 getIds: function () { return Array.from(sel("general").keys()); },
                 setIds: function (pairs) {
-                    const map = sel("general");
-                    map.clear();
-                    pairs.forEach(function ([pk, name]) { map.set(String(pk), machines ? (name || "").split(" ")[0] : (name || "")); });
+                    // S163 (24/11, Miguel Ángel: al marcar o desmarcar un
+                    // grupo "me cambia de vista"): ya no se salta a General.
+                    // La selección va a General (de donde la guardan los
+                    // grupos) y, si la pestaña abierta lista personas o
+                    // máquinas, también a ella; se repinta en su sitio.
+                    const state = pane() && pane().querySelector(".nui-list-state");
+                    const targets = ["general"];
+                    if (tab() !== "general" && state && state.dataset.entityRows) targets.push(tab());
+                    targets.forEach(function (t) {
+                        const map = sel(t);
+                        map.clear();
+                        pairs.forEach(function ([pk, name]) { map.set(String(pk), machines ? (name || "").split(" ")[0] : (name || "")); });
+                    });
                     persistSelection();
-                    showTab(listPanel, "general", true);
+                    load();
                 },
                 labelOf: function (pk) { return sel("general").get(String(pk)) || ""; },
                 toast: function (text, isError) { result(text, isError); },
