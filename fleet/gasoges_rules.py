@@ -124,62 +124,12 @@ def name_matches(gasoges_name, person_name):
 HOURS_CODE_PREFIXES = ("Z",)
 
 
-# Regla del taller (S137, Miguel Ángel): turismos y furgonetas (X) y P
-# van por km; grúas móviles (A, y la familia MÓVILES), brazos (B),
-# carretillas (T) y plataformas elevadoras (Z), por horas. Manda sobre lo
-# deducido y lo puesto a mano: un repostaje que no encaja con ella sale
-# dudoso y se pregunta al repostador. La familia manda sobre el código
-# (ADOLFO es un turismo aunque empiece por A; PAOLA, una plataforma
-# aunque empiece por P).
-# S137, Miguel Ángel: en la familia ASISTENCIA, las A (grúas de
-# asistencia) van por horas; el resto (B, P, X...: camiones de rescate o
-# plataformas de transporte, sin pluma ni hidráulico que cuente horas),
-# por km.
-# S142 (sesión invasora), Miguel Ángel, corrige lo de las A: "apuntan
-# km. En asistencia se dijo que bueno, que vale." Los chóferes de las
-# grúas de asistencia teclean en el surtidor los km del camión (A50 de
-# 613.533 a 617.204, A39 de 53.048 a 66.973 en diez meses): toda la
-# familia ASISTENCIA va por km.
+# S154 (sesión invasora), Miguel Ángel: se retira la regla del taller
+# (S137/S142: unidad por familia y por letra del código). La unidad
+# va con el repostaje: la deduce `deduce_unit` con los contadores de
+# cada vehículo (los mismos que dirá su ficha QR), no su familia.
 # ---
-# Workshop rule: which unit each kind of vehicle goes by.
-KM_FAMILIES = ("TURISMOS",)
-ASSISTANCE_FAMILY = "ASISTENCIA"
-HOURS_FAMILIES = ("PLATAFORMAS", "CARRETILLAS", "MÓVILES")
-HOURS_CONVENTION_PREFIXES = ("A", "B", "T", "Z")
-KM_CODE_PREFIXES = ("P", "X")
-# S154 (sesión invasora), Miguel Ángel: B38 y B41 son plataformas de
-# transporte (familia PLATAFORMAS) y "van por kilómetros"; en GasoGes
-# sus repostajes llevan los km del camión (B38 de 718.700 a 760.810,
-# B41 hasta 762.515). Mandan sobre la familia y el prefijo B.
-# ---
-# Cost centres that go by km whatever their family or prefix.
-KM_CODES = ("B38", "B41")
-
-
-def convention_unit(code, family):
-    """
-    Unit set by the workshop rule, or None if the rule says nothing.
-
-    ---
-
-    Unidad que fija la regla del taller, o None si la regla no dice nada
-    de ese centro de gasto (generadores, contenedores, la Kärcher...).
-    """
-    code = str(code or "").upper()
-    family = str(family or "").upper()
-    if code in KM_CODES:
-        return UNIT_KM
-    if family == ASSISTANCE_FAMILY:
-        return UNIT_KM
-    if family in KM_FAMILIES:
-        return UNIT_KM
-    if family in HOURS_FAMILIES:
-        return UNIT_HOURS
-    if code.startswith(HOURS_CONVENTION_PREFIXES):
-        return UNIT_HOURS
-    if code.startswith(KM_CODE_PREFIXES):
-        return UNIT_KM
-    return None
+# The workshop rule is retired: each vehicle on its own.
 
 
 def deduce_unit(has_odometer, has_engine_hours, points, code=""):
