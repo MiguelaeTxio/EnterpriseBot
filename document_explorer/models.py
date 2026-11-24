@@ -2310,6 +2310,20 @@ class EpiDelivery(models.Model):
         blank=True,
         verbose_name="Retimbrado",
     )
+    # S163 (24/11, Miguel Ángel): un extintor o botiquín retirado o
+    # sustituido no se borra: queda en el historial con su fecha y el
+    # motivo, y deja de contar y de avisar.
+    retired_at = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Retirado el",
+    )
+    retired_note = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Motivo de la retirada",
+    )
 
     class Meta:
         verbose_name = "Entrega de EPI"
