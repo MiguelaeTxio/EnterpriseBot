@@ -1923,25 +1923,6 @@ def _doc_lists():
                     r.received_at), "received_at", "text-nowrap"),
             ], "created_at", search=("reason", "document_type__label"),
             default_order=("-created_at",), note="Periodo: fecha de petición."),
-        "seguros": fk(
-            "Seguros", "insurance.InsuranceReport", ("created_by__user",), [
-                Col("titulo", "Informe", lambda r: r.title, "title"),
-                Col("desde", "Desde", lambda r: fmt_date(r.month_from),
-                    "month_from", "text-nowrap"),
-                Col("hasta", "Hasta", lambda r: fmt_date(r.month_to),
-                    "month_to", "text-nowrap"),
-                Col("estado", "Estado", lambda r: disp(r, "status"),
-                    "status"),
-                Col("polizas", "Pólizas", lambda r: r.policy_count,
-                    "policy_count", "text-end"),
-                Col("prima", "Prima total", lambda r: fmt_num(
-                    r.premium_total), "premium_total", "text-end"),
-                Col("alertas", "Avisos", lambda r: r.alert_count,
-                    "alert_count", "text-end"),
-                Col("creado", "Creado", lambda r: fmt_datetime(r.created_at),
-                    "created_at", "text-nowrap"),
-            ], "created_at", search=("title",), default_order=("-created_at",),
-            person=False, note="Periodo: fecha del informe."),
         "calendario": fk(
             "Calendario", "hr_calendar.AbsencePeriod",
             ("person", "category"), [
@@ -2436,6 +2417,75 @@ def _pay_person_list():
                        "curso hasta hoy. Qué se paga, en Empresa › Horas "
                        "y pagos.")
     return definition
+
+
+# ------------------------------------------------------------ seguros
+def _insurance_supervisors(company):
+    from ivr_config.models import CompanyUser
+
+    return [(str(cu.pk), cu.user.get_full_name() or cu.user.username)
+            for cu in CompanyUser.objects.filter(
+                insurance_access=True).select_related("user")]
+
+
+def _insurance_def():
+    """
+    Empresa › Seguros: the insurance renewal reports.
+
+    ---
+
+    Los informes de renovación de seguros (S163, 24/11), con las
+    columnas de la antigua; pulsar uno abre su ventana.
+    """
+    from insurance.models import InsuranceReport
+    from new_ui.views_insurance_nui import decorate
+
+    def queryset(company):
+        return InsuranceReport.objects.select_related(
+            "created_by__user").prefetch_related("ledgers", "exports")
+
+    def prepare(rows):
+        for row in rows:
+            decorate(row)
+        return rows
+
+    return ListDef(
+        "Seguros", queryset, [
+            Col("numero", "Nº", lambda r: r.pk, "pk", "text-end"),
+            Col("titulo", "Informe", lambda r: r.title, "title"),
+            Col("fecha", "Fecha del informe", lambda r: fmt_datetime(
+                r.created_at), "created_at", "text-nowrap"),
+            Col("vencimiento", "Mes de vencimiento",
+                lambda r: getattr(r, "due_label", ""), "month_from"),
+            Col("supervisor", "Supervisor",
+                lambda r: getattr(r, "supervisor_label", ""),
+                "created_by__user__first_name"),
+            Col("estado", "Estado", lambda r: disp(r, "status")
+                + (" (%s %%)" % r.progress_pct if r.is_live
+                   and getattr(r, "progress_pct", 0) else ""), "status"),
+            Col("seguros", "Seguros", lambda r: r.policy_count,
+                "policy_count", "text-end"),
+            Col("prima", "Prima anual", lambda r: fmt_num(r.premium_total),
+                "premium_total", "text-end"),
+            Col("avisos", "Avisos", lambda r: r.alert_count, "alert_count",
+                "text-end"),
+            Col("libros", "Libros mayores",
+                lambda r: getattr(r, "ledgers_label", "")),
+            Col("exportado", "Exportado a",
+                lambda r: getattr(r, "exported_label", "")),
+        ],
+        search=("title", "created_by__user__first_name",
+                "created_by__user__last_name"),
+        date_field="created_at", date_is_datetime=True,
+        default_order=("-created_at",), actions=lambda r: [],
+        prepare=prepare,
+        extras=[Extra("supervisor", "Supervisor", _insurance_supervisors,
+                      lambda qs, v: qs.filter(created_by_id=v)
+                      if v.isdigit() else qs)],
+        row_url=lambda r: reverse("new_ui:insurance_sheet", args=[r.pk]),
+        row_title="Informe de seguros",
+        note="Periodo: fecha del informe. Pulsa un informe para verlo, "
+             "exportarlo, volver a generarlo o borrarlo.")
 
 
 # ------------------------------------------------------------- firmas
@@ -3046,6 +3096,7 @@ def list_def(section, tab):
         _CACHE["doc"]["dosieres"].row_url = lambda r: reverse(
             "new_ui:dossier_sheet", args=[r.pk])
         _CACHE["doc"]["dosieres"].row_title = "Plantilla de dosier"
+        _CACHE["doc"]["seguros"] = _insurance_def()
         _CACHE["doc"]["firmas"] = _signed_docs_def()
         _CACHE["doc"]["firmas_guardadas"] = _signatures_def()
         _CACHE["doc"]["agentes_firma"] = _agents_def()
