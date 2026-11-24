@@ -17,6 +17,7 @@ quien la subió, los supervisores con los que la comparte y quien tiene
 acceso a todas (Alejandro). Nadie más ve una nómina.
 """
 import io
+import json
 import re
 import zipfile
 from urllib.parse import quote
@@ -65,8 +66,10 @@ def _chosen(request, company_user, batch=None):
 
 
 def _batch_of(request):
-    """La entrega elegida en el filtro «Entrega» (x_nominas_entrega)."""
-    raw = request.POST.get("x_nominas_entrega", "")
+    """La entrega de la ventana («batch») o, si no, la elegida en el
+    filtro «Entrega» (x_nominas_entrega)."""
+    raw = request.POST.get("batch") or request.POST.get(
+        "x_nominas_entrega", "")
     if not raw.isdigit():
         return None
     return access.visible_batches(request.user.company_user).filter(
@@ -180,8 +183,8 @@ class PayslipNuiActionView(SuperuserRequiredMixin, View):
         batch = _batch_of(request)
         if action in ("approve", "retry", "notify", "cancel", "share") and (
                 batch is None):
-            return _error("Elige la entrega en los filtros de Nóminas "
-                          "(«Entrega»).")
+            return _error("Abre la entrega (Empresa › Nóminas › "
+                          "Entregas).")
         try:
             if action in ("exclude", "include"):
                 if not items:
@@ -287,6 +290,152 @@ class PayslipNuiDownloadView(SuperuserRequiredMixin, View):
             return _error(str(exc))
         response["Content-Disposition"] = (
             'attachment; filename="%s"; filename*=UTF-8\'\'%s' % (
+                name, quote(name)))
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+# ----------------------------------------------------------------------
+# S163 (24/11): ventanas de la entrega y de la nómina (Miguel Ángel: «el
+# panel debe ser más conciso y cuando elijamos una acción [...] se abre»).
+# ----------------------------------------------------------------------
+
+_LIVE = (PayslipBatch.Status.UPLOADING, PayslipBatch.Status.READING,
+         PayslipBatch.Status.SENDING)
+_CHANGEABLE = (PayslipBatch.Status.UPLOADING, PayslipBatch.Status.READING,
+               PayslipBatch.Status.READY)
+
+
+def _people(company):
+    """Trabajadores con DNI para el autocompletado («DNI es inequívoco»)."""
+    return PersonIdentity.objects.filter(
+        Q(company=company) | Q(company__isnull=True)).exclude(
+        dni="").order_by("first_surname", "second_surname",
+                         "given_name").only(
+        "dni", "given_name", "first_surname", "second_surname")
+
+
+class PayslipBatchSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one payslip batch in the viewer (0 = upload a new one).
+
+    ---
+
+    GET: una entrega en el visor: estado y números (se refresca sola
+    mientras se sube, se lee o se envía), visto bueno y enviar con la
+    lista de quién la recibe (5 s), reintentar, volver a avisar, anular
+    (5 s), acceso y «Ver sus nóminas». Con 0, subir una carpeta nueva.
+    """
+
+    def get(self, request, pk):
+        from django.http import Http404
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        cu = request.user.company_user
+        sheet_tpl = reverse("new_ui:payslip_batch_sheet", args=[0])
+        if not pk:
+            if not can_upload(cu):
+                raise Http404
+            return render(request, "new_ui/_payslip_new.html", {
+                "candidates": _candidates(cu),
+                "sheet_tpl": sheet_tpl,
+            })
+        batch = access.visible_batches(cu).select_related(
+            "created_by__user", "approved_by__user").filter(pk=pk).first()
+        if batch is None:
+            raise Http404
+        items = list(batch.items.select_related("person"))
+        counts = {}
+        for item in items:
+            counts[item.status] = counts.get(item.status, 0) + 1
+        S = PayslipItem.Status
+        to_send = sorted(
+            (person_label(i.person) if i.person else i.original_name)
+            for i in items if i.status == S.READY)
+        shared = set(batch.shares.values_list("company_user_id", flat=True))
+        candidates = _candidates(cu, batch)
+        for user in candidates:
+            user.checked = user.pk in shared
+        return render(request, "new_ui/_payslip_batch.html", {
+            "batch": batch,
+            "total": len(items),
+            "counts": [(label, counts.get(value, 0))
+                       for value, label in S.choices
+                       if counts.get(value, 0)],
+            "to_send": to_send,
+            "to_send_json": json.dumps(to_send),
+            "unmatched": counts.get(S.UNMATCHED, 0),
+            "live": batch.status in _LIVE,
+            "is_ready": batch.status == PayslipBatch.Status.READY,
+            "is_sent": batch.status == PayslipBatch.Status.SENT,
+            "can_cancel": batch.status in _CHANGEABLE,
+            "has_errors": counts.get(S.ERROR, 0) > 0,
+            "can_share": access.can_share(batch, cu),
+            "candidates": candidates,
+            "shared_labels": [u.label for u in candidates if u.checked],
+            "filter_label": "%s · %s" % (
+                timezone.localtime(batch.created_at).strftime("%d/%m/%Y"),
+                batch.folder_name or "sin nombre"),
+        })
+
+
+class PayslipItemSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one payslip in the viewer.
+
+    ---
+
+    GET: una nómina en el visor: sus datos, verla y descargarla, ponerle
+    el trabajador (DNI con autocompletado) y dejarla fuera o volver a
+    meterla mientras su entrega lo admite.
+    """
+
+    def get(self, request, pk):
+        from django.http import Http404
+        from django.shortcuts import render
+
+        cu = request.user.company_user
+        item = PayslipItem.objects.filter(
+            pk=pk, batch__in=access.visible_batches(cu)).select_related(
+            "batch", "person").first()
+        if item is None:
+            raise Http404
+        S = PayslipItem.Status
+        changeable = item.batch.status in _CHANGEABLE and \
+            item.status not in (S.SENT, S.FILED)
+        return render(request, "new_ui/_payslip_item.html", {
+            "item": item,
+            "pages": "" if not item.page_to else (
+                str(item.page_from) if item.page_from == item.page_to
+                else "%s–%s" % (item.page_from, item.page_to)),
+            "phone": item.phone or (pd.worker_phone(item.person) or ""
+                                    if item.person else ""),
+            "has_pdf": bool(item.page_to),
+            "changeable": changeable,
+            "excluded": item.status == S.EXCLUDED,
+            "people": _people(cu.company) if changeable else [],
+        })
+
+
+class PayslipNuiPdfView(SuperuserRequiredMixin, View):
+    """GET: el PDF de una nómina, para verlo en el navegador."""
+
+    def get(self, request, pk):
+        cu = request.user.company_user
+        item = PayslipItem.objects.filter(
+            pk=pk, batch__in=access.visible_batches(cu)).exclude(
+            page_to=0).select_related("batch", "entry", "person").first()
+        if item is None:
+            return HttpResponse("Esa nómina no tiene PDF.", status=404)
+        try:
+            data = _item_bytes(item, cu)
+        except pd.PayslipError as exc:
+            return HttpResponse(str(exc), status=400)
+        name = _download_name(item)
+        response = HttpResponse(data, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            'inline; filename="%s"; filename*=UTF-8\'\'%s' % (
                 name, quote(name)))
         response["Cache-Control"] = "private, no-store"
         return response

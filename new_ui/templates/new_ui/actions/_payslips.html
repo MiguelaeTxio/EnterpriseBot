@@ -1,59 +1,19 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_payslips.html -- S163 (23/11): Empresa › Nóminas (copia de panel/templates/panel/payslips/_pane.html): nueva entrega (carpeta), lo de la entrega elegida en el filtro «Entrega» y lo de las nóminas marcadas. Vista: new_ui/views_payslips_nui.py; JS: new_ui.js (data-nui-payslip-new). #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_payslips.html -- S163 (24/11): Acciones de Empresa › Nóminas. Entregas: «Nueva entrega» abre la ventana (pulsar una entrega abre la suya). Nóminas: con marcadas, descargar y dejar fuera o volver a meter (pulsar una nómina abre la suya). Vista: new_ui/views_payslips_nui.py. #}
+<div class="d-none" data-nui-actions-for="entregas_nominas">
+    {% if psl_can_upload %}
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:payslip_batch_sheet' 0 %}" data-nui-viewer-title="Nueva entrega de nóminas"><i class="bi bi-folder2-open me-1"></i>Nueva entrega</button>
+    {% endif %}
+    <p class="small text-muted mb-0">Pulsa una entrega para darle el visto bueno y enviarla, anularla o cambiar el acceso.</p>
+</div>
 <div class="d-none" data-nui-actions-for="nominas">
-    <form data-nui-action-form data-nui-needs-selection data-nui-download data-nui-no-refresh action="{% url 'new_ui:payslip_download' %}" class="mb-3">
+    <form data-nui-action-form data-nui-needs-selection data-nui-download data-nui-no-refresh action="{% url 'new_ui:payslip_download' %}" class="mb-2">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-download me-1"></i>Descargar</div>
-        <button type="submit" class="btn btn-sm btn-outline-primary">Descargar (una: PDF; varias: ZIP)</button>
-        <p class="small text-muted mb-0">Para subirlas a otra plataforma (p. ej. Oralia).</p>
+        <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-download me-1"></i>Descargar (una: PDF; varias: ZIP)</button>
     </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:payslip_action' %}" class="mb-3">
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:payslip_action' %}" class="d-flex flex-wrap gap-1 mb-2">
         {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-slash-circle me-1"></i>Dejar fuera de la entrega o volver a meter</div>
-        <button type="submit" name="action" value="exclude" class="btn btn-sm btn-outline-secondary">Dejar fuera</button>
+        <button type="submit" name="action" value="exclude" class="btn btn-sm btn-outline-secondary">Dejar fuera de la entrega</button>
         <button type="submit" name="action" value="include" class="btn btn-sm btn-outline-secondary">Volver a meter</button>
     </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:payslip_action' %}" class="mb-3" data-nui-reset-after>
-        {% csrf_token %}<input type="hidden" name="action" value="assign">
-        <div class="small fw-semibold mb-1"><i class="bi bi-person-check me-1"></i>Poner el trabajador</div>
-        <div class="d-flex flex-wrap gap-1 small">
-            <input name="person" class="form-control form-control-sm" style="max-width: 16rem;" placeholder="DNI o nombre y apellido" aria-label="Trabajador">
-            <button type="submit" class="btn btn-sm btn-primary">Poner</button>
-        </div>
-        <p class="small text-muted mb-0">Marca una sola nómina. Vacío: la deja sin trabajador.</p>
-    </form>
-    <div data-nui-for="new" class="mb-3">
-        <div class="small fw-semibold mb-1"><i class="bi bi-send-check me-1"></i>La entrega elegida en el filtro «Entrega»</div>
-        <form data-nui-action-form data-nui-own-filters action="{% url 'new_ui:payslip_action' %}" class="d-flex flex-wrap gap-1 mb-1">
-            {% csrf_token %}
-            <button type="submit" name="action" value="approve" class="btn btn-sm btn-success" data-nui-confirm="¿Dar el visto bueno? Se archiva cada nómina en la ficha de su trabajador (confidencial) y se le manda por WhatsApp.">Visto bueno y enviar</button>
-            <button type="submit" name="action" value="retry" class="btn btn-sm btn-outline-warning">Reintentar WhatsApp</button>
-            <button type="submit" name="action" value="notify" class="btn btn-sm btn-outline-secondary">Volver a avisar</button>
-            <button type="submit" name="action" value="cancel" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Anular la entrega? Se borran las copias de sus PDF.">Anular</button>
-        </form>
-        {% if psl_candidates %}
-        <form data-nui-action-form data-nui-own-filters action="{% url 'new_ui:payslip_action' %}" class="small">
-            {% csrf_token %}<input type="hidden" name="action" value="share">
-            <div class="text-muted">Acceso para (además de quien la subió):</div>
-            <div class="d-flex flex-wrap gap-2 mb-1">{% for u in psl_candidates %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" name="share" value="{{ u.pk }}"> {{ u.label }}</label>{% endfor %}</div>
-            <button type="submit" class="btn btn-sm btn-outline-primary">Guardar el acceso</button>
-            <span class="text-muted">Solo quien la subió puede cambiarlo.</span>
-        </form>
-        {% endif %}
-    </div>
-    {% if psl_can_upload %}
-    <div data-nui-for="new" class="mb-3" data-nui-payslip-new data-create="{% url 'new_ui:payslip_create' %}" data-upload="{% url 'new_ui:payslip_upload' 0 %}" data-read="{% url 'new_ui:payslip_read' 0 %}">
-        <div class="small fw-semibold mb-1"><i class="bi bi-folder2-open me-1"></i>Nueva entrega</div>
-        {% if psl_candidates %}
-        <div class="small text-muted">Supervisor al que se le avisa y que podrá enviarlas y descargarlas:</div>
-        <div class="d-flex flex-wrap gap-2 small mb-1">{% for u in psl_candidates %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" value="{{ u.pk }}" data-nui-psl-share> {{ u.label }}</label>{% endfor %}</div>
-        {% endif %}
-        <div class="d-flex flex-wrap align-items-center gap-2 small mb-1">
-            <label class="text-muted mb-0">Carpeta con los PDF</label>
-            <input type="file" class="form-control form-control-sm" style="max-width: 18rem;" webkitdirectory directory multiple accept="application/pdf" data-nui-psl-folder>
-            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" checked data-nui-psl-notify> Avisarme por WhatsApp al acabar la lectura</label>
-        </div>
-        <div class="progress mb-1 d-none" style="height: .5rem;" data-nui-psl-progress><div class="progress-bar" style="width: 0%;"></div></div>
-        <div class="small text-muted" data-nui-psl-status></div>
-    </div>
-    {% endif %}
+    <p class="small text-muted mb-0">Pulsa una nómina para verla o ponerle el trabajador.</p>
 </div>

@@ -610,13 +610,36 @@
                 bar.firstElementChild.style.width = "100%";
                 const started = await fetch(box.dataset.read.replace("/0/", "/" + created.id + "/"), {method: "POST", credentials: "same-origin", headers: headers}).then(r => r.json());
                 if (!started.ok) throw new Error(started.message || "No se ha podido empezar la lectura.");
-                status.textContent = "Subidos " + (files.length - errors.length) + " de " + files.length + ". Leyendo en segundo plano; elige la entrega en el filtro «Entrega» para verla.";
+                status.textContent = "Subidos " + (files.length - errors.length) + " de " + files.length + ". Leyendo en segundo plano.";
                 result(errors.length ? "No se han subido: " + errors.join(" · ") : "Entrega subida: leyendo.", !!errors.length);
+                // La ventana pasa a ser la de la entrega (se refresca sola mientras lee).
+                if (box.dataset.sheet && window.nuiOpenViewer) window.nuiOpenViewer(box.dataset.sheet.replace("/0/", "/" + created.id + "/"), errors.length ? "No se han subido: " + errors.join(" · ") : "Entrega subida: leyendo en segundo plano.", "Entrega de nóminas");
             } catch (err) {
                 bar.classList.add("d-none");
                 status.textContent = "";
                 result(err.message || "No se ha podido subir la carpeta.", true);
             }
+        });
+        // S163 (24/11): «Ver sus nóminas» (y similares): cierra la ventana,
+        // pone el filtro propio de la pestaña y la abre.
+        root.addEventListener("click", function (ev) {
+            const btn = ev.target.closest("[data-nui-show-filtered]");
+            if (!btn) return;
+            ev.preventDefault();
+            const select = document.getElementById(btn.dataset.filter);
+            if (select) {
+                if (!select.querySelector('option[value="' + CSS.escape(btn.dataset.value) + '"]')) {
+                    const opt = document.createElement("option");
+                    opt.value = btn.dataset.value; opt.textContent = btn.dataset.label || btn.dataset.value;
+                    select.appendChild(opt);
+                }
+                select.value = btn.dataset.value;
+            }
+            const modal = document.getElementById("nui-viewer");
+            if (modal && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modal).hide();
+            const link = document.querySelector('[data-nui-panel="listado"] [data-nui-tab="' + btn.dataset.tab + '"]');
+            if (link && !link.classList.contains("active")) link.click();
+            else submitFilters();
         });
         // Días libres por horas: 8:00 por día mientras no se toquen las horas.
         document.addEventListener("input", function (ev) {
@@ -669,7 +692,10 @@
             if (btn.hasAttribute("data-nui-countdown-cancel")) { box.classList.add("d-none"); return; }
             // Una sola cosa (la abierta en la ventana): su nombre, sin marcar.
             const single = box.dataset.nuiCountdownSingle;
-            const picked = single ? [["", single]] : Array.from(sel().entries());
+            // O una lista ya hecha (p. ej. a quién se envían las nóminas).
+            const names = box.dataset.nuiCountdownNames ? JSON.parse(box.dataset.nuiCountdownNames) : null;
+            if (names && !names.length) { result("No hay nada a lo que aplicarlo.", true); return; }
+            const picked = names ? names.map(n => ["", n]) : single ? [["", single]] : Array.from(sel().entries());
             if (!picked.length) { result("Marca primero con la casilla, en la lista de abajo, a quién aplicarlo.", true); return; }
             const list = box.querySelector("[data-nui-countdown-list]");
             list.innerHTML = "";

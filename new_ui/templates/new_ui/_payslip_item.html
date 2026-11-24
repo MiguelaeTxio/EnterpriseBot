@@ -1,0 +1,46 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_payslip_item.html -- S163 (24/11): una nómina en el visor (Empresa › Nóminas): sus datos, verla y descargarla, ponerle el trabajador por DNI (autocompletado) y dejarla fuera o volver a meterla mientras su entrega lo admite. Vista: new_ui/views_payslips_nui.py (PayslipItemSheetView). #}
+<div class="small">
+    <table class="table table-sm mb-2">
+        <tbody>
+            <tr><th class="w-25">Trabajador</th><td>{% if item.person %}{{ item.person.first_surname }} {{ item.person.second_surname }}, {{ item.person.given_name }} <span class="text-muted">({{ item.person.dni }})</span>{% else %}<span class="text-danger">Sin trabajador</span>{% endif %}</td></tr>
+            <tr><th>Mes</th><td>{{ item.period_label|default:"—" }}</td></tr>
+            <tr><th>Estado</th><td>{{ item.get_status_display }}{% if item.note %} <span class="text-muted">· {{ item.note }}</span>{% endif %}</td></tr>
+            <tr><th>Archivo</th><td>{{ item.original_name }}{% if pages %} <span class="text-muted">(págs. {{ pages }})</span>{% endif %}</td></tr>
+            <tr><th>DNI leído</th><td>{{ item.dni_found|default:"—" }}</td></tr>
+            <tr><th>Móvil</th><td>{{ phone|default:"—" }}</td></tr>
+            <tr><th>Enviada</th><td>{{ item.sent_at|date:"d/m/Y H:i"|default:"—" }}</td></tr>
+            <tr><th>Entrega</th><td>{{ item.batch.created_at|date:"d/m/Y" }} · {{ item.batch.folder_name|default:"sin nombre" }} ({{ item.batch.get_status_display|lower }})</td></tr>
+        </tbody>
+    </table>
+    {% if has_pdf %}
+    <div class="d-flex flex-wrap gap-1 mb-2">
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'new_ui:payslip_pdf' item.pk %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>Ver el PDF</a>
+        <form data-nui-action-form data-nui-download data-nui-no-refresh action="{% url 'new_ui:payslip_download' %}" class="d-inline">
+            {% csrf_token %}<input type="hidden" name="selected" value="{{ item.pk }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download me-1"></i>Descargar</button>
+        </form>
+    </div>
+    {% endif %}
+    {% if changeable %}
+    <form data-nui-action-form action="{% url 'new_ui:payslip_action' %}" class="border rounded p-2 mb-2">
+        {% csrf_token %}<input type="hidden" name="action" value="assign"><input type="hidden" name="selected" value="{{ item.pk }}">
+        <div class="fw-semibold mb-1"><i class="bi bi-person-check me-1"></i>Poner el trabajador</div>
+        <div class="d-flex flex-wrap gap-1">
+            <input name="person" list="nui-psl-people" class="form-control form-control-sm" style="max-width: 16rem;" placeholder="DNI del trabajador" aria-label="DNI del trabajador" autocomplete="off">
+            <datalist id="nui-psl-people">{% for p in people %}<option value="{{ p.dni }}">{{ p.first_surname }} {{ p.second_surname }}, {{ p.given_name }}</option>{% endfor %}</datalist>
+            <button type="submit" class="btn btn-sm btn-primary">Poner</button>
+        </div>
+        <p class="text-muted mb-0 mt-1">Escribe el DNI o empieza por el apellido y elige. Vacío: la deja sin trabajador.</p>
+    </form>
+    <form data-nui-action-form action="{% url 'new_ui:payslip_action' %}">
+        {% csrf_token %}<input type="hidden" name="selected" value="{{ item.pk }}">
+        {% if excluded %}
+        <button type="submit" name="action" value="include" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>Volver a meter en la entrega</button>
+        {% else %}
+        <button type="submit" name="action" value="exclude" class="btn btn-sm btn-outline-secondary"><i class="bi bi-slash-circle me-1"></i>Dejar fuera de la entrega</button>
+        {% endif %}
+    </form>
+    {% else %}
+    <p class="text-muted mb-0">{% if item.sent_at %}Enviada el {{ item.sent_at|date:"d/m/Y H:i" }}: ya no admite cambios.{% else %}Su entrega ya no admite cambios.{% endif %}</p>
+    {% endif %}
+</div>

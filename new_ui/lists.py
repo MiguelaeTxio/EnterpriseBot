@@ -657,7 +657,12 @@ def _payslips_def():
                 "batch__folder_name", "person__first_surname",
                 "person__given_name", "person__dni"),
         default_order=("-batch__created_at", "original_name", "page_from"),
+        # S163 (24/11): el periodo es el mes de la nómina (el «Mes de la
+        # nómina desde / hasta» de la antigua).
+        date_field="period_end",
         actions=lambda r: [],
+        row_url=lambda r: reverse("new_ui:payslip_sheet", args=[r.pk]),
+        row_title="Nómina",
         extras=[
             Extra("entrega", "Entrega", batch_options,
                   apply=lambda qs, v: qs.filter(batch_id=int(v))
@@ -666,8 +671,79 @@ def _payslips_def():
                 PayslipItem.Status.choices),
                   apply=lambda qs, v: qs.filter(status=v)),
         ],
-        note="Solo las entregas que puedes ver. Elige la entrega en sus "
-             "filtros para darle el visto bueno, enviarla o compartirla.")
+        note="Solo las entregas que puedes ver. Pulsa una nómina para "
+             "verla, ponerle el trabajador o dejarla fuera. El periodo es "
+             "el mes de la nómina.")
+
+
+def _payslip_batches_def():
+    """
+    Empresa › Nóminas › Entregas: one row per batch (S163, 24/11).
+
+    ---
+
+    Una fila por entrega de las que ve quien mira (payslip_access), con
+    sus números. Pulsar una abre su ventana: visto bueno y enviar,
+    reintentar, avisar, anular, acceso y «Ver sus nóminas».
+    """
+    from django.db.models import Count
+    from django.db.models import Q as DQ
+
+    from hr_calendar import payslip_access as access
+    from hr_calendar.models import PayslipBatch, PayslipItem
+
+    S = PayslipItem.Status
+
+    def queryset(company):
+        user = CURRENT_USER.get()
+        if user is None:
+            return PayslipBatch.objects.none()
+        return access.visible_batches(user).select_related(
+            "created_by__user").annotate(
+            n_total=Count("items"),
+            n_ready=Count("items", filter=DQ(items__status=S.READY)),
+            n_unmatched=Count("items", filter=DQ(
+                items__status=S.UNMATCHED)),
+            n_sent=Count("items", filter=DQ(
+                items__status__in=[S.SENT, S.FILED])),
+            n_error=Count("items", filter=DQ(items__status=S.ERROR)),
+            n_out=Count("items", filter=DQ(items__status=S.EXCLUDED)))
+
+    def num(field):
+        return lambda r: str(getattr(r, field, 0) or 0)
+
+    return ListDef(
+        "Entregas de nóminas", queryset, [
+            Col("subida", "Subida", lambda r: fmt_datetime(r.created_at),
+                "created_at", "text-nowrap"),
+            Col("carpeta", "Carpeta", lambda r: r.folder_name
+                or "sin nombre", "folder_name"),
+            Col("subio", "Subida por", lambda r: access.user_label(
+                r.created_by) if r.created_by_id else ""),
+            Col("estado", "Estado", lambda r: r.get_status_display(),
+                "status"),
+            Col("total", "Nóminas", num("n_total"), "n_total", "text-end"),
+            Col("listas", "Listas", num("n_ready"), "n_ready", "text-end"),
+            Col("sin", "Sin trabajador", num("n_unmatched"), "n_unmatched",
+                "text-end"),
+            Col("enviadas", "Enviadas", num("n_sent"), "n_sent",
+                "text-end"),
+            Col("error", "Con error", num("n_error"), "n_error",
+                "text-end"),
+            Col("fuera", "Fuera", num("n_out"), "n_out", "text-end"),
+        ],
+        search=("folder_name",), date_field="created_at",
+        date_is_datetime=True, default_order=("-created_at",),
+        actions=lambda r: [],
+        extras=[Extra("estado", "Estado", lambda company: list(
+            PayslipBatch.Status.choices),
+            apply=lambda qs, v: qs.filter(status=v))],
+        row_url=lambda r: reverse("new_ui:payslip_batch_sheet",
+                                  args=[r.pk]),
+        row_title="Entrega de nóminas",
+        note="Solo las entregas que puedes ver. Pulsa una para darle el "
+             "visto bueno y enviarla, anularla o cambiar el acceso. El "
+             "periodo es el día de subida.")
 
 
 # ------------------------------------------------------------ horarios
@@ -3242,6 +3318,7 @@ def list_def(section, tab):
         # S163 (23/11): Nóminas, en Empresa, por entregas y con su acceso.
         _CACHE["per"].pop("nominas", None)
         _CACHE["doc"]["nominas"] = _payslips_def()
+        _CACHE["doc"]["entregas_nominas"] = _payslip_batches_def()
         # S163 (24/11): Empresa › EPIs › Lotes; «Familia» en las entregas.
         _CACHE["doc"]["lotes_epis"] = _epi_batches_def()
         _CACHE["doc"]["catalogo_epis"].row_tint = _epi_row_tint(

@@ -1,0 +1,63 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_payslip_batch.html -- S163 (24/11): una entrega de nóminas en el visor (Empresa › Nóminas › Entregas): estado y números (se refresca sola mientras se sube, se lee o se envía), visto bueno y enviar con la lista de quién la recibe (5 s), reintentar, volver a avisar, anular (5 s), acceso y «Ver sus nóminas». Vista: new_ui/views_payslips_nui.py (PayslipBatchSheetView). #}
+<div class="small"{% if live %} data-nui-viewer-autorefresh="5"{% endif %}>
+    <table class="table table-sm mb-2">
+        <tbody>
+            <tr><th class="w-25">Carpeta</th><td>{{ batch.folder_name|default:"sin nombre" }}</td></tr>
+            <tr><th>Subida</th><td>{{ batch.created_at|date:"d/m/Y H:i" }}{% if batch.created_by %} por {{ batch.created_by }}{% endif %}</td></tr>
+            <tr><th>Estado</th><td><span class="badge {% if is_ready %}text-bg-warning{% elif is_sent %}text-bg-success{% elif live %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ batch.get_status_display }}</span>{% if live %} <span class="text-muted">(se actualiza sola)</span>{% endif %}</td></tr>
+            {% if batch.approved_at %}<tr><th>Visto bueno</th><td>{{ batch.approved_at|date:"d/m/Y H:i" }}{% if batch.approved_by %} por {{ batch.approved_by }}{% endif %}</td></tr>{% endif %}
+            {% if batch.finished_at %}<tr><th>Terminada</th><td>{{ batch.finished_at|date:"d/m/Y H:i" }}</td></tr>{% endif %}
+            <tr><th>Nóminas</th><td>{{ total }}{% for label, n in counts %} · {{ label }}: {{ n }}{% endfor %}</td></tr>
+            {% if shared_labels %}<tr><th>Acceso</th><td>{{ shared_labels|join:", " }}</td></tr>{% endif %}
+            {% if batch.notify_error %}<tr><th>Aviso</th><td class="text-danger">{{ batch.notify_error }}</td></tr>{% endif %}
+        </tbody>
+    </table>
+    <button type="button" class="btn btn-sm btn-outline-primary mb-2" data-nui-show-filtered data-tab="nominas" data-filter="x_nominas_entrega" data-value="{{ batch.pk }}" data-label="{{ filter_label }}"><i class="bi bi-list-ul me-1"></i>Ver sus nóminas</button>
+
+    {% if is_ready %}
+    {% if unmatched %}<div class="alert alert-warning py-1 px-2 mb-2">Hay {{ unmatched }} nómina{{ unmatched|pluralize }} sin trabajador: pónselo o déjala{{ unmatched|pluralize }} fuera (en «Ver sus nóminas», pulsando cada una) antes del visto bueno.</div>{% endif %}
+    <form data-nui-action-form action="{% url 'new_ui:payslip_action' %}" class="mb-2">
+        {% csrf_token %}<input type="hidden" name="action" value="approve"><input type="hidden" name="batch" value="{{ batch.pk }}">
+        <button type="button" class="btn btn-sm btn-success" data-nui-countdown-ask{% if unmatched or not to_send %} disabled{% endif %}><i class="bi bi-send-check me-1"></i>Visto bueno y enviar ({{ to_send|length }})</button>
+        <div class="alert alert-warning small py-2 px-2 mt-1 mb-0 d-none" data-nui-countdown-box data-nui-countdown-names="{{ to_send_json }}">
+            Se archiva cada nómina en la ficha de su trabajador (confidencial) y se le manda por WhatsApp. La reciben:
+            <ul class="mb-1" data-nui-countdown-list style="max-height: 12rem; overflow-y: auto;"></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-success" data-nui-countdown-go disabled>Enviar <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+
+    <form data-nui-action-form action="{% url 'new_ui:payslip_action' %}" class="d-flex flex-wrap gap-1 mb-2">
+        {% csrf_token %}<input type="hidden" name="batch" value="{{ batch.pk }}">
+        {% if has_errors %}<button type="submit" name="action" value="retry" class="btn btn-sm btn-outline-warning">Reintentar WhatsApp</button>{% endif %}
+        {% if is_ready %}<button type="submit" name="action" value="notify" class="btn btn-sm btn-outline-secondary">Volver a avisar</button>{% endif %}
+    </form>
+
+    {% if can_share and candidates %}
+    <form data-nui-action-form action="{% url 'new_ui:payslip_action' %}" class="border rounded p-2 mb-2">
+        {% csrf_token %}<input type="hidden" name="action" value="share"><input type="hidden" name="batch" value="{{ batch.pk }}">
+        <div class="fw-semibold mb-1">Acceso para (además de quien la subió)</div>
+        <div class="d-flex flex-wrap column-gap-3 mb-1">{% for u in candidates %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="share" value="{{ u.pk }}"{% if u.checked %} checked{% endif %}> {{ u.label }}</label>{% endfor %}</div>
+        <button type="submit" class="btn btn-sm btn-outline-primary">Guardar el acceso</button>
+        <span class="text-muted">Al darle acceso se le avisa por WhatsApp.</span>
+    </form>
+    {% endif %}
+
+    {% if can_cancel %}
+    <form data-nui-action-form action="{% url 'new_ui:payslip_action' %}">
+        {% csrf_token %}<input type="hidden" name="action" value="cancel"><input type="hidden" name="batch" value="{{ batch.pk }}">
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-x-octagon me-1"></i>Anular la entrega</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 d-none" data-nui-countdown-box data-nui-countdown-single="{{ filter_label }}">
+            Se anula esta entrega y se borran las copias de sus PDF (no se envía nada):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-nui-countdown-go disabled>Anular <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+</div>
