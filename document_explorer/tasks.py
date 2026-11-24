@@ -574,10 +574,11 @@ def consume_quarantine_task(self) -> None:
     from document_explorer import classification_service, move_service
     from document_explorer.buckets import (
         NO_CONFORMES_PREFIX, PRIMARY_BUCKET, QUARANTINE_PREFIX,
-        quarantine_scope_q,
+        cae_quarantine_q, quarantine_scope_q,
     )
     from document_explorer.models import DocumentIndexEntry
 
+    # S156: la documentacion CAE no se clasifica (buckets.py).
     entries = list(
         DocumentIndexEntry.objects.filter(
             quarantine_scope_q(),
@@ -586,6 +587,7 @@ def consume_quarantine_task(self) -> None:
             deleted_at__isnull=True,
             purged_at__isnull=True,
         )
+        .exclude(cae_quarantine_q())
         .order_by("indexed_at")[:_QUARANTINE_CONSUME_BATCH_SIZE]
     )
     if not entries:

@@ -142,6 +142,38 @@ INBOX_NO_CONFORMES_PREFIX = "NO CONFORMES/BANDEJA DE ENTRADA/"
 INBOX_STAGING_PREFIX = "_BANDEJA_ENTRADA/"
 
 
+# S156 (CAE): documentacion mensual de las empresas y obras en
+# ejecucion que el agente H28 sube desde "Vigilar carpetas CAE". No
+# pasa por el clasificador de la cuarentena (Gemini la repartiria por
+# fichas de personas y maquinas): se queda aparte, con su ruta. La
+# carpeta de seguros de la documentacion mensual si se clasifica (va
+# a DOC. EMPRESA/SEGUROS, S152).
+# ---
+# CAE folders uploaded by the H28 agent: kept out of the quarantine
+# classifier, except the insurance folder.
+CAE_QUARANTINE_PREFIXES = (
+    QUARANTINE_PREFIX + "00 DOCUMENTACION MENSUAL",
+    QUARANTINE_PREFIX + "00 OBRAS EN EJECUCION",
+)
+CAE_CLASSIFIED_MARK = "/SEGURO ACCIDENTE Y RC EMPRESARIAL Y PATRONAL"
+
+
+def cae_quarantine_q(field="parent_path"):
+    """
+    Q filter matching CAE files in quarantine that must NOT be
+    classified (see CAE_QUARANTINE_PREFIXES).
+
+    ---
+
+    Filtro Q de los archivos CAE de la cuarentena que NO se
+    clasifican (ver CAE_QUARANTINE_PREFIXES).
+    """
+    matched = Q()
+    for prefix in CAE_QUARANTINE_PREFIXES:
+        matched |= Q(**{field + "__startswith": prefix})
+    return matched & ~Q(**{field + "__contains": CAE_CLASSIFIED_MARK})
+
+
 def no_conformes_scope_q(field="parent_path"):
     """
     Q matching anything inside NO CONFORMES (any of its subfolders).
