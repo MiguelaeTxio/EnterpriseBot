@@ -861,6 +861,7 @@
             formTitle(form, '<i class="bi bi-plus-circle me-1"></i>' + (form.dataset.newTitle || "Nuevo"));
             form.dispatchEvent(new Event("change", {bubbles: true}));
         }
+        window.nuiFormFill = function (form, fields) { formFill(form, fields); };
         function formFill(form, fields) {
             Object.keys(fields).forEach(function (name) {
                 const value = fields[name];
@@ -1233,9 +1234,8 @@
             setScope({pk: parts[1], label: decodeURIComponent(parts[3] || "")}, "epis");
         });
         // Horario: qué partes del formulario se ven según las casillas.
-        const scheduleForm = document.getElementById("nui-schedule-form");
-        function scheduleParts() {
-            const f = scheduleForm;
+        // S163 (24/11): el formulario del horario vive en su ventana.
+        function scheduleParts(f) {
             const open = f.querySelector('[name="is_open"]').checked;
             const varies = !open && f.querySelector('[name="varies_by_day"]').checked;
             const continuous = f.querySelector('[name="is_intensive"]').checked;
@@ -1246,10 +1246,10 @@
             f.querySelector('[data-nui-schedule-part="days"]').classList.toggle("d-none", !varies);
             f.querySelector('[data-nui-schedule-part="holiday"]').classList.toggle("d-none", !holidays);
         }
-        if (scheduleForm) {
-            scheduleForm.addEventListener("change", scheduleParts);
-            scheduleParts();
-        }
+        document.addEventListener("change", function (ev) {
+            const f = ev.target.closest("form[data-nui-schedule-form]");
+            if (f) scheduleParts(f);
+        });
         if (dossierForm) {
             dossierForm.addEventListener("change", function (ev) {
                 if (ev.target.name === "scope") dossierScope(ev.target.value, false);
@@ -1805,6 +1805,15 @@
                 .then(r => r.ok ? r.text() : Promise.reject(new Error("No se ha podido abrir.")))
                 .then(function (html) {
                     body.innerHTML = html;
+                    // S163 (24/11): formularios de la ventana que se rellenan
+                    // con los datos guardados (horario, tipo de fichaje...).
+                    body.querySelectorAll("form[data-nui-fill-url]").forEach(function (f) {
+                        fetch(f.dataset.nuiFillUrl, {credentials: "same-origin"})
+                            .then(r => r.json())
+                            .then(function (data) { if (data.ok) window.nuiFormFill(f, data.fields); })
+                            .catch(function () {});
+                    });
+                    body.querySelectorAll("form[data-nui-schedule-form]").forEach(f => f.dispatchEvent(new Event("change", {bubbles: true})));
                     // S163 (24/11): lo que se está haciendo (un informe de
                     // seguros) se actualiza solo mientras la ventana siga abierta.
                     const auto = body.querySelector("[data-nui-viewer-autorefresh]");

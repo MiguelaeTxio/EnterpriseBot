@@ -607,3 +607,58 @@ def schedules_context(section, company):
         "nui_type_roles": ClockType.ROLE_CHOICES,
         "nui_today": timezone.localdate().isoformat(),
     }
+
+
+# --------------------------------------------- ventanas (S163, 24/11)
+class ScheduleSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one schedule in the viewer (0 = a new one).
+
+    ---
+
+    GET: un horario en el visor (al pulsarlo) o uno nuevo (pk 0): el
+    mismo formulario, rellenado con ScheduleDataView; Borrar con su
+    espera de 5 s.
+    """
+
+    def get(self, request, pk):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        sched = (get_object_or_404(WorkdaySchedule, pk=pk,
+                                   company=_company_user(request).company)
+                 if pk else None)
+        return render(request, "new_ui/_schedule_form.html", {
+            "nui_seasons": WorkdaySchedule.Season.choices,
+            "nui_weekdays": list(enumerate(WEEKDAY_NAMES, start=1)),
+            "fill_url": reverse("new_ui:schedule_data", args=[pk])
+            if pk else "",
+            "schedule_pk": pk or "",
+            "schedule_label": sched.label if sched else "",
+            "open_tpl": reverse("new_ui:schedule_sheet", args=[0]),
+        })
+
+
+class ClockTypeSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one clock type in the viewer (0 = a new one).
+
+    ---
+
+    GET: un tipo de fichaje en el visor (al pulsarlo) o uno nuevo.
+    """
+
+    def get(self, request, pk):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        if pk:
+            get_object_or_404(ClockType, pk=pk,
+                              company=_company_user(request).company)
+        return render(request, "new_ui/_clock_type_form.html", {
+            "nui_type_icons": TYPE_ICONS,
+            "nui_type_roles": ClockType.ROLE_CHOICES,
+            "fill_url": reverse("new_ui:clock_type_data", args=[pk])
+            if pk else "",
+            "open_tpl": reverse("new_ui:clock_type_sheet", args=[0]),
+        })

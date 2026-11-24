@@ -411,6 +411,11 @@ urlpatterns = [
     # Horarios y tipos de fichaje (S163).
     path("horarios/<int:pk>/", views_schedules.ScheduleDataView.as_view(),
          name="schedule_data"),
+    path("horarios/<int:pk>/ver/",
+         views_schedules.ScheduleSheetView.as_view(), name="schedule_sheet"),
+    path("tipos-fichaje/<int:pk>/ver/",
+         views_schedules.ClockTypeSheetView.as_view(),
+         name="clock_type_sheet"),
     path("horarios/guardar/", views_schedules.ScheduleSaveView.as_view(),
          name="schedule_save"),
     path("horarios/borrar/", views_schedules.ScheduleDeleteView.as_view(),

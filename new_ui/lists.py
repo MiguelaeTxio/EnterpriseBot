@@ -3049,6 +3049,15 @@ def list_def(section, tab):
         # S163 (23/11): se configuran en Empresa (catalog.MOVED_VIEWS).
         for key in ("lista_horarios", "tipos_fichaje", "catalogo_epis"):
             _CACHE["doc"][key] = _CACHE["per"].pop(key)
+        # S163 (24/11): pulsar un horario o un tipo lo abre en su ventana.
+        _CACHE["doc"]["lista_horarios"].row_url = lambda r: reverse(
+            "new_ui:schedule_sheet", args=[r.pk])
+        _CACHE["doc"]["lista_horarios"].row_title = "Horario"
+        _CACHE["doc"]["lista_horarios"].actions = lambda r: []
+        _CACHE["doc"]["tipos_fichaje"].row_url = lambda r: reverse(
+            "new_ui:clock_type_sheet", args=[r.pk])
+        _CACHE["doc"]["tipos_fichaje"].row_title = "Tipo de fichaje"
+        _CACHE["doc"]["tipos_fichaje"].actions = lambda r: []
         # S163 (23/11): Nóminas, en Empresa, por entregas y con su acceso.
         _CACHE["per"].pop("nominas", None)
         _CACHE["doc"]["nominas"] = _payslips_def()

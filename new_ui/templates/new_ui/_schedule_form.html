@@ -1,0 +1,58 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_schedule_form.html -- S163 (24/11): un horario en el visor (nuevo o al pulsarlo); se rellena con data-nui-fill-url y Borrar espera 5 s. Vista: new_ui/views_schedules.py (ScheduleSheetView). #}
+<div data-nui-req-sheet>
+    <form data-nui-action-form action="{% url 'new_ui:schedule_save' %}" data-nui-schedule-form data-nui-viewer-open-tpl="{{ open_tpl }}"{% if fill_url %} data-nui-fill-url="{{ fill_url }}"{% endif %}>
+        {% csrf_token %}
+        <input type="hidden" name="schedule_pk" value="" data-nui-pk>
+        <input type="text" name="label" class="form-control form-control-sm mb-1" placeholder="Nombre del horario" aria-label="Nombre" required>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Temporada">
+            {% for code, label in nui_seasons %}
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="season" value="{{ code }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>
+            {% endfor %}
+        </div>
+        <div class="d-flex flex-wrap column-gap-3 small mb-1">
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="is_open" value="1" data-nui-schedule-toggle> <span class="form-check-label">Abierto (sin horas que comparar ni recordatorios)</span></label>
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="varies_by_day" value="1" data-nui-schedule-toggle> <span class="form-check-label">Distinto según el día</span></label>
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="is_intensive" value="1" data-nui-schedule-toggle> <span class="form-check-label">Jornada continua (un solo tramo)</span></label>
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="works_holidays" value="1" data-nui-schedule-toggle> <span class="form-check-label">Se trabaja en festivos</span></label>
+            <label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="is_default" value="1"> <span class="form-check-label">Por defecto de la empresa</span></label>
+        </div>
+        <div data-nui-schedule-part="fixed" class="row g-1 small mb-1">
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Entrada mañana</label><input type="time" name="start_time_morning" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Salida mañana</label><input type="time" name="end_time_morning" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3" data-nui-schedule-part="afternoon"><label class="text-muted d-block">Entrada tarde</label><input type="time" name="start_time_afternoon" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3" data-nui-schedule-part="afternoon"><label class="text-muted d-block">Salida tarde</label><input type="time" name="end_time_afternoon" class="form-control form-control-sm"></div>
+        </div>
+        <table class="table table-sm small mb-1 d-none" data-nui-schedule-part="days">
+            <thead><tr><th>Día</th><th>Se trabaja</th><th>Entrada mañana</th><th>Salida mañana</th><th>Entrada tarde</th><th>Salida tarde</th></tr></thead>
+            <tbody>
+                {% for number, name in nui_weekdays %}
+                <tr{% if forloop.last %} data-nui-schedule-part="holiday"{% endif %}>
+                    <td>{{ name }}</td>
+                    <td><input class="form-check-input" type="checkbox" name="day_{{ number }}_works" value="1" checked aria-label="{{ name }}: se trabaja"></td>
+                    <td><input type="time" name="day_{{ number }}_sm" class="form-control form-control-sm" aria-label="{{ name }}: entrada mañana"></td>
+                    <td><input type="time" name="day_{{ number }}_em" class="form-control form-control-sm" aria-label="{{ name }}: salida mañana"></td>
+                    <td><input type="time" name="day_{{ number }}_sa" class="form-control form-control-sm" aria-label="{{ name }}: entrada tarde"></td>
+                    <td><input type="time" name="day_{{ number }}_ea" class="form-control form-control-sm" aria-label="{{ name }}: salida tarde"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="d-flex align-items-center gap-2 small mb-1">
+            <label class="text-muted mb-0" for="nui-sched-tol">Tolerancia (minutos)</label>
+            <input type="number" min="0" name="tolerance_minutes" id="nui-sched-tol" value="15" class="form-control form-control-sm" style="width: 6rem;">
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar horario</button>
+        <p class="small text-muted mt-1 mb-0">Se asignan en Personal › Horarios.</p>
+    </form>
+{% if schedule_pk %}
+<button type="button" class="btn btn-sm btn-outline-danger mt-2" data-nui-req-delete-ask><i class="bi bi-trash me-1"></i>Borrar este horario</button>
+<form data-nui-action-form action="{% url 'new_ui:schedule_delete' %}" data-nui-viewer-close-on="delete" class="alert alert-danger small py-2 px-2 mt-2 mb-0 d-none" data-nui-req-delete-box>
+    {% csrf_token %}<input type="hidden" name="selected" value="{{ schedule_pk }}">
+    Se va a borrar el horario <strong>{{ schedule_label }}</strong>. A quien lo tenga le tocará el de su sección o el de por defecto.
+    <div class="d-flex gap-1 mt-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-nui-req-delete-cancel>Cancelar</button>
+        <button type="submit" name="action" value="delete" class="btn btn-sm btn-danger" data-nui-countdown disabled>Borrar <span data-nui-countdown-left></span></button>
+    </div>
+</form>
+{% endif %}
+</div>
