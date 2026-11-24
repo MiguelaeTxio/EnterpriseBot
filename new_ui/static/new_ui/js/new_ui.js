@@ -1796,15 +1796,6 @@
                 .then(r => r.ok ? r.text() : Promise.reject(new Error("No se ha podido abrir.")))
                 .then(function (html) {
                     body.innerHTML = html;
-                    // S163 (24/11): lo que se está haciendo (un informe de
-                    // seguros) se actualiza solo mientras la ventana siga abierta.
-                    const auto = body.querySelector("[data-nui-viewer-autorefresh]");
-                    if (auto) {
-                        const wanted = viewerUrl;
-                        setTimeout(function () {
-                            if (modal.classList.contains("show") && viewerUrl === wanted) window.nuiOpenViewer(null);
-                        }, Number(auto.dataset.nuiViewerAutorefresh || "5") * 1000);
-                    }
                     if (note) {
                         const p = document.createElement("div");
                         p.className = "alert alert-success small py-1 px-2";

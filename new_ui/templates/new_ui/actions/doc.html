@@ -90,24 +90,4 @@ new_ui.js enseña el de la vista abierta. Formularios:
 {% include "new_ui/actions/_payslips.html" %}
 {% include "new_ui/actions/_pay.html" with section="doc" %}
 {% include "new_ui/actions/_sig.html" %}
-{% if ins_can %}
-<div class="d-none" data-nui-actions-for="seguros">
-    {# S163 (24/11): Empresa › Seguros. Nuevo informe en su ventana; cada informe se abre al pulsarlo. #}
-    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:insurance_new_form' %}" data-nui-viewer-title="Nuevo informe de seguros"><i class="bi bi-plus-circle me-1"></i>Nuevo informe</button>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:insurance_action' %}" class="d-flex flex-wrap gap-1">
-        {% csrf_token %}
-        <button type="submit" name="action" value="retry" class="btn btn-sm btn-outline-secondary" title="Los vuelve a hacer con los mismos meses, empresas y libros mayores (solo lee los documentos nuevos o cambiados)."><i class="bi bi-arrow-repeat me-1"></i>Volver a generar</button>
-        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-trash me-1"></i>Borrar</button>
-        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 w-100 d-none" data-nui-countdown-box>
-            Se van a borrar estos informes:
-            <ul class="mb-1" data-nui-countdown-list></ul>
-            <div class="d-flex gap-1 mt-2">
-                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
-                <button type="submit" name="action" value="delete" class="btn btn-sm btn-danger" data-nui-countdown-go disabled>Borrar <span data-nui-countdown-left></span></button>
-            </div>
-        </div>
-    </form>
-    <p class="small text-muted mt-2 mb-0">Pulsa un informe para verlo, exportarlo a HTML, Excel, PDF o Word, volver a generarlo o borrarlo.</p>
-</div>
-{% endif %}
 {% include "new_ui/actions/_cae.html" %}

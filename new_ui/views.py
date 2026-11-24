@@ -326,8 +326,6 @@ def _section_context(company_user, section):
         **pay_context(section, company_user.company),
         **partes_context(section, company_user),
         **signatures_context(section, company_user),
-        "ins_can": section == "doc" and bool(getattr(
-            company_user, "insurance_access", False)),
         **epis_context(section),
         **machines_context(section, company_user.company),
         **(logbook_context() if section == "cdg" else {}),
@@ -712,14 +710,6 @@ class NewUiListView(SuperuserRequiredMixin, View):
             from new_ui.views_notices import render_config
 
             return render_config(request)
-        if (section, tab) == ("doc", "seguros"):
-            # S163 (24/11): solo con acceso a los seguros (como la antigua).
-            from new_ui.views_insurance_nui import can_use_insurance
-
-            if not can_use_insurance(_company_user(request)):
-                return HttpResponse(
-                    '<p class="p-2 text-muted small mb-0">Los informes de '
-                    'seguros no son para tu usuario.</p>')
         if section == "doc" and tab in ("firmas", "firmas_guardadas",
                                         "certificados", "agentes_firma"):
             # S163 (24/11): las firmas, solo para quien tiene acceso a
