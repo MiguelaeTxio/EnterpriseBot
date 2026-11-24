@@ -520,8 +520,14 @@ def canonical_names_task(self) -> str:
     from document_explorer.canonical_names import (
         rename_cae, rename_dated_sinfecha,
     )
-    from document_explorer.insurance_links import link_insurance
+    from document_explorer.insurance_links import (
+        link_insurance, read_new_insurance,
+    )
 
+    read = read_new_insurance()
+    if read:
+        logger.info(
+            "# [canonical_names_task] %d seguros nuevos leídos.", read)
     insurance = link_insurance()
     if insurance:
         logger.info(

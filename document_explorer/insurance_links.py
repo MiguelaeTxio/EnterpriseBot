@@ -53,6 +53,8 @@ SUBTYPE_CODES = {
 }
 _TAX_ID_RE = re.compile(r"\b([A-HJ-NP-SUVW])[\s.-]?(\d{8})\b")
 _BATCH = 300
+# Lecturas con Gemini por pasada (una cada 10 minutos).
+_READ_BATCH = 10
 
 
 def _group_tax_id(policyholder):
@@ -139,3 +141,42 @@ def link_insurance(limit=_BATCH):
             logger.exception("# [insurance_links] No se pudo enlazar %s",
                              entry.pk)
     return linked
+
+
+def read_new_insurance(limit=_READ_BATCH):
+    """Read with Gemini the company insurance files never read (S156).
+    ---
+    Lee con Gemini los seguros de DOC. EMPRESA/SEGUROS que nunca se han
+    leído o que han cambiado (otro md5), para que se enlacen a su
+    empresa sin esperar a un informe de seguros. Los que fallaron no se
+    reintentan aquí (los reintenta el informe). Devuelve cuántos.
+    """
+    from insurance import readings
+
+    entries = [
+        entry for entry in DocumentIndexEntry.objects.filter(
+            bucket=PRIMARY_BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+            parent_path__startswith=INSURANCE_ROOT,
+            document_type__code__in=GENERIC_CODES,
+        ).select_related("insurance_reading")
+        if readings.mime_type(entry) is not None
+        and not any(
+            word in (entry.parent_path + "/" + entry.name).upper()
+            for word in readings.EXCLUDED_PATH_WORDS)
+        and _needs_reading(entry)
+    ][:limit]
+    done = 0
+    for entry in entries:
+        close_old_connections()
+        _data, error = readings.read(entry)
+        done += int(not error)
+    return done
+
+
+def _needs_reading(entry):
+    try:
+        reading = entry.insurance_reading
+    except Exception:  # RelatedObjectDoesNotExist: sin lectura
+        return True
+    return (entry.md5_hash or "") != reading.md5_hash
