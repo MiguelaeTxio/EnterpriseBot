@@ -1884,6 +1884,9 @@ def _doc_lists():
             ],
             search=("name",), default_order=("name",),
             actions=lambda r: [],
+            extras=[Extra("activo", "Activo", lambda company: [
+                ("si", "Activos"), ("no", "Desactivados (no avisan)")],
+                lambda qs, v: qs.filter(is_active=v == "si"))],
             # S163 (24/11): pulsar un requisito lo abre para editarlo,
             # como en la antigua.
             row_url=lambda r: reverse("new_ui:requirement_sheet",

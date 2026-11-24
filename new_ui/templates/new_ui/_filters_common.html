@@ -19,6 +19,7 @@ ver» (barra de título, _view_picker.html): _view_filters.html.
     <input type="hidden" name="cual" value="{{ period.cual }}">
     <input type="search" class="form-control form-control-sm mb-2" id="nui-q" name="q" value="{{ f.q }}"
            placeholder="{% if section == 'permisos' %}Buscar por usuario, nombre, DNI o teléfono…{% elif section == 'cdg' %}Buscar por código, marca, matrícula…{% elif section == 'per' %}Buscar por nombre, DNI, teléfono…{% else %}Buscar…{% endif %}" aria-label="Buscar">
+    <div data-nui-common="period">
     <div class="small fw-semibold mb-1">Periodo{% if section == "permisos" %} <span class="fw-normal text-muted">(último acceso)</span>{% else %} <span class="fw-normal text-muted" id="nui-period-note"></span>{% endif %}</div>
     <div class="d-flex flex-wrap gap-1 align-items-center mb-1">
         {% for unit in period.units %}
@@ -41,7 +42,8 @@ ver» (barra de título, _view_picker.html): _view_filters.html.
         </div>
     </div>
     <div class="small text-muted mb-2" id="nui-period-summary">{{ period.summary }}</div>
-    <div class="row g-1 small">
+    </div>
+    <div class="row g-1 small" data-nui-common="entity">
         <div class="col-3">
             <label class="fw-semibold" for="nui-estado">Estado</label>
             <select class="form-select form-select-sm" id="nui-estado" name="estado">

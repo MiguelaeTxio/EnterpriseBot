@@ -698,6 +698,7 @@ class NewUiListView(SuperuserRequiredMixin, View):
             from django.urls import reverse as _reverse
 
             return HttpResponse(
+                '<div class="d-none" data-nui-filters=""></div>'
                 '<div class="p-2" data-nui-vacset data-url="%s">%s</div>' % (
                     _reverse("new_ui:vacation_setup_block"),
                     VacationSetupBlockView.as_view()(request).content.decode()))

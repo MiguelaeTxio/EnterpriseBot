@@ -1343,6 +1343,15 @@
                 // S163 (24/11): las fechas que se están aplicando de verdad.
                 const summary = document.getElementById("nui-period-summary");
                 if (summary && state && state.dataset.period) summary.textContent = state.dataset.period;
+                // S163 (24/11, Miguel Ángel: «que los filtros sean acordes con
+                // lo que vamos a filtrar»): Estado, Empresa, Grupo y Sección
+                // solo en las listas de personas o máquinas, y el periodo solo
+                // donde hay fecha. Sin marca (vistas propias), se ven todos.
+                const marker = box.querySelector("[data-nui-filters]");
+                const wanted = marker ? marker.dataset.nuiFilters.split(/\s+/) : ["entity", "period"];
+                root.querySelectorAll("[data-nui-common]").forEach(function (el) {
+                    el.classList.toggle("d-none", wanted.indexOf(el.dataset.nuiCommon) === -1);
+                });
             }
             refreshSelection();
         }
