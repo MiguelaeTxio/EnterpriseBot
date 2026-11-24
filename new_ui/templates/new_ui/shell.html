@@ -205,8 +205,9 @@ body.nui-dragging { user-select: none; }
                         <h6 class="nui-sec-title fw-semibold border-bottom pb-1 mb-2" data-nui-sec-title></h6>
                         <p class="small text-muted mb-2" data-nui-sec-hint></p>
                         <div id="nui-row-actions" class="mb-2"></div>
-                        {% if section != "doc" %}<div id="nui-entity-actions" class="mb-2"></div>{% endif %}
+                        {# S163 (24/11): primero las acciones de la pestaña; lo común del trabajador o la máquina, detrás. #}
                         <div data-nui-sec-body></div>
+                        {% if section != "doc" %}<div id="nui-entity-actions" class="mt-2"></div>{% endif %}
                     </section>
                     <section class="mb-3" data-nui-sec="new">
                         <h6 class="nui-sec-title fw-semibold border-bottom pb-1 mb-2">Nuevo y ajustes</h6>

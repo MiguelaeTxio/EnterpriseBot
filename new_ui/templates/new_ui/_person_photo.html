@@ -1,16 +1,10 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_person_photo.html #}
 {% comment %}
-S163. Foto de la persona en Acciones › «Del trabajador» (copia de la
-ventana «Ver foto» antigua): descargar para plataformas (entera o el
-recuadro que se marque arrastrando sobre la foto), girar, modo
-automático y subir otra. Vista: new_ui/views_photos.py.
+S163. Lo del trabajador abierto en Acciones que no depende de la
+pestaña: la revisión del contrato vigente. La foto para plataformas va
+en su ficha (_platform_photo.html). Vista: new_ui/views_photos.py.
 {% endcomment %}
-<details class="mb-2">
-<summary class="small fw-semibold"><i class="bi bi-person-bounding-box me-1"></i>Foto para plataformas <span class="fw-normal text-muted">{% if photo_url %}(descargar entera o recortada, girar, subir otra){% else %}(no tiene: subir o sacarla de un documento){% endif %}</span></summary>
-<div class="mt-1">
-{% include "new_ui/_platform_photo.html" %}
-</div>
-</details>
+{# S163 (24/11, Miguel Ángel: la foto "la tenemos además duplicada" y tapaba las demás acciones): la foto para plataformas va solo en la ficha (Datos); aquí, solo la revisión del contrato. #}
 
 <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-check me-1"></i>Contrato vigente</div>
 <form data-nui-action-form data-nui-no-refresh data-nui-contract action="{% url 'new_ui:contract_review' person.pk %}" class="small">
