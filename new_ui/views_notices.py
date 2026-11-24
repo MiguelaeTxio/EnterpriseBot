@@ -414,7 +414,27 @@ def render_config(request):
     service = MachineServiceAlertSettings.objects.filter(
         company=company_user.company).first()
     recipients = core._recipients_context(company_user)
+    # S163 (24/11), como en la antigua: al lado de cada requisito,
+    # cuántos de sus documentos obligatorios tienen algún aviso.
+    configured = {}
+    for rule in RequirementAlertRule.objects.all():
+        if any(core._alert_rule_to_dict(rule).get(k) for k in (
+                "missing", "d30", "d15", "d7", "d1", "c1v", "c2v")):
+            configured.setdefault(rule.job_position_id, set()).add(
+                rule.document_type_id)
+    for p in positions:
+        required = {t.pk for t in p.required_document_types.all()}
+        p.nui_alert_count = "%d/%d" % (
+            len(configured.get(p.pk, set()) & required), len(required))
+    # El destinatario elegido (como el requisito): el de la URL, uno
+    # mismo o el primero.
+    sups = recipients["supervisors"]
+    sup_pk = core._int_or_none(request.GET.get("av_cfg_sup"))
+    supervisor = (next((s for s in sups if s["id"] == sup_pk), None)
+                  or next((s for s in sups if s["is_me"]), None)
+                  or (sups[0] if sups else None))
     return render(request, "new_ui/_notices_config.html", {
+        "supervisor": supervisor,
         "positions": positions,
         "position": position,
         "types": types,

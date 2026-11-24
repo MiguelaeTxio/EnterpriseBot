@@ -752,6 +752,7 @@
                     if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
                     if (f.hasAttribute("data-nui-vacset-reload")) loadVacationSetup();
                     f.querySelectorAll("[data-nui-countdown-box]").forEach(b => b.classList.add("d-none"));
+                    if (f.hasAttribute("data-nui-dirty")) { const c = f.closest(".card"); const b = c && c.querySelector("[data-nui-dirty-badge]"); if (b) b.classList.add("d-none"); }
                     const closeOn = f.dataset.nuiViewerCloseOn;
                     if (closeOn && submitter && submitter.value === closeOn) {
                         // Lo abierto en el visor ya no existe (p. ej. requisito eliminado).
@@ -984,6 +985,27 @@
             const subject = uploadForm.querySelector('[name="subject_pk"]');
             if (!subject.value && scope && scope.pk) subject.value = scope.pk;
         }, true);
+        // S163 (24/11), Configuración de avisos como la antigua: «Cambios
+        // sin guardar» y cuántos hay marcados en cada lista «(N marcados)».
+        function paintCounts(f) {
+            f.querySelectorAll("[data-nui-count-of]").forEach(function (span) {
+                const n = f.querySelectorAll('[name="' + span.dataset.nuiCountOf + '"]:checked').length;
+                span.textContent = "(" + n + " marcado" + (n === 1 ? "" : "s") + ")";
+            });
+        }
+        function dirtyChange(ev) {
+            const f = ev.target.closest("form[data-nui-dirty]");
+            if (!f || ev.target.matches("[data-nui-filter-list]")) return;
+            const card = f.closest(".card");
+            const badge = card && card.querySelector("[data-nui-dirty-badge]");
+            if (badge) badge.classList.remove("d-none");
+            paintCounts(f);
+        }
+        root.addEventListener("change", dirtyChange);
+        root.addEventListener("input", dirtyChange);
+        new MutationObserver(function () {
+            document.querySelectorAll("form[data-nui-dirty]:not([data-ready])").forEach(function (f) { f.setAttribute("data-ready", ""); paintCounts(f); });
+        }).observe(document.body, {childList: true, subtree: true});
         // Elegir un tipo sin desplegable: escribir filtra la lista.
         root.addEventListener("input", function (ev) {
             const input = ev.target.closest("[data-nui-filter-list]");

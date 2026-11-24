@@ -1,103 +1,184 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_notices_config.html -- S163: Empresa › Documentación › Configuración de avisos (avisos de cada requisito, mi WhatsApp, antelación de revisiones y destinatarios). Vista: new_ui/views_notices.py (render_config). #}
+{% comment %}
+S163 (24/11): repartida como la antigua (panel/document_alerts/pane.html):
+arriba mi WhatsApp y la antelación de las revisiones; debajo, a la
+izquierda la lista de requisitos (con cuántos documentos tienen aviso) y
+a la derecha los avisos del elegido; y lo mismo con los destinatarios.
+{% endcomment %}
 <div class="p-2 small">
-    <div class="row g-3">
-        <div class="col-12 col-xxl-7">
-            <div class="fw-semibold mb-1"><i class="bi bi-bell me-1"></i>Avisos de cada requisito</div>
-            {% if positions %}
-            <div class="d-flex flex-wrap gap-1 mb-2">
-                {% for p in positions %}<button type="button" class="btn btn-sm py-0 {% if position and position.pk == p.pk %}btn-primary{% else %}btn-outline-primary{% endif %}" data-nui-list-param="av_cfg_req" data-value="{{ p.pk }}">{{ p.name }}</button>{% endfor %}
-            </div>
-            {% if position %}
-            <form data-nui-action-form action="{% url 'new_ui:notice_rules' position.pk %}" class="border rounded p-2">
-                {% csrf_token %}
-                <table class="table table-sm align-middle mb-2">
-                    <thead class="table-light"><tr><th>Documento obligatorio</th><th>Si falta</th><th>30 días</th><th>15 días</th><th>7 días</th><th>El día antes</th><th>Otro aviso</th><th>Otro más</th></tr></thead>
-                    <tbody>
-                    {% for t in types %}
-                    <tr>
-                        <td>{{ t.type.label }}{% if not t.type.tracks_expiry %}<div class="text-muted">No caduca: solo «si falta».</div>{% endif %}</td>
-                        <td><input class="form-check-input" type="checkbox" name="missing_{{ t.type.pk }}" value="1" aria-label="Si falta"{% if t.rule.missing %} checked{% endif %}></td>
-                        {% if t.type.tracks_expiry %}
-                        <td><input class="form-check-input" type="checkbox" name="d30_{{ t.type.pk }}" value="1" aria-label="30 días antes"{% if t.rule.d30 %} checked{% endif %}></td>
-                        <td><input class="form-check-input" type="checkbox" name="d15_{{ t.type.pk }}" value="1" aria-label="15 días antes"{% if t.rule.d15 %} checked{% endif %}></td>
-                        <td><input class="form-check-input" type="checkbox" name="d7_{{ t.type.pk }}" value="1" aria-label="7 días antes"{% if t.rule.d7 %} checked{% endif %}></td>
-                        <td><input class="form-check-input" type="checkbox" name="d1_{{ t.type.pk }}" value="1" aria-label="El día antes"{% if t.rule.d1 %} checked{% endif %}></td>
-                        {% for slot in "12" %}
-                        <td class="text-nowrap">
-                            <input name="c{{ slot }}v_{{ t.type.pk }}" value="{% if slot == '1' %}{{ t.rule.c1v|default_if_none:'' }}{% else %}{{ t.rule.c2v|default_if_none:'' }}{% endif %}" class="form-control form-control-sm d-inline-block" style="width: 4rem;" inputmode="numeric" placeholder="—" aria-label="Antelación">
-                            {% for code, label in units %}<label class="form-check form-check-inline mb-0 me-1"><input class="form-check-input" type="radio" name="c{{ slot }}u_{{ t.type.pk }}" value="{{ code }}"{% if slot == '1' and t.rule.c1u == code or slot == '2' and t.rule.c2u == code %} checked{% endif %}> {{ label }}</label>{% endfor %}
-                        </td>
-                        {% endfor %}
-                        {% else %}
-                        <td colspan="6"></td>
-                        {% endif %}
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="8" class="text-muted">Este requisito no tiene documentos obligatorios.</td></tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-                <button type="submit" class="btn btn-sm btn-primary">Guardar los avisos de «{{ position.name }}»</button>
-            </form>
-            {% endif %}
+    <div class="border rounded mb-2">
+        {% if can_toggle_whatsapp %}
+        <form data-nui-action-form action="{% url 'new_ui:notice_whatsapp' %}" class="d-flex flex-wrap align-items-center gap-2 px-2 py-1 border-bottom">
+            {% csrf_token %}
+            <span class="fw-semibold"><i class="bi bi-whatsapp me-1"></i>Recibir mis avisos por WhatsApp</span>
+            {% if whatsapp_enabled %}
+            <span class="badge text-bg-success">Activado</span>
+            <button type="submit" name="enabled" value="0" class="btn btn-sm btn-outline-secondary py-0">Desactivar</button>
             {% else %}
-            <p class="text-muted">No hay requisitos de documentación: se crean en Empresa › Documentación › Requisitos.</p>
+            <span class="badge text-bg-secondary">Apagado</span>
+            <button type="submit" name="enabled" value="1" class="btn btn-sm btn-success py-0" data-nui-confirm="¿Recibir tus avisos por WhatsApp? En el próximo envío diario de las 8:00 te llegarán todos los de tu ámbito. A los demás destinatarios no les afecta.">Activar</button>
             {% endif %}
-        </div>
-        <div class="col-12 col-xxl-5">
-            {% if can_toggle_whatsapp %}
-            <form data-nui-action-form action="{% url 'new_ui:notice_whatsapp' %}" class="border rounded p-2 mb-2">
-                {% csrf_token %}
-                <div class="fw-semibold mb-1"><i class="bi bi-whatsapp me-1"></i>Mis avisos por WhatsApp: {% if whatsapp_enabled %}<span class="text-success">activados</span>{% else %}<span class="text-muted">desactivados</span>{% endif %}</div>
-                {% if whatsapp_enabled %}<button type="submit" name="enabled" value="0" class="btn btn-sm btn-outline-secondary">Desactivar</button>{% else %}<button type="submit" name="enabled" value="1" class="btn btn-sm btn-success">Activar</button>{% endif %}
-                <span class="text-muted ms-1">Te llegan cada día a las 8:00. Solo te afecta a ti.</span>
-            </form>
-            {% endif %}
-            <form data-nui-action-form action="{% url 'new_ui:notice_service' %}" class="border rounded p-2 mb-2">
-                {% csrf_token %}
-                <div class="fw-semibold mb-1"><i class="bi bi-wrench-adjustable me-1"></i>Antelación de los avisos de revisión</div>
-                <div class="d-flex flex-wrap align-items-center gap-1">
-                    <input name="hours_advance" value="{{ hours_advance|default_if_none:'' }}" class="form-control form-control-sm" style="width: 6rem;" inputmode="numeric" placeholder="—"{% if not can_edit_service %} disabled{% endif %}><span class="text-muted">horas</span>
-                    <input name="km_advance" value="{{ km_advance|default_if_none:'' }}" class="form-control form-control-sm" style="width: 7rem;" inputmode="numeric" placeholder="—"{% if not can_edit_service %} disabled{% endif %}><span class="text-muted">km</span>
-                    {% if can_edit_service %}<button type="submit" class="btn btn-sm btn-primary">Guardar</button>{% endif %}
+            <span class="text-muted">Te llegan cada día a las 8:00. Solo te afecta a ti.</span>
+        </form>
+        {% endif %}
+        <form data-nui-action-form action="{% url 'new_ui:notice_service' %}" class="d-flex flex-wrap align-items-center gap-2 px-2 py-1">
+            {% csrf_token %}
+            <span class="fw-semibold"><i class="bi bi-wrench-adjustable me-1"></i>Revisiones de centros de gasto:</span>
+            <span>siempre la revisión vencida; además, avisar con antelación de</span>
+            <input name="hours_advance" value="{{ hours_advance|default_if_none:'' }}" class="form-control form-control-sm" style="width: 6rem;" inputmode="numeric" placeholder="—" aria-label="Horas de antelación"{% if not can_edit_service %} disabled{% endif %}>
+            <span>horas y</span>
+            <input name="km_advance" value="{{ km_advance|default_if_none:'' }}" class="form-control form-control-sm" style="width: 7rem;" inputmode="numeric" placeholder="—" aria-label="Kilómetros de antelación"{% if not can_edit_service %} disabled{% endif %}>
+            <span>km.</span>
+            {% if can_edit_service %}<button type="submit" class="btn btn-sm btn-primary py-0">Guardar</button>{% endif %}
+            <span class="text-muted">Vacío: solo se avisa de las vencidas.</span>
+        </form>
+    </div>
+
+    <div class="row g-2 mb-2">
+        <div class="col-12 col-md-4 col-xl-3">
+            <div class="card h-100">
+                <div class="card-header py-1 fw-semibold">Requisitos de documentación</div>
+                <div class="list-group list-group-flush" style="max-height: 26rem; overflow-y: auto;">
+                    {% for p in positions %}
+                    <a href="#" class="list-group-item list-group-item-action py-1 d-flex justify-content-between align-items-center{% if position and position.pk == p.pk %} active{% endif %}" data-nui-list-param="av_cfg_req" data-value="{{ p.pk }}">
+                        <span>{{ p.name }}</span><span class="badge text-bg-light">{{ p.nui_alert_count }}</span>
+                    </a>
+                    {% empty %}
+                    <div class="list-group-item text-muted">No hay requisitos de documentación: se crean en Empresa › Documentación › Requisitos.</div>
+                    {% endfor %}
                 </div>
-                <div class="text-muted">Vacío: solo se avisa de las revisiones vencidas.</div>
-            </form>
-            <div class="fw-semibold mb-1"><i class="bi bi-people me-1"></i>Destinatarios: qué avisos recibe cada uno</div>
-            {% for sup in supervisors %}
-            <details class="border rounded p-2 mb-1">
-                <summary><span class="fw-semibold">{{ sup.name }}</span>{% if sup.is_me %} (tú){% endif %} {% if sup.whatsapp %}<span class="badge text-bg-success"><i class="bi bi-whatsapp"></i> WhatsApp</span>{% endif %}{% if not sup.scope.personal_all and not sup.scope.machine_all and not sup.scope.personal_companies and not sup.scope.personal_groups and not sup.scope.personal_persons and not sup.scope.machine_families and not sup.scope.machine_companies and not sup.scope.machines %} <span class="badge text-bg-secondary">No recibe nada</span>{% endif %}</summary>
-                <form data-nui-action-form action="{% url 'new_ui:notice_scope' sup.id %}" class="mt-2">
+            </div>
+        </div>
+        <div class="col-12 col-md-8 col-xl-9">
+            <div class="card h-100">
+                {% if position %}
+                <div class="card-header py-1 d-flex align-items-center gap-2">
+                    <span class="fw-semibold me-auto">{{ position.name }}</span>
+                    <span class="badge text-bg-warning d-none" data-nui-dirty-badge>Cambios sin guardar</span>
+                    {% if types %}<button type="submit" form="nui-alert-rules" class="btn btn-sm btn-primary py-0">Guardar avisos</button>{% endif %}
+                </div>
+                <form id="nui-alert-rules" data-nui-action-form data-nui-dirty action="{% url 'new_ui:notice_rules' position.pk %}" class="card-body p-2" style="max-height: 26rem; overflow-y: auto;">
                     {% csrf_token %}
-                    <fieldset{% if not sup.can_edit %} disabled{% endif %}>
-                    <div class="fw-semibold">Personal</div>
-                    <label class="form-check mb-1"><input class="form-check-input" type="checkbox" name="personal_all" value="1"{% if sup.scope.personal_all %} checked{% endif %}> Todo el personal</label>
-                    <div class="text-muted">Empresas</div>
-                    <div class="d-flex flex-wrap gap-2 mb-1">{% for o in options.personal_companies %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="personal_companies" value="{{ o }}"{% if o in sup.scope.personal_companies %} checked{% endif %}> {{ o }}</label>{% endfor %}</div>
-                    <div class="text-muted">Grupos de selección</div>
-                    <div class="d-flex flex-wrap gap-2 mb-1">{% for o in options.personal_groups %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="personal_groups" value="{{ o.id }}"{% if o.id in sup.scope.personal_groups %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div>
-                    <div class="text-muted">Personas concretas</div>
-                    <div class="border rounded p-1 mb-2" style="max-height: 10rem; overflow-y: auto;">{% for o in options.personal_persons %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="personal_persons" value="{{ o.id }}"{% if o.id in sup.scope.personal_persons %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div>
-                    <div class="fw-semibold">Centros de gasto</div>
-                    <label class="form-check mb-1"><input class="form-check-input" type="checkbox" name="machine_all" value="1"{% if sup.scope.machine_all %} checked{% endif %}> Todos los centros de gasto</label>
-                    <div class="text-muted">Familias</div>
-                    <div class="d-flex flex-wrap gap-2 mb-1">{% for o in options.machine_families %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="machine_families" value="{{ o }}"{% if o in sup.scope.machine_families %} checked{% endif %}> {{ o }}</label>{% endfor %}</div>
-                    <div class="text-muted">Empresas</div>
-                    <div class="d-flex flex-wrap gap-2 mb-1">{% for o in options.machine_companies %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="machine_companies" value="{{ o }}"{% if o in sup.scope.machine_companies %} checked{% endif %}> {{ o }}</label>{% endfor %}</div>
-                    <div class="text-muted">Centros de gasto concretos</div>
-                    <div class="border rounded p-1 mb-2" style="max-height: 10rem; overflow-y: auto;">{% for o in options.machines %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="machines" value="{{ o.id }}"{% if o.id in sup.scope.machines %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div>
-                    <div class="fw-semibold">No quiere recibir</div>
-                    <div class="text-muted">Requisitos</div>
-                    <div class="d-flex flex-wrap gap-2 mb-1">{% for o in options.excluded_requirements %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="excluded_requirements" value="{{ o.id }}"{% if o.id in sup.scope.excluded_requirements %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div>
-                    <div class="text-muted">Documentos</div>
-                    <div class="d-flex flex-wrap gap-2 mb-2">{% for o in options.excluded_document_types %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="excluded_document_types" value="{{ o.id }}"{% if o.id in sup.scope.excluded_document_types %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div>
-                    {% if sup.can_edit %}<button type="submit" class="btn btn-sm btn-primary">Guardar a {{ sup.name }}</button>{% else %}<span class="text-muted">Solo él mismo o el administrador pueden cambiarlo.</span>{% endif %}
+                    {% for t in types %}
+                    <div class="border rounded p-2 mb-2">
+                        <div class="fw-semibold mb-1">{{ t.type.label }}</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <input type="checkbox" class="btn-check" name="missing_{{ t.type.pk }}" value="1" id="nui-ar-m-{{ t.type.pk }}" autocomplete="off"{% if t.rule.missing %} checked{% endif %}>
+                            <label class="btn btn-sm btn-outline-primary py-0" for="nui-ar-m-{{ t.type.pk }}">Si falta</label>
+                            {% if t.type.tracks_expiry %}
+                            <input type="checkbox" class="btn-check" name="d30_{{ t.type.pk }}" value="1" id="nui-ar-30-{{ t.type.pk }}" autocomplete="off"{% if t.rule.d30 %} checked{% endif %}>
+                            <label class="btn btn-sm btn-outline-primary py-0" for="nui-ar-30-{{ t.type.pk }}">30 días</label>
+                            <input type="checkbox" class="btn-check" name="d15_{{ t.type.pk }}" value="1" id="nui-ar-15-{{ t.type.pk }}" autocomplete="off"{% if t.rule.d15 %} checked{% endif %}>
+                            <label class="btn btn-sm btn-outline-primary py-0" for="nui-ar-15-{{ t.type.pk }}">15 días</label>
+                            <input type="checkbox" class="btn-check" name="d7_{{ t.type.pk }}" value="1" id="nui-ar-7-{{ t.type.pk }}" autocomplete="off"{% if t.rule.d7 %} checked{% endif %}>
+                            <label class="btn btn-sm btn-outline-primary py-0" for="nui-ar-7-{{ t.type.pk }}">7 días</label>
+                            <input type="checkbox" class="btn-check" name="d1_{{ t.type.pk }}" value="1" id="nui-ar-1-{{ t.type.pk }}" autocomplete="off"{% if t.rule.d1 %} checked{% endif %}>
+                            <label class="btn btn-sm btn-outline-primary py-0" for="nui-ar-1-{{ t.type.pk }}">Día anterior</label>
+                            {% endif %}
+                        </div>
+                        {% if t.type.tracks_expiry %}
+                        <div class="d-flex flex-wrap gap-3 mt-2">
+                            {% for slot in "12" %}
+                            <div class="d-flex align-items-center gap-1">
+                                <span class="text-muted">{% if slot == "1" %}Otro aviso{% else %}Otro más{% endif %}:</span>
+                                <input name="c{{ slot }}v_{{ t.type.pk }}" value="{% if slot == '1' %}{{ t.rule.c1v|default_if_none:'' }}{% else %}{{ t.rule.c2v|default_if_none:'' }}{% endif %}" class="form-control form-control-sm" style="width: 4.5rem;" inputmode="numeric" placeholder="—" aria-label="{% if slot == '1' %}Otro aviso{% else %}Otro más{% endif %}">
+                                <div class="btn-group btn-group-sm" role="group" aria-label="Unidad">
+                                    {% for code, label in units %}
+                                    <input type="radio" class="btn-check" name="c{{ slot }}u_{{ t.type.pk }}" value="{{ code }}" id="nui-ar-u{{ slot }}-{{ code }}-{{ t.type.pk }}" autocomplete="off"{% if slot == '1' and t.rule.c1u == code or slot == '2' and t.rule.c2u == code %} checked{% endif %}>
+                                    <label class="btn btn-outline-secondary py-0" for="nui-ar-u{{ slot }}-{{ code }}-{{ t.type.pk }}">{{ label }}</label>
+                                    {% endfor %}
+                                </div>
+                                <span class="text-muted">antes</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="text-muted mt-1">Sin caducidad: solo aviso si falta.</div>
+                        {% endif %}
+                    </div>
+                    {% empty %}
+                    <p class="text-muted mb-0">Este requisito no tiene documentos obligatorios. Márcalos en Empresa › Documentación › Requisitos.</p>
+                    {% endfor %}
+                </form>
+                {% else %}
+                <div class="card-header py-1 fw-semibold">Elige un requisito</div>
+                <div class="card-body p-2 text-muted">Elige un requisito de la lista para ver sus documentos obligatorios y asignarles avisos.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-2">
+        <div class="col-12 col-md-4 col-xl-3">
+            <div class="card h-100">
+                <div class="card-header py-1">
+                    <div class="fw-semibold">Destinatarios de los avisos</div>
+                    <div class="text-muted">Supervisores de documentación y administradores. Cada uno recibe solo lo de su ámbito; sin nada marcado, no recibe ningún aviso.</div>
+                </div>
+                <div class="list-group list-group-flush" style="max-height: 26rem; overflow-y: auto;">
+                    {% for sup in supervisors %}
+                    <a href="#" class="list-group-item list-group-item-action py-1 d-flex justify-content-between align-items-center gap-1{% if supervisor and supervisor.id == sup.id %} active{% endif %}" data-nui-list-param="av_cfg_sup" data-value="{{ sup.id }}">
+                        <span>{{ sup.name }}{% if sup.is_me %} (tú){% endif %}</span>
+                        {% if sup.whatsapp %}<span class="badge text-bg-success"><i class="bi bi-whatsapp"></i> WhatsApp</span>{% elif not sup.scope.personal_all and not sup.scope.machine_all and not sup.scope.personal_companies and not sup.scope.personal_groups and not sup.scope.personal_persons and not sup.scope.machine_families and not sup.scope.machine_companies and not sup.scope.machines %}<span class="badge text-bg-secondary">No recibe nada</span>{% endif %}
+                    </a>
+                    {% empty %}
+                    <div class="list-group-item text-muted">No hay ningún usuario con rol de supervisor de documentación.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-8 col-xl-9">
+            {% if supervisor %}
+            {% with sup=supervisor %}
+            <div class="card h-100">
+                <div class="card-header py-1 d-flex align-items-center gap-2">
+                    <span class="fw-semibold me-auto">{{ sup.name }}{% if sup.is_me %} (tú){% endif %}</span>
+                    <span class="badge text-bg-warning d-none" data-nui-dirty-badge>Cambios sin guardar</span>
+                    {% if sup.can_edit %}<button type="submit" form="nui-recipient-scope" class="btn btn-sm btn-primary py-0">Guardar destinatario</button>{% else %}<span class="text-muted">Solo él mismo o el administrador pueden cambiarlo.</span>{% endif %}
+                </div>
+                <form id="nui-recipient-scope" data-nui-action-form data-nui-dirty action="{% url 'new_ui:notice_scope' sup.id %}" class="card-body p-2">
+                    {% csrf_token %}
+                    <fieldset class="row g-2"{% if not sup.can_edit %} disabled{% endif %}>
+                        <div class="col-12 col-lg-4">
+                            <div class="border rounded p-2 h-100">
+                                <div class="fw-semibold mb-1">Personal</div>
+                                <div class="form-check form-switch mb-1"><input class="form-check-input" type="checkbox" role="switch" name="personal_all" value="1" id="nui-sc-pall"{% if sup.scope.personal_all %} checked{% endif %}><label class="form-check-label fw-semibold" for="nui-sc-pall">Todo el personal</label></div>
+                                <div class="fw-semibold mt-1">Empresas <span class="fw-normal text-muted" data-nui-count-of="personal_companies"></span></div>
+                                <div class="border rounded p-1 mb-1" style="max-height: 8rem; overflow-y: auto;">{% for o in options.personal_companies %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="personal_companies" value="{{ o }}"{% if o in sup.scope.personal_companies %} checked{% endif %}> {{ o }}</label>{% endfor %}</div>
+                                <div class="fw-semibold">Grupos de selección <span class="fw-normal text-muted" data-nui-count-of="personal_groups"></span></div>
+                                <div class="border rounded p-1 mb-1" style="max-height: 8rem; overflow-y: auto;">{% for o in options.personal_groups %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="personal_groups" value="{{ o.id }}"{% if o.id in sup.scope.personal_groups %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div>
+                                <div class="fw-semibold">Personas concretas <span class="fw-normal text-muted" data-nui-count-of="personal_persons"></span></div>
+                                <input type="search" class="form-control form-control-sm mb-1" placeholder="Buscar persona…" aria-label="Buscar persona" data-nui-filter-list>
+                                <div class="border rounded p-1" style="max-height: 10rem; overflow-y: auto;" data-nui-filter-target><div data-nui-filter-group>{% for o in options.personal_persons %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="checkbox" name="personal_persons" value="{{ o.id }}"{% if o.id in sup.scope.personal_persons %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div></div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-4">
+                            <div class="border rounded p-2 h-100">
+                                <div class="fw-semibold mb-1">Centros de gasto</div>
+                                <div class="form-check form-switch mb-1"><input class="form-check-input" type="checkbox" role="switch" name="machine_all" value="1" id="nui-sc-mall"{% if sup.scope.machine_all %} checked{% endif %}><label class="form-check-label fw-semibold" for="nui-sc-mall">Todos los centros de gasto</label></div>
+                                <div class="fw-semibold mt-1">Familias <span class="fw-normal text-muted" data-nui-count-of="machine_families"></span></div>
+                                <div class="border rounded p-1 mb-1" style="max-height: 8rem; overflow-y: auto;">{% for o in options.machine_families %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="machine_families" value="{{ o }}"{% if o in sup.scope.machine_families %} checked{% endif %}> {{ o }}</label>{% endfor %}</div>
+                                <div class="fw-semibold">Empresas <span class="fw-normal text-muted" data-nui-count-of="machine_companies"></span></div>
+                                <div class="border rounded p-1 mb-1" style="max-height: 8rem; overflow-y: auto;">{% for o in options.machine_companies %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="machine_companies" value="{{ o }}"{% if o in sup.scope.machine_companies %} checked{% endif %}> {{ o }}</label>{% endfor %}</div>
+                                <div class="fw-semibold">Centros de gasto concretos <span class="fw-normal text-muted" data-nui-count-of="machines"></span></div>
+                                <input type="search" class="form-control form-control-sm mb-1" placeholder="Buscar centro de gasto…" aria-label="Buscar centro de gasto" data-nui-filter-list>
+                                <div class="border rounded p-1" style="max-height: 10rem; overflow-y: auto;" data-nui-filter-target><div data-nui-filter-group>{% for o in options.machines %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="checkbox" name="machines" value="{{ o.id }}"{% if o.id in sup.scope.machines %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div></div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-4">
+                            <div class="border rounded p-2 h-100">
+                                <div class="fw-semibold mb-1">No quiero recibir</div>
+                                <div class="fw-semibold">Requisitos <span class="fw-normal text-muted" data-nui-count-of="excluded_requirements"></span></div>
+                                <div class="border rounded p-1 mb-1" style="max-height: 8rem; overflow-y: auto;">{% for o in options.excluded_requirements %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="excluded_requirements" value="{{ o.id }}"{% if o.id in sup.scope.excluded_requirements %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div>
+                                <div class="fw-semibold">Documentos <span class="fw-normal text-muted" data-nui-count-of="excluded_document_types"></span></div>
+                                <div class="border rounded p-1" style="max-height: 14rem; overflow-y: auto;">{% for o in options.excluded_document_types %}<label class="form-check mb-0"><input class="form-check-input" type="checkbox" name="excluded_document_types" value="{{ o.id }}"{% if o.id in sup.scope.excluded_document_types %} checked{% endif %}> {{ o.label }}</label>{% endfor %}</div>
+                            </div>
+                        </div>
                     </fieldset>
                 </form>
-            </details>
-            {% empty %}
-            <p class="text-muted">No hay ningún usuario con rol de supervisor de documentación.</p>
-            {% endfor %}
+            </div>
+            {% endwith %}
+            {% endif %}
         </div>
     </div>
 </div>
