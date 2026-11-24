@@ -511,12 +511,20 @@ def _rule_sheet_context(company, rule=None, base_rule=None):
     from django.urls import reverse
 
     from document_explorer.models import PersonGroupTemplate
+    from new_ui.groups import _is_general, owner_label
 
     today = datetime.date.today()
+    # Hay grupos con el mismo nombre (de usuarios distintos o en otra
+    # carpeta): su ruta y, si no es de los Generales, de quién es.
+    groups = sorted((
+        (g.pk, g.path_label() + ("" if _is_general(g)
+                                 else " (de %s)" % owner_label(g)))
+        for g in PersonGroupTemplate.objects.select_related(
+            "parent__parent", "created_by__user")), key=lambda x: x[1].upper())
     return {
         "rule": rule,
         "base": base_rule,
-        "groups": PersonGroupTemplate.objects.order_by("name"),
+        "groups": groups,
         "bases": Base.objects.filter(company=company).order_by("name"),
         "day_kinds": VacationRule.DayKind.choices,
         "today": today,

@@ -514,9 +514,10 @@ def _vacation_rules_def():
         "Días de vacaciones",
         lambda company: apps.get_model("hr_calendar.VacationRule")
         .objects.filter(company=company, person__isnull=True)
-        .select_related("group", "section", "holiday_base"),
+        .select_related("group__parent__parent", "section", "holiday_base"),
         [
-            Col("para", "Para", lambda r: r.target_label(), "group__name"),
+            Col("para", "Para", lambda r: "Grupo «%s»" % r.group.path_label()
+                if r.group_id else r.target_label(), "group__name"),
             Col("vigente", "Vigente", lambda r: "Sí"
                 if getattr(r, "nui_in_force", False) else ""),
             Col("desde", "Desde", lambda r: fmt_date(r.valid_from),
@@ -564,7 +565,8 @@ def _absence_types_def():
                 if r.is_justified else "No", "is_justified"),
             Col("activo", "Activo", lambda r: "Sí" if r.is_active
                 else "No", "is_active"),
-            Col("orden", "Orden", lambda r: r.order, "order", "text-end"),
+            Col("orden", "Orden", lambda r: str(r.order), "order",
+                "text-end"),
         ],
         search=("code", "label"), default_order=("order", "label"),
         actions=lambda r: [],
