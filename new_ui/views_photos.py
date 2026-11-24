@@ -274,3 +274,22 @@ def is_photo_source(entry):
     """True if a photo can come out of this document."""
     return bool(entry.document_type_id
                 and entry.document_type.code in photos.SOURCE_TYPES)
+
+
+class PersonPlatformPhotoView(SuperuserRequiredMixin, View):
+    """
+    GET: the platform photo block of a person, for the viewer.
+
+    ---
+
+    GET: la foto para plataformas del trabajador (descargar entera o
+    recortada, girar, modo automático, subir otra) para el visor que se
+    abre al pulsar su foto en la ficha, como en la ficha antigua (S163,
+    24/11, Miguel Ángel: "yo pincho la foto de Alberto y puedo hacer
+    todas las acciones").
+    """
+
+    def get(self, request, pk):
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        return render(request, "new_ui/_platform_photo.html",
+                      photo_panel_context(person))

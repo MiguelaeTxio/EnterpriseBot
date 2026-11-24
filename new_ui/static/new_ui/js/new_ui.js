@@ -723,6 +723,7 @@
                     if (f.hasAttribute("data-nui-clockset-reload")) loadClockSettings();
                     if (f.hasAttribute("data-nui-vacset-reload")) loadVacationSetup();
                     if (f.hasAttribute("data-nui-sheet-form") && window.nuiOpenViewer) window.nuiOpenViewer(null, data.message);
+                    else if (f.closest("#nui-viewer") && window.nuiOpenViewer) window.nuiOpenViewer(null, data.message);
                     if (f.hasAttribute("data-nui-fragment-reload")) {
                         const box = f.closest("[data-nui-fragment-box]");
                         if (box && box.dataset.current) loadFragment(box);
@@ -1516,10 +1517,11 @@
         // la enseña en el visor, sin salir de la lista. El nombre (su
         // ficha) y la casilla siguen como siempre.
         let viewerUrl = "";
-        window.nuiOpenViewer = function (url, note) {
+        window.nuiOpenViewer = function (url, note, title) {
             const modal = document.getElementById("nui-viewer");
             if (!modal) return;
             if (url) viewerUrl = url;
+            if (url) modal.querySelector("#nui-viewer-title").textContent = title || "Parte";
             const body = modal.querySelector("[data-nui-viewer-body]");
             body.innerHTML = '<p class="small text-muted mb-0">Cargando…</p>';
             bootstrap.Modal.getOrCreateInstance(modal).show();
@@ -1536,6 +1538,14 @@
                 })
                 .catch(function (err) { body.innerHTML = '<p class="text-danger small mb-0">' + err.message + '</p>'; });
         };
+        // S163 (24/11): la foto de la ficha abre en el visor todo lo de
+        // la foto (descargar, recortar, girar, cambiar).
+        root.addEventListener("click", function (ev) {
+            const opener = ev.target.closest("[data-nui-viewer-url]");
+            if (!opener) return;
+            ev.preventDefault();
+            window.nuiOpenViewer(opener.dataset.nuiViewerUrl, null, opener.dataset.nuiViewerTitle);
+        });
         lists.addEventListener("click", function (ev) {
             const tr = ev.target.closest("tr[data-nui-open]");
             if (!tr || ev.target.closest("input, a, button, label, [data-nui-scope]")) return;

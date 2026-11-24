@@ -22,15 +22,22 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
     {% csrf_token %}
     <div class="d-flex gap-3 align-items-start flex-wrap mb-2">
         <div class="position-relative flex-none" style="width: 120px; height: 120px;">
-            {% if photo_url %}
+            {% if photo_url and kind == "person" %}
+            {# S163 (24/11): pulsar la foto abre todo lo de la foto (como la ficha antigua). #}
+            <button type="button" class="p-0 border-0 bg-transparent w-100 h-100" data-nui-viewer-url="{% url 'new_ui:person_platform_panel' obj.pk %}" data-nui-viewer-title="Foto de {{ title }}" title="Foto para plataformas: descargar, recortar, girar o cambiar"><img src="{{ photo_url }}" alt="Foto" class="rounded border w-100 h-100" style="object-fit: cover;"></button>
+            {% elif photo_url %}
             <img src="{{ photo_url }}" alt="Foto" class="rounded border w-100 h-100" style="object-fit: cover;">
             {% else %}
             <div class="rounded border w-100 h-100 d-flex align-items-center justify-content-center bg-light text-secondary"><i class="bi {% if kind == 'machine' %}bi-truck{% else %}bi-person{% endif %}" style="font-size: 3.2rem;"></i></div>
             {% endif %}
+            {% if kind == "person" %}
+            <button type="button" class="btn btn-sm btn-light border rounded-circle position-absolute p-0 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; right: -6px; bottom: -6px;" data-nui-viewer-url="{% url 'new_ui:person_platform_panel' obj.pk %}" data-nui-viewer-title="Foto de {{ title }}" title="Foto: descargar para plataformas, recortar, girar o cambiar" aria-label="Foto: descargar, recortar, girar o cambiar"><i class="bi bi-gear"></i></button>
+            {% else %}
             <label class="btn btn-sm btn-primary rounded-circle position-absolute p-0 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; right: -6px; bottom: -6px;" title="{% if photo_url %}Cambiar foto{% else %}Añadir foto{% endif %}">
                 <i class="bi bi-camera"></i>
                 <input type="file" accept="image/*" class="d-none" data-nui-card-photo aria-label="Cambiar foto">
             </label>
+            {% endif %}
         </div>
         <div class="min-w-0 flex-grow-1">
             <div class="fw-bold fs-5">{{ title }}</div>
@@ -176,12 +183,3 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
          data-photo-upload="{% if kind == 'machine' %}{% url 'new_ui:subject_upload' domain='machine' subject_pk=obj.pk %}{% else %}{% url 'new_ui:person_photo_upload' pk=obj.pk %}{% endif %}"
          data-photo-set="{% if kind == 'machine' %}{% url 'new_ui:machine_set_avatar' pk=obj.pk %}{% endif %}"></div>
 </form>
-{% if kind == "person" and platform %}
-{# S163 (23/11, Miguel Ángel: la foto para plataformas "nos lo hemos cepillado por completo"): a la vista en la ficha, como en la ficha antigua. Va fuera del formulario de la ficha (lleva los suyos). #}
-<div class="nui-ficha px-2 pb-2">
-    <section class="nui-ficha-box">
-        <div class="nui-ficha-head"><i class="bi bi-person-bounding-box me-1"></i>Foto para plataformas</div>
-        <div class="p-2">{% include "new_ui/_platform_photo.html" with person=obj photo_url=platform.photo_url source=platform.source %}</div>
-    </section>
-</div>
-{% endif %}

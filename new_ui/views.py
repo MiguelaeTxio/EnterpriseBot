@@ -44,7 +44,6 @@ from new_ui.views_payslips_nui import payslips_context
 from new_ui.views_safety import safety_context
 from new_ui.views_pay import pay_context
 from new_ui.views_partes import partes_context
-from new_ui.views_photos import photo_panel_context
 from new_ui.views_epis import epis_context
 from new_ui.views_accessories import accessories_context
 from new_ui.views_vacations import VacationSetupBlockView, vacations_context
@@ -1102,8 +1101,6 @@ def _person_ficha_context(request, person):
         ]},
     ]
     return {
-        # S163 (23/11): la foto para plataformas, a la vista en la ficha.
-        "platform": photo_panel_context(person),
         "kind": "person",
         "obj": person,
         "title": person_name(person),
