@@ -16,7 +16,7 @@ médico e ir a su ficha. Vista: new_ui/views_notices.py (NoticeSheetView).
         {% if notice.request_state %}<span class="badge {{ notice.request_state_class }} text-wrap text-start ms-1">{{ notice.request_state }}</span>{% endif %}
         {% if notice.appointment_state %}<span class="badge text-bg-primary text-wrap text-start ms-1">{{ notice.appointment_state }}</span>{% endif %}
     </div>
-    {% if notice.entry_id %}<div class="mb-2"><a href="{% url 'new_ui:document_file' notice.entry_id %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-text me-1"></i>Ver el documento que hay ahora</a></div>{% endif %}
+    {% if notice.entry_id and not notice.is_service %}<div class="mb-2"><a href="{% url 'new_ui:document_file' notice.entry_id %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-text me-1"></i>Ver el documento que hay ahora</a></div>{% endif %}
 
     {% if doc_type %}
     <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" class="border rounded p-2 mb-2" data-nui-reset-after>
