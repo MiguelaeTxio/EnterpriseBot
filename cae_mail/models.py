@@ -13,6 +13,7 @@ H31 (S156). Avisos de las plataformas CAE que llegan por correo.
   empresa, de un trabajador o de una máquina, con su estado y su fecha.
   Un aviso que solo da un recuento o un enlace no tiene demandas.
 """
+from django.conf import settings
 from django.db import models
 
 
@@ -82,6 +83,16 @@ class CaeMail(models.Model):
     error = models.TextField(blank=True, verbose_name="Error")
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
+    # Quien supervisa (Yolanda, o Juan en sus vacaciones) lo da por
+    # atendido cuando ha subido a la plataforma lo que pedía.
+    attended_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Atendido el",
+    )
+    attended_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Atendido por",
+    )
 
     class Meta:
         verbose_name = "Aviso CAE"
@@ -139,6 +150,29 @@ class CaeDemand(models.Model):
     )
     site = models.CharField(
         max_length=255, blank=True, verbose_name="Centro u obra",
+    )
+    # Lo que es en EnterpriseBot: tipo del catálogo (lo elige Gemini al
+    # leer el aviso) y de quién es (lo enlaza el código por CIF/nombre,
+    # DNI/nombre o matrícula/código). Vacíos si no se ha podido saber.
+    document_type = models.ForeignKey(
+        "document_explorer.DocumentTypeCatalog", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Tipo documental",
+    )
+    company = models.ForeignKey(
+        "document_explorer.CompanyFiscalProfile", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Empresa del grupo",
+    )
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Trabajador",
+    )
+    machine = models.ForeignKey(
+        "fleet.MachineAsset", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Centro de gasto",
     )
 
     class Meta:

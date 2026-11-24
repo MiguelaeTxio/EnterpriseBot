@@ -40,6 +40,7 @@ from document_explorer.classification_service import (
 from spare_parts.gcs_service import download_bytes, get_storage_client
 
 from .models import CaeDemand, CaeMail
+from .subjects import link_demand
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ NEW_PREFIX = "CORREOS DOCUMENTACION/NUEVOS/"
 MAIL_JSON_NAME = "correo.json"
 # Texto maximo del aviso que se manda a Gemini.
 MAX_PROMPT_CHARS = 40000
+# Avisos ya leídos que el barrido vuelve a encolar para releer (S156).
+_REQUEUE_BATCH = 20
 
 # Plataforma por el dominio del remitente (el mismo nombre siempre,
 # sin depender de como lo escriba Gemini). Lo que no este aqui lo
@@ -96,8 +99,14 @@ código interno, p. ej. "B-23") o de la empresa.
 rechazado, no apto, apto...).
   - due_date: fecha límite o de caducidad en formato AAAA-MM-DD, o vacío.
   - site: centro, obra o proyecto si se indica, o vacío.
+  - document_type_code: el código del CATÁLOGO de abajo que corresponde \
+a ese documento, o vacío si ninguno encaja. Los de dominio COMPANY son \
+de la empresa, PERSONAL de un trabajador y MACHINE de una máquina.
 
 No inventes nada que no esté en el correo.
+
+CATÁLOGO (código — nombre — dominio):
+{catalog}
 
 CORREO:
 """
@@ -125,10 +134,12 @@ _SCHEMA = {
                     "state": {"type": "string"},
                     "due_date": {"type": "string"},
                     "site": {"type": "string"},
+                    "document_type_code": {"type": "string"},
                 },
                 "required": [
                     "subject_type", "subject_name", "subject_ref",
                     "document", "state", "due_date", "site",
+                    "document_type_code",
                 ],
             },
         },
@@ -225,7 +236,18 @@ def sweep_new_mails():
                 )
                 if created:
                     registered.append(mail.pk)
-    for pk in registered:
+    # S156: los avisos ya leídos que han vuelto a PENDIENTE para
+    # releerse (la migración 0002, o «Volver a leer» en la pantalla de
+    # avisos) se encolan aquí, como mucho _REQUEUE_BATCH por barrido.
+    # Los que nunca se han leído (processed_at vacío) ya los encola su
+    # registro o su propio reintento: no se duplican.
+    pending = list(CaeMail.objects.filter(
+        status=CaeMail.STATUS_PENDING, processed_at__isnull=False,
+    ).exclude(pk__in=registered).order_by("pk").values_list(
+        "pk", flat=True)[:_REQUEUE_BATCH])
+    # Una sola vez: desde aquí sigue el camino de un aviso nuevo.
+    CaeMail.objects.filter(pk__in=pending).update(processed_at=None)
+    for pk in registered + pending:
         transaction.on_commit(
             lambda pk=pk: process_cae_mail_task.delay(pk))
     return len(registered)
@@ -296,6 +318,21 @@ def _read_original(mail):
     }
 
 
+def _catalog_text():
+    """Active catalogue types for the prompt, one per line.
+    ---
+    Tipos activos del catálogo para el prompt, uno por línea.
+    """
+    from document_explorer.models import DocumentTypeCatalog
+
+    return "\n".join(
+        "%s — %s — %s" % (code, label, domain)
+        for code, label, domain in DocumentTypeCatalog.objects.filter(
+            is_active=True,
+        ).order_by("domain", "code").values_list("code", "label", "domain")
+    )
+
+
 def _ask_gemini(original):
     text = "De: %s <%s>\nFecha: %s\nAsunto: %s\nAdjuntos: %s\n\n%s" % (
         original["sender_name"], original["sender_address"],
@@ -306,7 +343,7 @@ def _ask_gemini(original):
     response = _generate_content_with_retry(
         get_gemini_client(),
         model=DEFAULT_MODEL,
-        contents=[_PROMPT + text],
+        contents=[_PROMPT.format(catalog=_catalog_text()) + text],
         config=GenerateContentConfig(
             http_options=HttpOptions(timeout=180_000),
             response_mime_type="application/json",
@@ -370,16 +407,19 @@ def process_mail(mail_id, final=False):
         mail.save()
         mail.demands.all().delete()
         CaeDemand.objects.bulk_create([
-            CaeDemand(
-                mail=mail,
-                subject_type=item.get("subject_type")
-                or CaeDemand.SUBJECT_OTHER,
-                subject_name=item.get("subject_name", "")[:255],
-                subject_ref=item.get("subject_ref", "")[:100],
-                document=(item.get("document") or "?")[:500],
-                state=item.get("state", "")[:255],
-                due_date=_parse_date(item.get("due_date")),
-                site=item.get("site", "")[:255],
+            link_demand(
+                CaeDemand(
+                    mail=mail,
+                    subject_type=item.get("subject_type")
+                    or CaeDemand.SUBJECT_OTHER,
+                    subject_name=item.get("subject_name", "")[:255],
+                    subject_ref=item.get("subject_ref", "")[:100],
+                    document=(item.get("document") or "?")[:500],
+                    state=item.get("state", "")[:255],
+                    due_date=_parse_date(item.get("due_date")),
+                    site=item.get("site", "")[:255],
+                ),
+                mail, (item.get("document_type_code") or "").strip(),
             )
             for item in demands
         ])
