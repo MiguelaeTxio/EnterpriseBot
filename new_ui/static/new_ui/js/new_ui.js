@@ -1882,8 +1882,8 @@
         let windowed = null;
         function restoreWindowed() {
             if (!windowed) return;
-            windowed.block.hidden = true;
-            windowed.home.after(windowed.block);
+            windowed.home.replaceWith(windowed.block);
+            windowed.block.classList.remove("nui-open", "nui-in-window");
             windowed.block.querySelectorAll("[data-nui-window-ask]").forEach(el => el.remove());
             windowed = null;
         }
@@ -1903,24 +1903,12 @@
             if (names.length > 200) { const li = document.createElement("li"); li.textContent = "… y " + (names.length - 200) + " más"; ul.appendChild(li); }
             return ul;
         }
+        // El título del apartado de Acciones abre la ventana (en vez de
+        // desplegarse): el apartado pasa a la ventana y vuelve al cerrarla.
         document.querySelectorAll("[data-nui-window]").forEach(function (block) {
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "btn btn-sm btn-outline-primary mb-1 me-1";
-            btn.setAttribute("data-nui-window-open", "");
-            btn.innerHTML = '<i class="bi ' + (block.dataset.nuiWindowIcon || "bi-box-arrow-up-right") + ' me-1"></i>';
-            btn.appendChild(document.createTextNode(block.dataset.nuiWindow));
-            const home = document.createComment("nui-window");
-            block.before(btn);
-            block.before(home);
-            block._nuiHome = home;
-            block.hidden = true;
-            btn._nuiBlock = block;
+            block.classList.add("nui-windowed");
         });
-        root.addEventListener("click", function (ev) {
-            const btn = ev.target.closest("[data-nui-window-open]");
-            if (!btn) return;
-            const block = btn._nuiBlock;
+        function openWindowed(block) {
             const names = windowTargets(block);
             if (names && !names.length) { result("Marca primero con la casilla, en la lista de abajo, a quién aplicarlo.", true); return; }
             const modal = document.getElementById("nui-viewer");
@@ -1936,11 +1924,22 @@
                 head.appendChild(targetList(names));
                 body.appendChild(head);
             }
-            windowed = {block: block, home: block._nuiHome};
+            const home = document.createComment("nui-window");
+            block.before(home);
+            windowed = {block: block, home: home};
             body.appendChild(block);
-            block.hidden = false;
+            block.classList.add("nui-open", "nui-in-window");
             bootstrap.Modal.getOrCreateInstance(modal).show();
-        });
+        }
+        root.addEventListener("click", function (ev) {
+            const title = ev.target.closest(".nui-windowed > .nui-piece-title, .nui-windowed > form > .nui-piece-title");
+            if (!title) return;
+            const block = title.closest(".nui-windowed");
+            if (block.classList.contains("nui-in-window") || block.closest("[data-nui-row-sheet]")) return;
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            openWindowed(block);
+        }, true);
         const viewerModal = document.getElementById("nui-viewer");
         if (viewerModal) viewerModal.addEventListener("hidden.bs.modal", restoreWindowed);
         // Confirmar con 5 s y la lista (en vez de la del navegador).
@@ -2003,7 +2002,8 @@
                             if (tabs.indexOf(sheet.dataset.tab) === -1) return;
                             if (!(block.matches("form[data-nui-needs-selection]") || block.querySelector("form[data-nui-needs-selection]"))) return;
                             const copy = block.cloneNode(true);
-                            copy.hidden = false;
+                            copy.classList.remove("d-none", "nui-piece", "nui-windowed", "nui-in-window");
+                            copy.querySelectorAll(".nui-piece-title").forEach(t => { t.classList.remove("nui-piece-title"); t.removeAttribute("role"); t.removeAttribute("tabindex"); });
                             copy.classList.add("border", "rounded", "p-2", "mb-2");
                             holder.appendChild(copy);
                         });

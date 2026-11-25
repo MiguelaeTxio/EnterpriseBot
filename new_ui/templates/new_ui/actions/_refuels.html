@@ -2,6 +2,7 @@
 <div class="d-none" data-nui-actions-for="repostajes">
     <p class="small text-muted mb-2">Se aplica a los vehículos (y, si se indica, a los chóferes) de los repostajes seleccionados.</p>
     <div data-nui-window="Ajustes del vehículo de los marcados" data-nui-window-icon="bi-fuel-pump">
+    <div class="small fw-semibold mb-1"><i class="bi bi-fuel-pump me-1"></i>Ajustes del vehículo de los marcados</div>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:refuel_unit' %}" class="mb-2">
         {% csrf_token %}
         <div class="small fw-semibold mb-1">El vehículo apunta</div>

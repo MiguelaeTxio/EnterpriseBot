@@ -76,6 +76,10 @@ tr[data-nui-tint] > td:first-child { border-left: 4px solid hsl(var(--nui-hue), 
 .nui-piece-title { cursor: pointer; margin-bottom: 0 !important; }
 .nui-piece-title::before { content: "\25B8"; display: inline-block; width: 1em; color: #6c757d; }
 .nui-piece.nui-open .nui-piece-title::before { content: "\25BE"; }
+/* S163 (25/11): los apartados que se abren en ventana. */
+.nui-windowed .nui-piece-title::before, .nui-windowed > form > .nui-piece-title::before { content: "\2197"; }
+.nui-windowed .nui-piece-title { color: var(--bs-primary); }
+.nui-in-window .nui-piece-title { display: none; }
 .nui-piece.nui-open .nui-piece-title { margin-bottom: .25rem !important; }
 .nui-piece:not(.nui-open) > :not(.nui-piece-title):not(:has(.nui-piece-title)) { display: none !important; }
 .nui-piece:not(.nui-open) > :has(.nui-piece-title) > :not(.nui-piece-title) { display: none !important; }
