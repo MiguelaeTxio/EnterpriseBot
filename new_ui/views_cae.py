@@ -16,9 +16,12 @@ Vistas y plantillas propias: la nueva y la antigua no comparten rutinas
 eliminar la vieja cuando proceda"). Solo usan los servicios de dominio
 de la CAE (modelos, resolution, tarea de lectura).
 """
+import datetime
 import io
 import zipfile
 from urllib.parse import quote
+
+from django.contrib.contenttypes.models import ContentType
 
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
@@ -26,10 +29,16 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views import View
 
-from cae_mail.models import CaeMail
-from cae_mail.resolution import FOUND, STATUS_LABELS, resolve_mail
+from cae_mail.models import CaeDemand, CaeMail
+from cae_mail.resolution import (
+    FOUND, STATUS_LABELS, holder_of, resolve_mail,
+)
 from document_explorer.confidential import can_open, open_bytes
-from document_explorer.models import DocumentIndexEntry
+from document_explorer.models import (
+    CompanyFiscalProfile, DocumentIndexEntry, DocumentTypeCatalog,
+    PersonIdentity,
+)
+from fleet.models import MachineAsset
 from new_ui.mixins import SuperuserRequiredMixin
 
 _ATTEND = "attend"
@@ -60,9 +69,14 @@ class CaeSheetView(SuperuserRequiredMixin, View):
     def get(self, request, pk):
         mail = get_object_or_404(CaeMail, pk=pk)
         rows, counts = resolve_mail(mail)
+        for row in rows:
+            row["holder_kind"] = _holder_kind(row["demand"])
+        pending = [row for row in rows if row["status"] != FOUND]
         return render(request, "new_ui/_cae_sheet.html", {
             "mail": mail,
             "rows": rows,
+            "pending": pending,
+            **(_fix_choices() if pending else {}),
             "counts": [
                 (key, STATUS_LABELS[key], counts[key])
                 for key in STATUS_LABELS if counts[key]
@@ -172,3 +186,185 @@ class CaeDownloadView(SuperuserRequiredMixin, View):
             "attachment; filename=\"%s\"; filename*=UTF-8''%s"
             % (ascii_name, quote(name)))
         return response
+
+
+# ------------------------------------------------ resolver lo que falta
+# S156. Miguel Ángel: "es necesario poder resolverlo todo desde la App".
+# Cada documento pedido que no tenemos (o caducado, o falta el nuevo)
+# se resuelve desde su aviso: subirlo a la ficha de su titular, pedirlo
+# al trabajador por WhatsApp o, si la lectura no supo de qué tipo es o
+# de quién, elegirlo a mano.
+
+_KIND_PERSON = "person"
+_KIND_MACHINE = "machine"
+_KIND_COMPANY = "company"
+_SUBJECT_OF_KIND = {
+    _KIND_PERSON: CaeDemand.SUBJECT_WORKER,
+    _KIND_MACHINE: CaeDemand.SUBJECT_MACHINE,
+    _KIND_COMPANY: CaeDemand.SUBJECT_COMPANY,
+}
+
+
+def _holder_kind(demand):
+    if demand.subject_type == demand.SUBJECT_WORKER:
+        return _KIND_PERSON
+    if demand.subject_type == demand.SUBJECT_MACHINE:
+        return _KIND_MACHINE
+    return _KIND_COMPANY
+
+
+def _fix_choices():
+    """Types and holders to choose from when fixing a demand.
+    ---
+    Tipos (por ámbito) y titulares (empresas del grupo, trabajadores en
+    activo y centros de gasto activos) para corregir a mano una línea.
+    """
+    types = DocumentTypeCatalog.objects.filter(is_active=True).order_by(
+        "label")
+    domains = dict(DocumentTypeCatalog.DOMAIN_CHOICES)
+    groups = {}
+    for doc_type in types:
+        groups.setdefault(domains.get(doc_type.domain, doc_type.domain),
+                          []).append(doc_type)
+    return {
+        "fix_types": sorted(groups.items()),
+        "fix_companies": CompanyFiscalProfile.objects.order_by(
+            "legal_name"),
+        "fix_people": PersonIdentity.objects.filter(
+            is_active_employee=True).order_by(
+            "first_surname", "second_surname", "given_name"),
+        "fix_machines": MachineAsset.objects.filter(
+            is_active=True).order_by("code"),
+    }
+
+
+def _demand(request):
+    pk = request.POST.get("demand", "")
+    return CaeDemand.objects.select_related(
+        "document_type", "company", "person", "machine",
+    ).filter(pk=pk).first() if pk.isdigit() else None
+
+
+class CaeFixView(SuperuserRequiredMixin, View):
+    """
+    POST demand, document_type_code, holder ("kind:pk"): fix a demand.
+    ---
+    POST: corrige a mano el tipo de documento y el titular (empresa,
+    trabajador o centro de gasto) de una línea del aviso.
+    """
+
+    def post(self, request):
+        demand = _demand(request)
+        if demand is None:
+            return _error("Línea no encontrada.")
+        code = request.POST.get("document_type_code", "").strip()
+        doc_type = DocumentTypeCatalog.objects.filter(
+            code=code, is_active=True).first() if code else None
+        kind, _sep, pk = request.POST.get("holder", "").partition(":")
+        model = {_KIND_PERSON: PersonIdentity, _KIND_MACHINE: MachineAsset,
+                 _KIND_COMPANY: CompanyFiscalProfile}.get(kind)
+        holder = model.objects.filter(pk=pk).first() if (
+            model and pk.isdigit()) else None
+        if doc_type is None and holder is None:
+            return _error("Elige el tipo, el titular o los dos.")
+        fields = []
+        if doc_type is not None:
+            demand.document_type = doc_type
+            fields.append("document_type")
+        if holder is not None:
+            demand.subject_type = _SUBJECT_OF_KIND[kind]
+            demand.person = holder if kind == _KIND_PERSON else None
+            demand.machine = holder if kind == _KIND_MACHINE else None
+            demand.company = holder if kind == _KIND_COMPANY else None
+            fields += ["subject_type", "person", "machine", "company"]
+        demand.save(update_fields=fields)
+        return _ok("Línea corregida.")
+
+
+class CaeAskView(SuperuserRequiredMixin, View):
+    """
+    POST demand: ask the worker for the document by WhatsApp.
+    ---
+    POST: pide por WhatsApp al trabajador el documento de la línea
+    (solicitudes de trabajadores; cualquier tipo, lo pide la
+    plataforma).
+    """
+
+    def post(self, request):
+        from document_explorer.worker_request_service import create_requests
+
+        demand = _demand(request)
+        if demand is None or demand.person is None or (
+                demand.document_type is None):
+            return _error("La línea necesita trabajador y tipo.")
+        summary = create_requests(
+            [(demand.person.pk, demand.document_type.pk)],
+            request.user.company_user, any_type=True)
+        if summary["sent"]:
+            message = "Pedido por WhatsApp."
+        elif summary["queued"]:
+            message = ("Pedido; queda en cola hasta que entregue lo que "
+                       "tiene pendiente.")
+        else:
+            message = "No se ha pedido."
+        details = summary["send_errors"] + summary["skipped"]
+        if details:
+            message += " " + " ".join(details)
+        if not (summary["sent"] or summary["queued"]):
+            return _error(message)
+        return _ok(message)
+
+
+class CaeCompanyUploadView(SuperuserRequiredMixin, View):
+    """
+    POST demand, file, date: upload a group company's document.
+    ---
+    POST: sube el documento de una empresa del grupo que pide la línea
+    (seguro, TC, certificado...) a su carpeta de DOC. EMPRESA, enlazado
+    a la empresa. Los de trabajadores y máquinas van por la subida de
+    siempre (new_ui:document_upload).
+    """
+
+    def post(self, request):
+        from document_explorer.subject_upload_service import (
+            SubjectUploadError, upload_subject_document,
+        )
+
+        demand = _demand(request)
+        holder = holder_of(demand) if demand else None
+        upload = request.FILES.get("file")
+        if not isinstance(holder, CompanyFiscalProfile) or (
+                demand.document_type is None):
+            return _error("La línea necesita empresa y tipo.")
+        if upload is None:
+            return _error("Elige el archivo.")
+        typed = None
+        raw = (request.POST.get("date") or "").strip()
+        if raw:
+            try:
+                typed = datetime.date.fromisoformat(raw)
+            except ValueError:
+                return _error("La fecha no es válida.")
+        doc_type = demand.document_type
+        try:
+            with transaction.atomic():
+                result = upload_subject_document(
+                    subject=holder,
+                    domain_content_type=ContentType.objects.get_for_model(
+                        CompanyFiscalProfile),
+                    document_type=doc_type, data=upload.read(),
+                    original_filename=upload.name,
+                    typed_date=typed if doc_type.tracks_expiry else None,
+                    typed_issue_date=(None if doc_type.tracks_expiry
+                                      else typed),
+                    subject_label=holder.legal_name,
+                    uploaded_by=request.user.company_user,
+                    filename_date=typed)
+        except SubjectUploadError as exc:
+            return _error("No se pudo archivar: %s" % exc)
+        entry = result["entry"]
+        message = "Guardado %s en %s." % (entry.name, entry.parent_path)
+        if result.get("superseded_count"):
+            message += " Sustituye a %d anterior(es)." % (
+                result["superseded_count"])
+        return _ok(message)

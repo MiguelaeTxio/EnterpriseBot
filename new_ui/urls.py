@@ -272,6 +272,10 @@ urlpatterns = [
     path("cae/marcados/", views_cae.CaeBulkView.as_view(), name="cae_bulk"),
     path("cae/descargar/", views_cae.CaeDownloadView.as_view(),
          name="cae_download"),
+    path("cae/corregir/", views_cae.CaeFixView.as_view(), name="cae_fix"),
+    path("cae/pedir/", views_cae.CaeAskView.as_view(), name="cae_ask"),
+    path("cae/subir-empresa/", views_cae.CaeCompanyUploadView.as_view(),
+         name="cae_company_upload"),
     # S163 (24/11): Empresa › Seguros.
     path("seguros/<int:pk>/ver/",
          views_insurance_nui.InsuranceSheetView.as_view(),

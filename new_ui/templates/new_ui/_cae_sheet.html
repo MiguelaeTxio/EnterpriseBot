@@ -58,6 +58,65 @@ nueva interfaz (no comparte nada con la pestaña de la antigua).
     </table>
     {% if downloadable %}<button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-download me-1"></i>Descargar lo marcado para subirlo a la plataforma</button>{% endif %}
 </form>
+{% if pending %}
+<div class="fw-semibold small mt-3 mb-1"><i class="bi bi-tools me-1"></i>Resolver lo que falta</div>
+{% for row in pending %}
+<div class="border rounded p-2 mb-2 small">
+    <div class="d-flex justify-content-between gap-2 mb-1">
+        <span><span class="fw-semibold">{{ row.demand.document }}</span>{% if row.holder %} · {{ row.holder }}{% endif %}</span>
+        <span class="badge align-self-start {% if row.status == 'expired' or row.status == 'needs_new' %}text-bg-warning{% elif row.status == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status_label }}</span>
+    </div>
+    {% if row.demand.document_type and row.holder %}
+    {% if row.holder_kind == "company" %}
+    <form data-nui-action-form action="{% url 'new_ui:cae_company_upload' %}" class="mb-1" data-nui-reset-after>
+        {% csrf_token %}<input type="hidden" name="demand" value="{{ row.demand.pk }}">
+    {% else %}
+    <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" class="mb-1" data-nui-reset-after>
+        {% csrf_token %}
+        <input type="hidden" name="domain" value="{% if row.holder_kind == 'person' %}personal{% else %}machine{% endif %}">
+        <input type="hidden" name="subject_pk" value="{{ row.holder.pk }}">
+        <input type="hidden" name="document_type_code" value="{{ row.demand.document_type.code }}">
+    {% endif %}
+        <div class="d-flex flex-wrap align-items-center gap-1">
+            <input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" class="form-control form-control-sm" style="max-width: 20rem;" aria-label="Archivo para {{ row.demand.document_type.label }}">
+            {% if row.demand.document_type.tracks_expiry %}
+            <label class="text-muted" for="nui-cae-d{{ row.demand.pk }}">Caducidad</label>
+            <input type="date" id="nui-cae-d{{ row.demand.pk }}" name="{% if row.holder_kind == 'company' %}date{% else %}expiry_date{% endif %}" class="form-control form-control-sm" style="width: 10rem;">
+            {% else %}
+            <label class="text-muted" for="nui-cae-d{{ row.demand.pk }}">Fecha del documento</label>
+            <input type="date" id="nui-cae-d{{ row.demand.pk }}" name="{% if row.holder_kind == 'company' %}date{% else %}issue_date{% endif %}" class="form-control form-control-sm" style="width: 10rem;">
+            {% endif %}
+            <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-upload me-1"></i>Subir a {% if row.holder_kind == "company" %}la empresa{% elif row.holder_kind == "person" %}su ficha{% else %}la ficha de la máquina{% endif %}</button>
+        </div>
+        <div class="text-muted">{{ row.demand.document_type.label }}. Fecha opcional: sin ella se lee del propio documento.</div>
+    </form>
+    {% if row.holder_kind == "person" %}
+    <form data-nui-action-form action="{% url 'new_ui:cae_ask' %}" class="mb-1">
+        {% csrf_token %}<input type="hidden" name="demand" value="{{ row.demand.pk }}">
+        <button type="submit" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Pedirle por WhatsApp «{{ row.demand.document_type.label }}»?"><i class="bi bi-whatsapp me-1"></i>Pedírselo por WhatsApp</button>
+    </form>
+    {% endif %}
+    {% endif %}
+    <details{% if not row.demand.document_type or not row.holder %} open{% endif %}>
+        <summary class="text-muted">Corregir el tipo o el titular</summary>
+        <form data-nui-action-form action="{% url 'new_ui:cae_fix' %}" class="d-flex flex-wrap align-items-center gap-1 mt-1">
+            {% csrf_token %}<input type="hidden" name="demand" value="{{ row.demand.pk }}">
+            <select name="document_type_code" class="form-select form-select-sm" style="max-width: 22rem;" aria-label="Tipo de documento">
+                <option value="">— Tipo (sin cambiar) —</option>
+                {% for group, types in fix_types %}<optgroup label="{{ group }}">{% for t in types %}<option value="{{ t.code }}"{% if t.pk == row.demand.document_type_id %} selected{% endif %}>{{ t.label }}</option>{% endfor %}</optgroup>{% endfor %}
+            </select>
+            <select name="holder" class="form-select form-select-sm" style="max-width: 22rem;" aria-label="Titular">
+                <option value="">— De quién (sin cambiar) —</option>
+                <optgroup label="Empresas">{% for c in fix_companies %}<option value="company:{{ c.pk }}">{{ c.legal_name }}</option>{% endfor %}</optgroup>
+                <optgroup label="Trabajadores">{% for p in fix_people %}<option value="person:{{ p.pk }}">{{ p.first_surname }} {{ p.second_surname }}, {{ p.given_name }}</option>{% endfor %}</optgroup>
+                <optgroup label="Centros de gasto">{% for m in fix_machines %}<option value="machine:{{ m.pk }}">{{ m.code }}{% if m.brand_model %} · {{ m.brand_model }}{% endif %}</option>{% endfor %}</optgroup>
+            </select>
+            <button type="submit" class="btn btn-sm btn-outline-primary">Guardar</button>
+        </form>
+    </details>
+</div>
+{% endfor %}
+{% endif %}
 {% elif mail.status == "PENDING" %}
 <p class="small text-muted mb-0">Se está leyendo el aviso; ábrelo otra vez en un minuto.</p>
 {% else %}
