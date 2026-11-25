@@ -58,7 +58,8 @@ import urllib.request
 
 from catchup import load_index, save_index
 from config import (
-    DIRTY_BUCKET_NAME, HASH_CHUNK_SIZE_BYTES, SERVER_BASE_URL,
+    CAE_FOLDERS, DIRTY_BUCKET_NAME, HASH_CHUNK_SIZE_BYTES,
+    INSURANCE_FOLDERS, INSURANCE_SIBLING_FOLDERS, SERVER_BASE_URL,
     SERVER_NOTIFY_TIMEOUT_SECONDS, get_server_api_token,
 )
 from fs_utils import mirror_name, to_long_path
@@ -200,6 +201,19 @@ def is_subject_folder(path):
     Carpeta de persona o de maquina.
     """
     return is_person_folder(path) or is_machine_folder(path)
+
+
+def is_company_doc_folder(path):
+    """Folder of the companies' CAE or insurance documentation (S156).
+    ---
+    Carpeta (o subcarpeta) de la documentacion CAE o de los seguros de
+    las empresas: ahi baja lo de una empresa subido desde el panel
+    (Correos CAE), a la carpeta de su clase.
+    """
+    for root in CAE_FOLDERS + INSURANCE_FOLDERS + INSURANCE_SIBLING_FOLDERS:
+        if path == root or path.startswith(root + "/"):
+            return True
+    return False
 
 
 def _watched_root(watched_folders, virtual_path):
@@ -438,9 +452,10 @@ def _run_job(bucket, job, watched_folders, events):
     target = job.get("folder") or ""
     previous = job.get("previous_folder") or ""
     files = job.get("files") or []
-    if target and not is_subject_folder(target):
-        return 0, ("la carpeta destino no es una carpeta de persona ni de "
-                   "maquina: %s" % target)
+    if target and not (is_subject_folder(target)
+                       or is_company_doc_folder(target)):
+        return 0, ("la carpeta destino no es una carpeta de persona, de "
+                   "maquina ni de la documentacion de empresa: %s" % target)
     missing = False
     if previous:
         try:
