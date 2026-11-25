@@ -1686,6 +1686,7 @@ def _partes_def():
         actions=lambda r: _person_actions(entity_of(r)),
         row_url=lambda r: reverse("new_ui:parte_sheet",
                                   args=[r.work_order_id]),
+        extras=_parte_line_extras("entry"),
         note=("Periodo: fecha del parte. Los partes en PDF antiguos siguen "
               "en la ficha actual del trabajador."),
     )
@@ -2663,6 +2664,11 @@ def _pay_person_list():
             "", "text-end"),
         Col("a_la_bolsa", "A la bolsa (tope)", _pay("bag_hours"), "",
             "text-end"),
+        # S163 (25/11): días con dieta en el parte y su importe (si en
+        # Empresa › Horas y pagos se pagan); va incluido en Importe.
+        Col("dietas", "Dietas", _pay("diets"), "", "text-end"),
+        Col("importe_dietas", "Importe de dietas", _pay(
+            "diet_amount", money=True), "", "text-end text-nowrap"),
         Col("importe", "Importe", _pay("total", money=True), "",
             "text-end text-nowrap"),
         Col("liquidado", "Ya liquidado", _pay_liquidated),
@@ -2672,7 +2678,8 @@ def _pay_person_list():
     definition.date_field = ""
     definition.default_cols = ["nombre", "seccion", "origen_horas",
                                "horas_pagadas", "horas_festivo",
-                               "a_la_bolsa", "importe", "liquidado"]
+                               "a_la_bolsa", "dietas", "importe_dietas",
+                               "importe", "liquidado"]
     definition.note = ("Periodo: el del filtro; sin periodo, el mes en "
                        "curso hasta hoy. Qué se paga, en Empresa › Horas "
                        "y pagos.")
@@ -3148,6 +3155,44 @@ def _prepare_pay_partes(rows):
             day_out.rounded_at or day_out.pressed_at) if day_out else None
 
 
+def _parte_line_extras(path_to_order):
+    """
+    «Máquina» and «Familia de avería» filters of the partes lists.
+
+    ---
+
+    S163 (25/11): los filtros de Partes digitales de la antigua: la
+    máquina de alguna de sus tareas y la familia de avería. Por
+    subconsulta (pk__in), para no tocar las sumas anotadas de horas.
+    `path_to_order` va de la línea a lo que lista el listado
+    ("entry__work_order" o "entry").
+    """
+    from work_order_processor.models import FaultCategory, WorkOrderEntryLine
+
+    def machines(company):
+        rows = WorkOrderEntryLine.objects.filter(
+            entry__work_order__company=company,
+            machine_asset__isnull=False).values_list(
+            "machine_asset_id", "machine_asset__code",
+            "machine_asset__name").distinct()
+        return sorted(((str(pk), ("%s — %s" % (code, name)) if name
+                        else code) for pk, code, name in rows),
+                      key=lambda x: x[1].upper())
+
+    return [
+        Extra("maquina", "Máquina", machines,
+              apply=lambda qs, v: qs.filter(
+                  pk__in=WorkOrderEntryLine.objects.filter(
+                      machine_asset_id=v).values(path_to_order))
+              if v.isdigit() else qs),
+        Extra("familia", "Familia de avería", lambda company: list(
+            FaultCategory.choices),
+            apply=lambda qs, v: qs.filter(
+                pk__in=WorkOrderEntryLine.objects.filter(
+                    fault_category=v).values(path_to_order))),
+    ]
+
+
 def _pay_partes_totals(qs):
     """
     TOTAL row of the partes list: hours, extra, festive, blocks, diets.
@@ -3284,7 +3329,7 @@ def _pay_partes_def():
                 (WorkOrder.Source.DIGITAL, "Digital (del operario)"),
                 (WorkOrder.Source.GENERATED, "Generado (ausencia)")],
                 apply=lambda qs, v: qs.filter(source=v)),
-        ],
+        ] + _parte_line_extras("entry__work_order"),
         note=("Periodo: fecha del parte. Festivo (sábado, domingo o festivo "
               "de su base): todas sus horas son festivas; si no, extra es "
               "lo que pasa de 8. Revisar, eliminar y exportar por plantilla, "

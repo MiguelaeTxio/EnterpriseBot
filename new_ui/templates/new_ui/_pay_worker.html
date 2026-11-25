@@ -7,6 +7,7 @@
         <span>De dónde salen sus horas: <strong>{{ result.source_label }}</strong></span>
         <span>Horas a pagar: <strong>{{ result.normal_hours|floatformat:2 }}</strong></span>
         <span>En festivo: <strong>{{ result.holiday_hours|floatformat:2 }}</strong></span>
+        <span>Dietas: <strong>{{ result.diets }}</strong>{% if result.diets and not diets_paid %} <span class="text-muted">(no se pagan)</span>{% endif %}</span>
         {% if result.to_bag %}<span>A la bolsa por el tope: <strong>{{ result.bag_hours|floatformat:2 }}</strong></span>{% endif %}
         <span>Importe: <strong>{{ result.total|floatformat:2 }} €</strong></span>
         {% endif %}
@@ -20,7 +21,11 @@
         <thead class="table-light"><tr><th>Clase de hora</th><th class="text-end">Horas</th><th class="text-end">Precio</th><th class="text-end">En festivo</th><th class="text-end">Precio festivo</th><th class="text-end">Importe</th></tr></thead>
         <tbody>
         {% for l in lines %}
+        {% if l.is_diet %}
+        <tr><td>{{ l.label }}</td><td class="text-end">{{ l.hours|floatformat:0 }} dieta{{ l.hours|floatformat:0|pluralize }}</td><td class="text-end">{% if l.price %}{{ l.price|floatformat:2 }} €{% else %}<span class="text-warning-emphasis">sin precio</span>{% endif %}</td><td></td><td></td><td class="text-end text-nowrap">{{ l.amount|floatformat:2 }} €</td></tr>
+        {% else %}
         <tr><td>{{ l.label }}</td><td class="text-end">{{ l.hours|floatformat:2 }}</td><td class="text-end">{% if l.price %}{{ l.price|floatformat:2 }} €{% else %}<span class="text-warning-emphasis">sin precio</span>{% endif %}</td><td class="text-end">{{ l.holiday_hours|floatformat:2 }}</td><td class="text-end">{% if l.holiday_price %}{{ l.holiday_price|floatformat:2 }} €{% elif l.holiday_hours %}<span class="text-warning-emphasis">sin precio</span>{% endif %}</td><td class="text-end text-nowrap">{{ l.amount|floatformat:2 }} €</td></tr>
+        {% endif %}
         {% endfor %}
         </tbody>
     </table>
@@ -32,7 +37,7 @@
         <tbody>
         {% for d in days %}
         <tr{% if d.holiday %} class="table-warning"{% endif %}>
-            <td class="text-nowrap">{{ d.day|date:"D d/m/Y"|capfirst }}{% if d.holiday %} <span class="badge text-bg-light border fw-normal">festivo</span>{% endif %}</td>
+            <td class="text-nowrap">{{ d.day|date:"D d/m/Y"|capfirst }}{% if d.holiday %} <span class="badge text-bg-light border fw-normal">festivo</span>{% endif %}{% if d.diet %} <span class="badge text-bg-light border fw-normal">dieta</span>{% endif %}</td>
             <td>{{ d.source }}</td>
             <td>{% for label, value in d.hours %}<span class="text-nowrap">{{ label }} {{ value }}</span>{% if not forloop.last %} · {% endif %}{% endfor %}</td>
             <td>{% for label, value in d.paid %}<span class="text-nowrap">{{ label }} {{ value }}</span>{% if not forloop.last %} · {% endif %}{% empty %}<span class="text-muted">nada</span>{% endfor %}</td>
@@ -45,10 +50,10 @@
     </table>
 
     {% if has_account %}
-    <div class="small fw-semibold mb-1">Sus precios por hora</div>
+    <div class="small fw-semibold mb-1">Sus precios por hora y por dieta</div>
     <table class="table table-sm small mb-3" style="max-width: 40rem;">
         <thead class="table-light"><tr><th>Clase de hora</th><th class="text-end">Normal</th><th class="text-end">Festivo y domingo</th></tr></thead>
-        <tbody>{% for label, normal, holiday in prices %}<tr><td>{{ label }}</td><td class="text-end">{% if normal %}{{ normal }} €{% else %}—{% endif %}</td><td class="text-end">{% if holiday %}{{ holiday }} €{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+        <tbody>{% for label, normal, holiday, is_diet in prices %}<tr><td>{{ label }}{% if is_diet %} <span class="text-muted">(por dieta)</span>{% endif %}</td><td class="text-end">{% if normal %}{{ normal }} €{% else %}—{% endif %}</td><td class="text-end">{% if is_diet %}{% elif holiday %}{{ holiday }} €{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
     </table>
     <p class="small text-muted">Cambiar precios, de dónde salen sus horas o liquidar: en el panel Acciones.</p>
     {% endif %}

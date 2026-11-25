@@ -17,6 +17,10 @@
         {% else %}
         <button type="submit" name="what" value="review" class="btn btn-sm btn-success"><i class="bi bi-check2-all me-1"></i>Marcar revisado</button>
         {% endif %}
+        {% if parte.source != "PDF_UPLOAD" %}
+        {# S163 (25/11): un parte digital solo se modifica en su formulario (el del mecánico), el único sitio donde se edita; se abre en otra pestaña. #}
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:operator_form_edit' parte.pk %}" target="_blank" rel="noopener" title="Se abre el formulario del parte en otra pestaña; al acabar, vuelve aquí y actualiza"><i class="bi bi-pencil-square me-1"></i>Modificar el parte</a>
+        {% endif %}
     </form>
 
     {% for block in blocks %}

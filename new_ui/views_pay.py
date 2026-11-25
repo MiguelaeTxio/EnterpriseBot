@@ -129,7 +129,8 @@ def pay_context(section, company):
     from new_ui.filters import pay_period_range
 
     return {
-        "pay_classes": pay.hour_classes(company),
+        "pay_classes": pay.pay_classes(company),
+        "pay_diet_key": pay.DIETA,
         "pay_sources": PayWorker.Source.choices,
         "pay_previous": pay_period_range(previous=True),
         "pay_current": pay_period_range(),
@@ -154,6 +155,8 @@ def render_settings(request):
     return render(request, "new_ui/_pay_settings.html", {
         "classes": classes,
         "modes": pay.MODE_LABELS,
+        "diet_modes": pay.DIETA_MODES,
+        "diet_mode": pay.mode_of(settings, pay.DIETA),
         "cap": _minutes_label(settings.monthly_cap_minutes),
         "parte_day": _minutes_label(settings.parte_day_minutes),
     })
@@ -174,6 +177,8 @@ class PaySettingsSaveView(SuperuserRequiredMixin, View):
                           "que cero.")
         modes = {key: request.POST.get("mode_" + key, pay.NONE)
                  for key, _label in pay.hour_classes(company)}
+        diet = request.POST.get("mode_" + pay.DIETA, pay.NONE)
+        modes[pay.DIETA] = diet if diet in (pay.NONE, pay.ALL) else pay.NONE
         pay.save_settings(company, modes, cap, parte_day)
         return _ok("Guardado: los cálculos ya salen con esto (los "
                    "periodos liquidados no cambian).")
@@ -332,7 +337,7 @@ class PayPricesView(SuperuserRequiredMixin, View):
         try:
             users, without = _marked_users(request)
             prices = {}
-            for key, _label in pay.hour_classes(company):
+            for key, _label in pay.pay_classes(company):
                 normal = _price(request.POST.get("price_" + key))
                 holiday = _price(request.POST.get("holiday_" + key))
                 if normal is None and holiday is None:
@@ -416,7 +421,7 @@ def render_worker(request, person):
 
     company = _company(request)
     start, end = pay_period(request.GET)
-    classes = pay.hour_classes(company)
+    classes = pay.pay_classes(company)
     labels = dict(classes)
     result = None
     if person.company_user_id:
@@ -436,17 +441,20 @@ def render_worker(request, person):
                          for k, s in row["paid"].items()],
                 "to_bag": _minutes_label(row["to_bag"] // 60)
                 if row["to_bag"] else "",
+                "diet": row.get("diet", False),
             })
         for key, label in classes:
             if key not in result.paid:
                 continue
             lines.append({
+                "is_diet": key == pay.DIETA,
                 "label": label, "hours": result.hours(key),
                 "price": result.price(key),
                 "holiday_hours": result.hours(key, True),
                 "holiday_price": result.price(key, True),
                 "amount": result.amount(key)})
     prices = (result.prices if result is not None else {}) or {}
+    diet_mode = pay.mode_of(pay.settings_of(company), pay.DIETA)
     return render(request, "new_ui/_pay_worker.html", {
         "person": person,
         "has_account": person.company_user_id is not None,
@@ -457,8 +465,11 @@ def render_worker(request, person):
         "liquidated": [(a, b) for a, b, _p in
                        (result.liquidated if result else [])],
         "prices": [(label, (prices.get(key) or ["", ""])[0] or "",
-                    ((prices.get(key) or ["", ""]) + [""])[1] or "")
+                    ((prices.get(key) or ["", ""]) + [""])[1] or "",
+                    key == pay.DIETA)
                    for key, label in classes],
+        "diet_key": pay.DIETA,
+        "diets_paid": diet_mode != pay.NONE,
         "bag": bag_context(person),
         "today": timezone.localdate(),
     })

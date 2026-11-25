@@ -41,6 +41,12 @@ from hr_calendar.models import (
 
 JORNADA = "jornada"
 PARTE = "parte"
+# S163 (25/11): las dietas (días con dieta en el parte digital) se pagan
+# por unidad, a un precio por dieta de cada trabajador. En los cálculos
+# van como una "clase" más con una "hora" por dieta (precio normal).
+DIETA = "dieta"
+DIETA_LABEL = "Dietas"
+DIETA_MODES = (("none", "No se paga"), ("all", "Se paga cada dieta"))
 NONE, ALL, OVER = "none", "all", "over"
 MODE_LABELS = (
     (NONE, "No se paga"),
@@ -79,6 +85,27 @@ def hour_classes(company):
             classes.append(("tipo_%d" % clock_type.pk, clock_type.name))
     classes.append((PARTE, "Horas de parte"))
     return classes
+
+
+def pay_classes(company):
+    """Las clases de hora y, al final, las dietas (precios y líneas)."""
+    return hour_classes(company) + [(DIETA, DIETA_LABEL)]
+
+
+def _diet_days(company, user_ids, date_from, date_to):
+    """{user id: set(días)} con dieta en algún parte digital."""
+    from work_order_processor.models import WorkOrderEntry
+
+    result = {}
+    for row in WorkOrderEntry.objects.filter(
+            work_order__company=company,
+            work_order__uploaded_by_id__in=list(user_ids),
+            work_date__gte=date_from, work_date__lte=date_to,
+            has_diet=True).values("work_order__uploaded_by_id",
+                                  "work_date").distinct():
+        result.setdefault(row["work_order__uploaded_by_id"], set()).add(
+            row["work_date"])
+    return result
 
 
 def mode_of(settings, key):
@@ -146,6 +173,8 @@ class Result:
         self.to_bag = 0
         self.liquidated = []
         self.prices = {}
+        # Días con dieta del periodo (se paguen o no).
+        self.diets = 0
 
     @property
     def source_label(self):
@@ -161,11 +190,16 @@ class Result:
 
     @property
     def normal_hours(self):
-        return sum((self.hours(k) for k in self.paid), ZERO)
+        return sum((self.hours(k) for k in self.paid if k != DIETA), ZERO)
 
     @property
     def holiday_hours(self):
-        return sum((self.hours(k, True) for k in self.paid), ZERO)
+        return sum((self.hours(k, True) for k in self.paid if k != DIETA),
+                   ZERO)
+
+    @property
+    def diet_amount(self):
+        return self.amount(DIETA) if DIETA in self.paid else ZERO
 
     def price(self, key, holiday=False):
         pair = self.prices.get(key) or [0, 0]
@@ -211,6 +245,8 @@ def compute(company, company_users, date_from, date_to):
     reports = reports_by_user(company, ids, date_from, date_to)
     required = _required_days_by_user(company, ids, date_from, date_to)
     partes = _parte_seconds(company, ids, date_from, date_to)
+    diet_days = _diet_days(company, ids, date_from, date_to)
+    pay_diets = mode_of(settings, DIETA) != NONE
     liquidated = _liquidated_days(company, ids, date_from, date_to)
     workers = {w.company_user_id: w for w in PayWorker.objects.filter(
         company_user_id__in=ids)}
@@ -246,6 +282,11 @@ def compute(company, company_users, date_from, date_to):
         for day in _daterange(date_from, date_to):
             if any(a <= day <= b for a, b, _p in result.liquidated):
                 continue
+            diet = day in diet_days.get(cu.pk, ())
+            if diet:
+                result.diets += 1
+                if pay_diets:
+                    result.add(DIETA, int(HOUR), False)
             parte_secs = partes.get(cu.pk, {}).get(day, 0)
             use_parte = (source == PayWorker.Source.PARTE
                          or (source == PayWorker.Source.AUTO
@@ -260,6 +301,7 @@ def compute(company, company_users, date_from, date_to):
                 continue
             holiday = not working(day, start=day)
             row = {"day": day, "holiday": holiday, "by_key": by_key,
+                   "diet": diet,
                    "source": PARTE if use_parte else "fichaje",
                    "paid": {}, "to_bag": 0}
             if holiday:
@@ -353,7 +395,7 @@ def liquidate(company, company_users, date_from, date_to, by):
             "antes de liquidar." % ", ".join(
                 "%s: %d" % (name, count) for name, count in pending))
     results = compute(company, users, date_from, date_to)
-    labels = dict(hour_classes(company))
+    labels = dict(pay_classes(company))
     period = PayPeriod.objects.create(company=company, date_from=date_from,
                                       date_to=date_to, closed_by=by)
     count = 0
