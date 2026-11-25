@@ -73,8 +73,11 @@ TEMPLATES = [
                 settings.PLATFORM_BASE_URL + "/panel/nominas/whatsapp/{{3}}",
             ],
         }},
+        # S163 (25/11): la primera se rechazó («Error downloading invalid
+        # media URL»): la muestra tiene que bajarse y llevar extensión.
+        # Esta sirve un PDF sin datos (panel/views_payslips.py).
         "variables": {"1": "Juan", "2": "Octubre 2026",
-                      "3": "ejemploDeTokenTemporal"},
+                      "3": "ejemplo-nomina.pdf"},
     },
     {
         # S153: a quien quien sube la entrega le da acceso (jefe de
@@ -121,6 +124,12 @@ class Command(BaseCommand):
             required=True,
             help="Ruta del log propio (pantalla y archivo a la vez).",
         )
+        parser.add_argument(
+            "--recreate", action="append", default=[],
+            help=("Plantilla rechazada que se vuelve a crear y someter con "
+                  "un nombre nuevo en Meta (<nombre>_v2, _v3...); la fila "
+                  "de BD pasa a apuntar a la nueva (S163)."),
+        )
 
     def _log(self, message):
         """
@@ -136,6 +145,7 @@ class Command(BaseCommand):
         self._log_handle.flush()
 
     def handle(self, *args, **options):
+        self._recreate = set(options["recreate"])
         with open(options["log_file"], "a", encoding="utf-8") as handle:
             self._log_handle = handle
             self._run()
@@ -172,12 +182,19 @@ class Command(BaseCommand):
         existing = WhatsAppTemplate.objects.filter(
             company=company, name=name,
         ).first()
-        if existing is not None:
+        meta_name = name
+        if existing is not None and name not in self._recreate:
             self._log("  Ya existe en BD (content_sid=%s) -- no se toca "
                       "Twilio." % existing.content_sid)
             return
+        if existing is not None:
+            # Nombre nuevo en Meta (el rechazado no se reutiliza): con la
+            # fecha, para que no choque con otro intento.
+            meta_name = "%s_v%s" % (name, datetime.now().strftime("%Y%m%d"))
+            self._log("  Se vuelve a crear como %s (antes %s)."
+                      % (meta_name, existing.content_sid))
         payload = {
-            "friendly_name": name,
+            "friendly_name": meta_name,
             "language": "es",
             "variables": definition["variables"],
             "types": definition["types"],
@@ -196,7 +213,7 @@ class Command(BaseCommand):
         )
         approval = requests.post(
             approval_url,
-            json={"name": name, "category": "UTILITY"},
+            json={"name": meta_name, "category": "UTILITY"},
             auth=auth,
             timeout=30,
         )
@@ -207,6 +224,11 @@ class Command(BaseCommand):
             self._log("  AVISO: creada pero la solicitud de aprobacion "
                       "fallo (HTTP %s): %s"
                       % (approval.status_code, approval.text))
+        if existing is not None:
+            existing.content_sid = content_sid
+            existing.save(update_fields=["content_sid"])
+            self._log("  BD: %s apunta ahora a %s." % (name, content_sid))
+            return
         WhatsAppTemplate.objects.create(
             company=company,
             name=name,

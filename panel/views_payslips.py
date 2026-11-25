@@ -764,6 +764,18 @@ class PayslipMediaView(View):
         from document_explorer.models import ConfidentialAccessLog
         from spare_parts.gcs_service import download_bytes
 
+        # S163 (25/11): Meta descarga la muestra de la plantilla para
+        # aprobarla (payslip_delivery se rechazó por un enlace de ejemplo
+        # que no devolvía nada). La muestra es un PDF sin datos.
+        if token == pd.SAMPLE_MEDIA_NAME:
+            response = HttpResponse(pd.sample_pdf(),
+                                    content_type="application/pdf")
+            response["Content-Disposition"] = (
+                'inline; filename="%s"' % pd.SAMPLE_MEDIA_NAME)
+            return response
+        # Los enlaces terminan en «.pdf» (Twilio exige la extensión).
+        if token.endswith(".pdf"):
+            token = token[:-4]
         item = PayslipItem.objects.filter(
             media_token=token, media_expires__gt=timezone.now(),
             entry__isnull=False,

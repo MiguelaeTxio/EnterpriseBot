@@ -627,6 +627,33 @@ def _file_payslip(item, by):
     return result["entry"]
 
 
+# S163 (25/11): muestra pública (sin datos) que Meta descarga para
+# aprobar payslip_delivery; las nóminas reales van a «<token>.pdf».
+SAMPLE_MEDIA_NAME = "ejemplo-nomina.pdf"
+
+
+def sample_pdf():
+    """
+    A one-page sample PDF with no personal data (template approval).
+
+    ---
+
+    Un PDF de una página sin ningún dato personal: la muestra de la
+    plantilla de WhatsApp de la nómina que Meta descarga para aprobarla.
+    """
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 110), "Grupo Alvarez", fontsize=20)
+    page.insert_text((72, 150), "Nomina de ejemplo", fontsize=16)
+    page.insert_text((72, 185), "Documento de muestra sin datos "
+                     "personales.", fontsize=11)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
 def media_url(item):
     """
     The temporary public link Twilio fetches the payslip from.
@@ -638,7 +665,7 @@ def media_url(item):
     from django.urls import reverse
 
     return "%s%s" % (settings.PLATFORM_BASE_URL, reverse(
-        "panel:payslip_media", args=[item.media_token]))
+        "panel:payslip_media", args=[item.media_token + ".pdf"]))
 
 
 def _whatsapp(item):
@@ -676,7 +703,7 @@ def _whatsapp(item):
             os.environ.get("TWILIO_WHATSAPP_SENDER", ""),
             item.batch.company, phone,
             template.content_sid if template else None,
-            {"1": name, "2": month, "3": item.media_token},
+            {"1": name, "2": month, "3": item.media_token + ".pdf"},
             text=text, media_url=media_url(item),
         )
     except Exception as exc:  # Twilio: se anota en la nómina.
