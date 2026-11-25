@@ -509,6 +509,8 @@ urlpatterns = [
          name="machine_card_export"),
     path("maquina/<int:pk>/qr/imagen/",
          views_docs.MachineQrImageView.as_view(), name="machine_qr_image"),
+    path("maquina/<int:pk>/qr/imprimir/",
+         views_docs.MachineQrPrintView.as_view(), name="machine_qr_print"),
     path("maquina/<int:pk>/qr/", views_docs.MachineQrActionView.as_view(),
          name="machine_qr_action"),
     # Circulares (copia de la antigua).

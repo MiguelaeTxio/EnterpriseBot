@@ -367,11 +367,34 @@ class MachineQrImageView(SuperuserRequiredMixin, View):
     def get(self, request, pk):
         machine = _machine(request, pk)
         sheet = qr.sheet_for(machine)
-        data = qr.qr_image(qr.public_url(request, sheet), "png", scale=20)
+        # S163 (25/11): la pegatina lleva debajo el código del vehículo.
+        data = qr.sticker_png(qr.public_url(request, sheet), machine.code)
         response = HttpResponse(data, content_type="image/png")
         response["Content-Disposition"] = (
             'attachment; filename="QR_%s.png"' % machine.code)
         return response
+
+
+class MachineQrPrintView(SuperuserRequiredMixin, View):
+    """
+    GET: a page to print the machine's QR sticker (QR + its code).
+
+    ---
+
+    S163 (25/11): la pegatina para imprimir: el QR y debajo el código
+    del vehículo; se abre el cuadro de imprimir solo.
+    """
+
+    def get(self, request, pk):
+        from django.shortcuts import render
+
+        machine = _machine(request, pk)
+        sheet = qr.sheet_for(machine)
+        return render(request, "new_ui/qr_print.html", {
+            "code": machine.code,
+            "qr_svg": qr.qr_image(qr.public_url(request, sheet), "svg",
+                                  scale=10),
+        })
 
 
 class MachineQrActionView(SuperuserRequiredMixin, View):

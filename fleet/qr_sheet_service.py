@@ -84,6 +84,54 @@ def qr_image(url, kind="svg", scale=10):
     return buffer.getvalue().decode("utf-8")
 
 
+def sticker_png(url, code):
+    """
+    The QR sticker as PNG: the QR with the vehicle code below it.
+
+    ---
+
+    S163 (25/11, Miguel Ángel: «debe de verse en la pegatina el código
+    del vehículo»): la pegatina en PNG, el QR y debajo el código del
+    centro de gasto en grande, sobre blanco.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    qr_img = Image.open(io.BytesIO(qr_image(url, "png", scale=20))).convert(
+        "RGB")
+    width = qr_img.width
+    size = max(40, width // 7)
+    font = None
+    for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                 "/usr/share/fonts/truetype/liberation/"
+                 "LiberationSans-Bold.ttf"):
+        try:
+            font = ImageFont.truetype(path, size)
+            break
+        except OSError:
+            continue
+    if font is None:
+        font = ImageFont.load_default(size=size)
+    draw = ImageDraw.Draw(qr_img)
+    box = draw.textbbox((0, 0), code, font=font)
+    text_w, text_h = box[2] - box[0], box[3] - box[1]
+    while text_w > width * 0.92 and size > 12:
+        size -= 4
+        font = font.font_variant(size=size) if hasattr(
+            font, "font_variant") else font
+        box = draw.textbbox((0, 0), code, font=font)
+        text_w, text_h = box[2] - box[0], box[3] - box[1]
+    pad = size // 2
+    sticker = Image.new("RGB", (width, qr_img.height + text_h + pad * 2),
+                        "white")
+    sticker.paste(qr_img, (0, 0))
+    ImageDraw.Draw(sticker).text(
+        ((width - text_w) // 2 - box[0], qr_img.height + pad - box[1]),
+        code, fill="black", font=font)
+    out = io.BytesIO()
+    sticker.save(out, format="PNG")
+    return out.getvalue()
+
+
 def add_media(sheet, upload, caption, user):
     """
     Store an uploaded photo or video in GCS and register it.

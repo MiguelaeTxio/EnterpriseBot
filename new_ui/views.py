@@ -1257,6 +1257,8 @@ def _machine_qr_context(request, machine):
         "editor_password": qr.editor_password_plain(machine.company),
         "min_password_length": qr.MIN_PASSWORD_LENGTH,
         "image_url": reverse("new_ui:machine_qr_image", args=[machine.pk]),
+        "print_url": reverse("new_ui:machine_qr_print", args=[machine.pk]),
+        "machine_code": machine.code,
         "action_url": reverse("new_ui:machine_qr_action", args=[machine.pk]),
     }
 

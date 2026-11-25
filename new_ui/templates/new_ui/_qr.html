@@ -14,9 +14,11 @@ Contexto: _machine_qr_context (new_ui/views.py).
             <div class="nui-ficha-head">Código QR</div>
             <div class="p-2 text-center">
                 <div class="mx-auto" style="max-width: 220px;">{{ qr_svg|safe }}</div>
+                <div class="fw-bold fs-4 lh-1">{{ machine_code }}</div>
                 <div class="small text-muted mt-1 text-break">{{ public_url }}</div>
                 <div class="d-flex flex-wrap gap-1 justify-content-center mt-2">
-                    <a class="btn btn-sm btn-primary" href="{{ image_url }}" download><i class="bi bi-download me-1"></i>Descargar para imprimir</a>
+                    <a class="btn btn-sm btn-primary" href="{{ print_url }}" target="_blank" rel="noopener"><i class="bi bi-printer me-1"></i>Imprimir la pegatina</a>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ image_url }}" download><i class="bi bi-download me-1"></i>Descargar la pegatina</a>
                     <a class="btn btn-sm btn-outline-primary" href="{{ public_url }}" target="_blank" rel="noopener"><i class="bi bi-phone me-1"></i>Ver como el trabajador</a>
                 </div>
                 <p class="small text-muted mt-2 mb-0">El QR no cambia nunca: lo que se edite aquí sale al momento al leerlo.</p>
