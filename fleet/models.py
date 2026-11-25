@@ -1963,6 +1963,11 @@ class QrEditorSettings(models.Model):
     )
     password_hash = models.CharField(_("Contraseña (cifrada)"),
                                      max_length=256, blank=True, default="")
+    # S163 (25/11, Miguel Ángel: «ponla que se pueda ver en la interfaz
+    # nueva»): también cifrada con la llave del servidor (recuperable),
+    # para enseñarla en la pestaña QR de la nueva interfaz.
+    password_encrypted = models.TextField(
+        _("Contraseña (recuperable)"), blank=True, default="")
     updated_by = models.ForeignKey(
         "ivr_config.CompanyUser", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="+",

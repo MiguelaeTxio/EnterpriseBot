@@ -255,10 +255,37 @@ def set_editor_password(company, raw_password, user):
                            % MIN_PASSWORD_LENGTH)
     settings_row, _created = QrEditorSettings.objects.get_or_create(
         company=company)
+    from document_explorer.confidential import encrypt
+
     settings_row.password_hash = make_password(raw_password)
+    settings_row.password_encrypted = encrypt(
+        raw_password.encode()).decode()
     settings_row.updated_by = user
     settings_row.save()
     return settings_row
+
+
+def editor_password_plain(company):
+    """
+    The QR editor password, readable (S163), or "" if unknown.
+
+    ---
+
+    La contraseña del editor QR en claro, para la nueva interfaz. Las
+    puestas antes de S163 solo tienen el hash: "" (hay que volver a
+    ponerla para poder verla).
+    """
+    from document_explorer.confidential import ConfidentialError, decrypt
+
+    from fleet.models import QrEditorSettings
+
+    row = QrEditorSettings.objects.filter(company=company).first()
+    if row is None or not row.password_encrypted:
+        return ""
+    try:
+        return decrypt(row.password_encrypted.encode()).decode()
+    except ConfidentialError:
+        return ""
 
 
 def editor_password_set(company):

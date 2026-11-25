@@ -1215,6 +1215,7 @@ def _machine_qr_context(request, machine):
         "max_photo_mb": qr.MAX_PHOTO_BYTES // (1024 * 1024),
         "max_video_mb": qr.MAX_VIDEO_BYTES // (1024 * 1024),
         "editor_password_set": qr.editor_password_set(machine.company),
+        "editor_password": qr.editor_password_plain(machine.company),
         "min_password_length": qr.MIN_PASSWORD_LENGTH,
         "image_url": reverse("new_ui:machine_qr_image", args=[machine.pk]),
         "action_url": reverse("new_ui:machine_qr_action", args=[machine.pk]),

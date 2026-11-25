@@ -102,6 +102,7 @@ Contexto: _machine_qr_context (new_ui/views.py).
                 {% csrf_token %}
                 <input type="hidden" name="action" value="editor_password">
                 <p class="text-muted mb-2">Con ella se entra en «Fichas QR de los vehículos» desde la aplicación de fichaje. Es una sola para toda la empresa. {% if editor_password_set %}Ya hay una puesta; aquí se cambia.{% else %}Todavía no hay ninguna.{% endif %}</p>
+                {% if editor_password %}<div class="mb-2">Contraseña actual: <code class="d-none" data-nui-qr-pass>{{ editor_password }}</code> <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="this.previousElementSibling.classList.toggle('d-none'); this.textContent = this.previousElementSibling.classList.contains('d-none') ? 'Ver' : 'Ocultar';">Ver</button></div>{% elif editor_password_set %}<p class="text-muted mb-2">La actual se puso antes de poder verla: vuelve a ponerla para que se vea aquí.</p>{% endif %}
                 <input type="password" name="password" minlength="{{ min_password_length }}" autocomplete="new-password" class="form-control form-control-sm" placeholder="Nueva contraseña (mínimo {{ min_password_length }} caracteres)" aria-label="Nueva contraseña" required>
                 <button type="submit" class="btn btn-sm btn-outline-primary mt-2"><i class="bi bi-key me-1"></i>{% if editor_password_set %}Cambiar{% else %}Poner{% endif %} contraseña</button>
             </form>
