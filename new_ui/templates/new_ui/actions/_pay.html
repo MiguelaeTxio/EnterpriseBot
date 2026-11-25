@@ -63,9 +63,19 @@
         <form data-nui-action-form data-nui-needs-selection data-nui-download data-nui-no-refresh action="{% url 'new_ui:pay_download' %}">
             {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-excel me-1"></i>Descargar en Excel</button>
         </form>
-        <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:pay_undo' %}">
-            {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Deshacer esas liquidaciones? Se reabren sus periodos de trabajo, se borran sus líneas y esos días se vuelven a calcular con los precios de ahora.">Deshacer la liquidación</button>
+        <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:pay_undo' %}" class="w-100">
+            {% csrf_token %}
+            <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask>Deshacer las marcadas</button>
+            <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 d-none" data-nui-countdown-box>
+                Se deshacen estas liquidaciones: se reabren sus periodos de trabajo, se borran sus líneas y esos días se vuelven a calcular con los precios de ahora.
+                <ul class="mb-1" data-nui-countdown-list></ul>
+                <div class="d-flex gap-1 mt-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                    <button type="submit" class="btn btn-sm btn-danger" data-nui-countdown-go disabled>Deshacer <span data-nui-countdown-left></span></button>
+                </div>
+            </div>
         </form>
     </div>
+    <p class="small text-muted mt-2 mb-0">Pulsa una liquidación para ver su detalle por trabajador.</p>
 </div>
 {% endif %}

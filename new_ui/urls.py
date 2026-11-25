@@ -262,6 +262,8 @@ urlpatterns = [
          views_pay.PayPeriodActionView.as_view(), name="pay_undo"),
     path("pagos/liquidaciones/excel/",
          views_pay.PayPeriodDownloadView.as_view(), name="pay_download"),
+    path("pagos/liquidaciones/<int:pk>/ver/",
+         views_pay.PayPeriodSheetView.as_view(), name="pay_period_sheet"),
     # S156: Empresa › Coordinación › Correos CAE.
     path("cae/<int:pk>/", views_cae.CaeSheetView.as_view(),
          name="cae_sheet"),

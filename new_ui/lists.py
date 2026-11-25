@@ -3074,7 +3074,10 @@ def _pay_periods_def():
         ],
         date_field="date_from", default_order=("-date_from", "-pk"),
         actions=lambda r: [],
-        note="Periodo: el inicio de la liquidación. Sus días ya no se "
+        row_url=lambda r: reverse("new_ui:pay_period_sheet", args=[r.pk]),
+        row_title="Liquidación",
+        note="Pulsa una liquidación para ver su detalle por trabajador. "
+             "Periodo: el inicio de la liquidación. Sus días ya no se "
              "vuelven a calcular; para cambiarlos, deshaz la liquidación.")
 
 

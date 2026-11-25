@@ -202,6 +202,54 @@ class PayPeriodActionView(SuperuserRequiredMixin, View):
                    % len(periods))
 
 
+class PayPeriodSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one paid period in the viewer, with its lines per worker.
+
+    ---
+
+    S163 (25/11): una liquidación en el visor: periodo, quién y cuándo,
+    el detalle por trabajador (cada clase de hora) con el total, y
+    descargar en Excel o deshacerla (5 s).
+    """
+
+    def get(self, request, pk):
+        from django.http import Http404
+
+        period = PayPeriod.objects.filter(
+            company=_company(request), pk=pk).select_related(
+            "closed_by__person_identity", "closed_by__user").first()
+        if period is None:
+            raise Http404
+        workers, order, total = {}, [], Decimal("0")
+        for line in period.lines.exclude(key="nada").select_related(
+                "company_user__person_identity", "company_user__user") \
+                .order_by("company_user_id", "key"):
+            cu = line.company_user
+            if cu.pk not in workers:
+                person = getattr(cu, "person_identity", None)
+                workers[cu.pk] = {"name": person_name(person) if person
+                                  else str(cu), "lines": [],
+                                  "amount": Decimal("0")}
+                order.append(cu.pk)
+            workers[cu.pk]["lines"].append(line)
+            workers[cu.pk]["amount"] += line.amount
+            total += line.amount
+        closer = period.closed_by
+        person = getattr(closer, "person_identity", None) if closer else None
+        label = "%s – %s" % (period.date_from.strftime("%d/%m/%Y"),
+                             period.date_to.strftime("%d/%m/%Y"))
+        return render(request, "new_ui/_pay_period.html", {
+            "period": period,
+            "label": label,
+            "closed_by": (person_name(person) if person
+                          else (str(closer) if closer else "")),
+            "workers": sorted((workers[k] for k in order),
+                              key=lambda w: w["name"]),
+            "total": total,
+        })
+
+
 class PayPeriodDownloadView(SuperuserRequiredMixin, View):
     """
     POST: the lines of the marked paid periods as an Excel file.

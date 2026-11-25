@@ -1,0 +1,42 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_pay_period.html -- S163 (25/11): una liquidación en el visor (Empresa › Horas y pagos › Liquidaciones): periodo, quién y cuándo, detalle por trabajador con el total, descargar en Excel y deshacer (5 s). Vista: new_ui/views_pay.py (PayPeriodSheetView). #}
+<div class="small">
+    <table class="table table-sm mb-2">
+        <tbody>
+            <tr><th class="w-25">Periodo</th><td>{{ label }}</td></tr>
+            <tr><th>Liquidada</th><td>{{ period.closed_at|date:"d/m/Y H:i" }}{% if closed_by %} por {{ closed_by }}{% endif %}</td></tr>
+            <tr><th>Trabajadores</th><td>{{ workers|length }}</td></tr>
+            <tr><th>Importe total</th><td class="fw-semibold">{{ total|floatformat:2 }} €</td></tr>
+        </tbody>
+    </table>
+    <div style="max-height: 24rem; overflow-y: auto;" class="mb-2">
+    <table class="table table-sm table-bordered mb-0">
+        <thead class="table-light"><tr><th>Clase de hora</th><th class="text-end">Horas</th><th class="text-end">Precio</th><th class="text-end">Horas en festivo</th><th class="text-end">Precio festivo</th><th class="text-end">Importe</th></tr></thead>
+        <tbody>
+            {% for w in workers %}
+            <tr class="table-secondary"><td colspan="5" class="fw-semibold">{{ w.name }}</td><td class="text-end fw-semibold text-nowrap">{{ w.amount|floatformat:2 }} €</td></tr>
+            {% for line in w.lines %}
+            <tr><td>{{ line.label }}</td><td class="text-end">{{ line.hours|floatformat:"-2" }}</td><td class="text-end text-nowrap">{{ line.price|floatformat:2 }} €</td><td class="text-end">{{ line.holiday_hours|floatformat:"-2" }}</td><td class="text-end text-nowrap">{{ line.holiday_price|floatformat:2 }} €</td><td class="text-end text-nowrap">{{ line.amount|floatformat:2 }} €</td></tr>
+            {% endfor %}
+            {% empty %}
+            <tr><td colspan="6" class="text-muted">Sin líneas.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <form data-nui-action-form data-nui-download data-nui-no-refresh action="{% url 'new_ui:pay_download' %}" class="d-inline">
+        {% csrf_token %}<input type="hidden" name="selected" value="{{ period.pk }}">
+        <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-excel me-1"></i>Descargar en Excel</button>
+    </form>
+    <form data-nui-action-form data-nui-viewer-close-on="delete" action="{% url 'new_ui:pay_undo' %}" class="mt-2">
+        {% csrf_token %}<input type="hidden" name="selected" value="{{ period.pk }}">
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-arrow-counterclockwise me-1"></i>Deshacer la liquidación</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 d-none" data-nui-countdown-box data-nui-countdown-single="Liquidación {{ label }}">
+            Se reabren sus partes (vuelven a poder editarse), se borran sus líneas y esos días se vuelven a calcular con los precios de ahora:
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-danger" name="op" value="delete" data-nui-countdown-go disabled>Deshacer <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
+</div>
