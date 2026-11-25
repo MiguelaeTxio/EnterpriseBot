@@ -5,7 +5,7 @@ seleccionados (Personal › General). Sin desplegables. Vista:
 new_ui/views_notify.py.
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="comunicaciones">
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:doc_request_send' %}" class="mt-3">
+    <form data-nui-window="Pedir documentos por WhatsApp" data-nui-window-icon="bi-whatsapp" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:doc_request_send' %}" class="mt-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-whatsapp me-1"></i>Pedir documentos por WhatsApp</div>
         <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el documento…" aria-label="Buscar documento" data-nui-filter-list>
@@ -23,7 +23,7 @@ new_ui/views_notify.py.
         </div>
         <p class="small text-muted mt-1 mb-0">Uno activo por trabajador: el resto queda en cola y se pide al entregar el anterior. Lo pedido a cada uno se ve en su ficha.</p>
     </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:notify_whatsapp' %}" class="mt-3">
+    <form data-nui-window="Avisar de una circular" data-nui-window-icon="bi-megaphone" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:notify_whatsapp' %}" class="mt-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-megaphone me-1"></i>Avisar de una circular</div>
         {% if nui_circulars %}
@@ -41,7 +41,7 @@ new_ui/views_notify.py.
         <p class="small text-muted mb-0">No hay circulares. Se crean en Empresa › Circulares › Plantillas.</p>
         {% endif %}
     </form>
-    <form data-nui-action-form data-nui-needs-selection data-nui-docuten action="{% url 'new_ui:docuten_file' %}" class="mt-3">
+    <form data-nui-window="Preparar Docuten" data-nui-window-icon="bi-pen" data-nui-action-form data-nui-needs-selection data-nui-docuten action="{% url 'new_ui:docuten_file' %}" class="mt-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-pen me-1"></i>Preparar Docuten (firma certificada)</div>
         {% if nui_signed_circulars %}

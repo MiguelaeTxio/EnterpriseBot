@@ -1,6 +1,7 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_refuels.html -- S163: repostajes del surtidor (GasoGes): unidad, preguntar y contador de los vehículos de los seleccionados. Vista: new_ui/views_refuels.py. #}
 <div class="d-none" data-nui-actions-for="repostajes">
     <p class="small text-muted mb-2">Se aplica a los vehículos (y, si se indica, a los chóferes) de los repostajes seleccionados.</p>
+    <div data-nui-window="Ajustes del vehículo de los marcados" data-nui-window-icon="bi-fuel-pump">
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:refuel_unit' %}" class="mb-2">
         {% csrf_token %}
         <div class="small fw-semibold mb-1">El vehículo apunta</div>
@@ -27,5 +28,6 @@
         <button type="submit" name="broken" value="1" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Marcar averiado el contador de los vehículos de los seleccionados? Sus repostajes dejan de dar lectura.">Averiado</button>
         <button type="submit" name="broken" value="0" class="btn btn-sm btn-outline-success">Reparado</button>
     </form>
+    </div>
     <p class="small text-muted mt-2 mb-0">Se pregunta solo si el chófer y el vehículo lo tienen seleccionado.</p>
 </div>

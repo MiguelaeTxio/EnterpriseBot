@@ -924,6 +924,11 @@ def epi_family_hues():
             for n, family in enumerate(families)}
 
 
+def _row_sheet_url(section, tab):
+    base = reverse("new_ui:row_sheet")
+    return lambda r: "%s?s=%s&t=%s&pk=%s" % (base, section, tab, r.pk)
+
+
 def _epi_family_extra(path):
     """Filtro «Familia» de los EPIs (catálogo o entregas, por `path`)."""
     def options(company):
@@ -3392,6 +3397,21 @@ def list_def(section, tab):
         _CACHE["per"].pop("nominas", None)
         _CACHE["doc"]["nominas"] = _payslips_def()
         _CACHE["doc"]["entregas_nominas"] = _payslip_batches_def()
+        # S163 (25/11): pulsar una fila de estas vistas la abre en la
+        # ventana genérica (todos sus datos y las acciones de la vista
+        # aplicadas solo a ella).
+        for sec, tab in (("per", "pedidos"), ("per", "solicitudes"),
+                         ("per", "salud"), ("per", "ausencias"),
+                         ("per", "fichajes"), ("per", "repostajes"),
+                         ("cdg", "repostajes")):
+            definition = _CACHE[sec].get(tab)
+            if definition is not None and definition.row_url is None:
+                definition.row_url = _row_sheet_url(sec, tab)
+                definition.row_title = {
+                    "pedidos": "Documento pedido", "solicitudes": "Solicitud",
+                    "salud": "Baja médica", "ausencias": "Ausencia",
+                    "fichajes": "Fichaje", "repostajes": "Repostaje",
+                }[tab]
         # S163 (24/11): Empresa › EPIs › Lotes; «Familia» en las entregas.
         _CACHE["doc"]["lotes_epis"] = _epi_batches_def()
         _CACHE["doc"]["catalogo_epis"].row_tint = _epi_row_tint(

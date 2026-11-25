@@ -1,0 +1,15 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_row_sheet.html -- S163 (25/11): una fila de un listado en el visor (todos sus datos, su ficha y su menú). El JS añade debajo las acciones de la vista aplicadas solo a esta fila (data-nui-row-sheet). Vista: new_ui/views.py (RowSheetView). #}
+<div class="small" data-nui-row-sheet data-pk="{{ row.pk }}" data-tab="{{ tab }}" data-label="{{ row.label }}">
+    <table class="table table-sm mb-2">
+        <tbody>
+            {% for label, value in fields %}<tr><th class="w-25 fw-semibold">{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}
+        </tbody>
+    </table>
+    {% if row.entity_pk or row.actions %}
+    <div class="d-flex flex-wrap gap-1 mb-2">
+        {% if row.entity_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" data-nui-goto="{% if row.entity_kind == 'machine' %}cdg{% else %}per{% endif %}" data-pk="{{ row.entity_pk }}" data-label="{{ row.entity_label }}"><i class="bi bi-person-vcard me-1"></i>Ver la ficha de {{ row.entity_label }}</button>{% endif %}
+        {% for label, icon, url in row.actions %}<a class="btn btn-sm btn-outline-secondary" href="{{ url }}"{% if not url|slice:":1" == "#" %} target="_blank" rel="noopener"{% endif %}><i class="bi {{ icon }} me-1"></i>{{ label }}</a>{% endfor %}
+    </div>
+    {% endif %}
+    <div data-nui-row-actions></div>
+</div>

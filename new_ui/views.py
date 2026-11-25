@@ -26,7 +26,9 @@ Documentos, Personal y Centros de gasto se van llenando por fases.
 import re
 
 from django.db.models import Q
-from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.http import (
+    Http404, HttpResponse, HttpResponseBadRequest, JsonResponse,
+)
 from django.shortcuts import render
 from django.views import View
 
@@ -718,6 +720,43 @@ def _check_view(request, section, tab):
     from new_ui.permissions import can_view
 
     return can_view(_company_user(request), "%s.%s" % (section, tab))
+
+
+class RowSheetView(SuperuserRequiredMixin, View):
+    """
+    GET ?s=&t=&pk=: one row of a list in the viewer (all its columns).
+
+    ---
+
+    S163 (25/11): pulsar una fila de un listado sin ventana propia la
+    abre aquí: todos sus datos (también las columnas ocultas), su ficha y
+    lo de su menú; el JS añade debajo las acciones de la vista
+    (data-nui-window) aplicadas solo a esta fila.
+    """
+
+    def get(self, request):
+        from new_ui.lists import list_def, rows_for
+
+        section = request.GET.get("s", "")
+        tab = request.GET.get("t", "")
+        pk = request.GET.get("pk", "")
+        if section not in SECTIONS or not pk.isdigit() or \
+                not _check_view(request, section, tab):
+            raise Http404
+        definition = list_def(section, tab)
+        if definition is None:
+            raise Http404
+        company_user = _company_user(request)
+        obj = definition.queryset(company_user.company).filter(pk=pk).first()
+        if obj is None:
+            raise Http404
+        row = rows_for(definition, [obj], definition.columns)[0]
+        fields = [(col.label, cell["value"]) for col, cell in
+                  zip(definition.columns, row["cells"])
+                  if cell["value"] not in ("", None)]
+        return render(request, "new_ui/_row_sheet.html", {
+            "row": row, "fields": fields, "tab": tab, "section": section,
+        })
 
 
 class NewUiListView(SuperuserRequiredMixin, View):

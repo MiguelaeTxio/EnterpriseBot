@@ -1,6 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_vacations.html -- S163: acciones del Saldo de vacaciones (registrar a los seleccionados, sección desde una fecha, importar saldos, reglas y tipos de ausencia). Vista: new_ui/views_vacations.py. #}
 <div class="d-none" data-nui-actions-for="saldo_vacaciones">
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_register' %}" class="mb-3">
+    <form data-nui-window="Registrar vacaciones" data-nui-window-icon="bi-sun" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_register' %}" class="mb-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-airplane me-1"></i>Registrar vacaciones</div>
         <div class="d-flex flex-wrap align-items-center gap-1 small">
@@ -11,7 +11,7 @@
         <p class="small text-muted mb-0">El mismo periodo a cada uno (con su tarea automática si tiene cuenta del panel). Cambiar o borrar un periodo: en su desglose.</p>
     </form>
     {# S163 (23/11): días propios (mandan sobre los de su grupo y los de la empresa, que se ponen en Empresa › Vacaciones). #}
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_own_days' %}" class="mb-3">
+    <form data-nui-window="Días propios" data-nui-window-icon="bi-calendar-plus" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:vacation_own_days' %}" class="mb-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-person-gear me-1"></i>Días propios</div>
         <div class="d-flex flex-wrap align-items-center gap-1 small mb-1">
@@ -24,7 +24,7 @@
         <button type="submit" name="what" value="remove" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Quitarles los días propios? Vuelven a los de su grupo o los de la empresa.">Quitar los días propios</button>
         <p class="small text-muted mb-0">Mandan sobre los de su grupo y los de la empresa (Empresa › Vacaciones).</p>
     </form>
-    <div class="mb-3">
+    <div class="mb-3" data-nui-window="Importar saldos de partida" data-nui-window-icon="bi-upload">
         <div class="small fw-semibold mb-1"><i class="bi bi-upload me-1"></i>Importar saldos de partida</div>
         <div class="small mb-1">Plantilla: {% for y in vac_years %}<a href="{% url 'new_ui:vacation_import_template' %}?year={{ y }}" class="me-2">{{ y }}</a>{% endfor %}</div>
         <form data-nui-action-form action="{% url 'new_ui:vacation_import_upload' %}" enctype="multipart/form-data" data-nui-reset-after class="d-flex flex-wrap align-items-center gap-1 small">

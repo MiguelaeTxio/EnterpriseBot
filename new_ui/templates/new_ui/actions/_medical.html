@@ -1,7 +1,7 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_medical.html -- S163: bajas médicas (Personal › Salud). Vista: new_ui/views_medical.py. #}
 {# S163 (23/11): nueva baja y nueva ausencia, a los marcados en «Bajas y ausencias» (y, en su ficha, a esa persona). #}
 <div class="d-none" data-nui-actions-for="bajas">
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:medical_add' %}" class="mb-3">
+    <form data-nui-window="Nueva baja médica" data-nui-window-icon="bi-bandaid" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:medical_add' %}" class="mb-3">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-bandaid me-1"></i>Nueva baja médica</div>
         <div class="row g-1 small mb-1">
@@ -13,7 +13,7 @@
         </div>
         <button type="submit" class="btn btn-sm btn-success">Añadir la baja</button>
     </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:absence_add' %}" class="mb-3" data-nui-reset-after>
+    <form data-nui-window="Registrar una ausencia" data-nui-window-icon="bi-calendar-x" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:absence_add' %}" class="mb-3" data-nui-reset-after>
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-calendar-x me-1"></i>Registrar una ausencia</div>
         {% if nui_absence_categories %}
@@ -32,7 +32,7 @@
     </form>
 </div>
 <div class="d-none" data-nui-actions-for="salud">
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:medical_rows' %}">
+    <form data-nui-window="Dar el alta o borrar" data-nui-window-icon="bi-check2-circle" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:medical_rows' %}">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-check2-square me-1"></i>Dar el alta o borrar</div>
         <div class="d-flex flex-wrap align-items-center gap-1">

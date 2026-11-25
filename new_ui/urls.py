@@ -28,6 +28,7 @@ app_name = "new_ui"
 
 urlpatterns = [
     path("", views.NewUiView.as_view(), name="home"),
+    path("fila/", views.RowSheetView.as_view(), name="row_sheet"),
     path("listado/", views.NewUiListView.as_view(), name="list"),
     path("exportar/", views.NewUiExportView.as_view(), name="export"),
     path("tarjeta/", views.NewUiCardView.as_view(), name="card"),

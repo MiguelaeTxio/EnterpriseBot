@@ -716,7 +716,15 @@
             ev.preventDefault();
             const submitter = ev.submitter || null;
             const ask = submitter && submitter.dataset.nuiConfirm;
-            if (ask && !window.confirm(ask)) return;
+            // S163 (25/11): en las ventanas de Acciones, lo que pedía
+            // confirmación pasa a la lista con 5 s (como borrar).
+            if (ask && f.closest("[data-nui-window]") && window.nuiWindowAsk) {
+                if (f.dataset.nuiConfirmed !== (submitter.name || "") + "=" + (submitter.value || "")) {
+                    window.nuiWindowAsk(f, submitter, ask);
+                    return;
+                }
+                delete f.dataset.nuiConfirmed;
+            } else if (ask && !window.confirm(ask)) return;
             const body = new FormData(f);
             if (submitter && submitter.name) body.append(submitter.name, submitter.value);
             // Los filtros propios de la pestaña (p. ej. la entrega elegida
@@ -727,7 +735,12 @@
                 });
             }
             const asPerson = f.closest("[data-nui-as-person]");
-            if (asPerson && f.hasAttribute("data-nui-needs-selection") && scope && scope.pk) {
+            const rowSheet = f.closest("[data-nui-row-sheet]");
+            if (rowSheet && f.hasAttribute("data-nui-needs-selection")) {
+                // S163 (25/11): en la ventana de una fila, solo a esa fila.
+                body.append("selected", rowSheet.dataset.pk);
+                if (f.hasAttribute("data-nui-with-tab")) body.append("tab", rowSheet.dataset.tab);
+            } else if (asPerson && f.hasAttribute("data-nui-needs-selection") && scope && scope.pk) {
                 body.append("selected", scope.pk);
                 if (f.hasAttribute("data-nui-with-tab")) body.append("tab", asPerson.dataset.nuiAsPerson);
             } else if (f.hasAttribute("data-nui-needs-selection")) {
@@ -771,7 +784,7 @@
                     f.querySelectorAll("[data-nui-countdown-box]").forEach(b => b.classList.add("d-none"));
                     if (f.hasAttribute("data-nui-dirty")) { const c = f.closest(".card"); const b = c && c.querySelector("[data-nui-dirty-badge]"); if (b) b.classList.add("d-none"); }
                     const closeOn = f.dataset.nuiViewerCloseOn;
-                    if (f.hasAttribute("data-nui-viewer-close-after")) {
+                    if (f.hasAttribute("data-nui-viewer-close-after") || f.closest("[data-nui-window]")) {
                         // Hecho lo de la ventana (p. ej. una entrega): se cierra.
                         const modal = document.getElementById("nui-viewer");
                         if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
@@ -1861,10 +1874,116 @@
         new MutationObserver(function () {
             document.querySelectorAll("[data-nui-req-sheet]:not([data-ready])").forEach(function (box) { box.setAttribute("data-ready", ""); reqSheetView(box); });
         }).observe(document.body, {childList: true, subtree: true});
+        // S163 (25/11): «Acciones concisas» (Miguel Ángel: «cuando
+        // elijamos una acción, si es necesario [...] abrir un modal se
+        // abre»). Cada bloque [data-nui-window="Título"] de Acciones se
+        // queda detrás de un botón; al pulsarlo, el bloque pasa a la ventana
+        // con la lista de a quién se aplica, y vuelve a su sitio al cerrarla.
+        let windowed = null;
+        function restoreWindowed() {
+            if (!windowed) return;
+            windowed.block.hidden = true;
+            windowed.home.after(windowed.block);
+            windowed.block.querySelectorAll("[data-nui-window-ask]").forEach(el => el.remove());
+            windowed = null;
+        }
+        function windowTargets(block) {
+            const rowSheet = block && block.closest("[data-nui-row-sheet]");
+            if (rowSheet) return [rowSheet.dataset.label || ("nº " + rowSheet.dataset.pk)];
+            const needs = block.matches("form[data-nui-needs-selection]") ? block : block.querySelector("form[data-nui-needs-selection]");
+            if (!needs) return null;
+            if (block.closest("[data-nui-as-person]") && scope && scope.pk) return [scope.label || "La persona abierta"];
+            return Array.from(sel().entries()).map(p => p[1] || ("nº " + p[0]));
+        }
+        function targetList(names) {
+            const ul = document.createElement("ul");
+            ul.className = "mb-1";
+            ul.style.maxHeight = "10rem"; ul.style.overflowY = "auto";
+            names.slice(0, 200).forEach(function (n) { const li = document.createElement("li"); li.textContent = n; ul.appendChild(li); });
+            if (names.length > 200) { const li = document.createElement("li"); li.textContent = "… y " + (names.length - 200) + " más"; ul.appendChild(li); }
+            return ul;
+        }
+        document.querySelectorAll("[data-nui-window]").forEach(function (block) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-sm btn-outline-primary mb-1 me-1";
+            btn.setAttribute("data-nui-window-open", "");
+            btn.innerHTML = '<i class="bi ' + (block.dataset.nuiWindowIcon || "bi-box-arrow-up-right") + ' me-1"></i>';
+            btn.appendChild(document.createTextNode(block.dataset.nuiWindow));
+            const home = document.createComment("nui-window");
+            block.before(btn);
+            block.before(home);
+            block._nuiHome = home;
+            block.hidden = true;
+            btn._nuiBlock = block;
+        });
+        root.addEventListener("click", function (ev) {
+            const btn = ev.target.closest("[data-nui-window-open]");
+            if (!btn) return;
+            const block = btn._nuiBlock;
+            const names = windowTargets(block);
+            if (names && !names.length) { result("Marca primero con la casilla, en la lista de abajo, a quién aplicarlo.", true); return; }
+            const modal = document.getElementById("nui-viewer");
+            restoreWindowed();
+            viewerUrl = null;
+            modal.querySelector("#nui-viewer-title").textContent = block.dataset.nuiWindow;
+            const body = modal.querySelector("[data-nui-viewer-body]");
+            body.innerHTML = "";
+            if (names) {
+                const head = document.createElement("div");
+                head.className = "small mb-2";
+                head.innerHTML = '<div class="fw-semibold">Se aplica a (' + names.length + "):</div>";
+                head.appendChild(targetList(names));
+                body.appendChild(head);
+            }
+            windowed = {block: block, home: block._nuiHome};
+            body.appendChild(block);
+            block.hidden = false;
+            bootstrap.Modal.getOrCreateInstance(modal).show();
+        });
+        const viewerModal = document.getElementById("nui-viewer");
+        if (viewerModal) viewerModal.addEventListener("hidden.bs.modal", restoreWindowed);
+        // Confirmar con 5 s y la lista (en vez de la del navegador).
+        window.nuiWindowAsk = function (f, submitter, question) {
+            f.querySelectorAll("[data-nui-window-ask]").forEach(el => el.remove());
+            const box = document.createElement("div");
+            box.className = "alert alert-warning small py-2 px-2 mt-2 mb-0";
+            box.setAttribute("data-nui-window-ask", "");
+            const q = document.createElement("div");
+            q.textContent = question;
+            box.appendChild(q);
+            const names = windowTargets(f.closest("[data-nui-window]")) || [];
+            if (names.length) box.appendChild(targetList(names));
+            const row = document.createElement("div");
+            row.className = "d-flex gap-1 mt-2";
+            const cancel = document.createElement("button");
+            cancel.type = "button"; cancel.className = "btn btn-sm btn-secondary"; cancel.textContent = "Cancelar";
+            cancel.addEventListener("click", function () { clearInterval(timer); box.remove(); });
+            const go = document.createElement("button");
+            go.type = "button"; go.className = "btn btn-sm btn-danger"; go.disabled = true;
+            go.textContent = (submitter.textContent || "Seguir").trim() + " (5)";
+            go.addEventListener("click", function () {
+                f.dataset.nuiConfirmed = (submitter.name || "") + "=" + (submitter.value || "");
+                box.remove();
+                f.requestSubmit(submitter);
+            });
+            row.appendChild(cancel); row.appendChild(go); box.appendChild(row);
+            submitter.closest("div, form").after(box);
+            const label = (submitter.textContent || "Seguir").trim();
+            const end = Date.now() + 5000;
+            const timer = setInterval(function () {
+                const n = Math.ceil((end - Date.now()) / 1000);
+                if (!document.body.contains(box)) { clearInterval(timer); return; }
+                if (n > 0) { go.textContent = label + " (" + n + ")"; return; }
+                clearInterval(timer);
+                go.textContent = label; go.disabled = false;
+            }, 200);
+        };
         window.nuiViewerUrl = function () { return viewerUrl; };
         window.nuiOpenViewer = function (url, note, title) {
             const modal = document.getElementById("nui-viewer");
             if (!modal) return;
+            restoreWindowed();
             if (url) viewerUrl = url;
             if (url) modal.querySelector("#nui-viewer-title").textContent = title || "Parte";
             const body = modal.querySelector("[data-nui-viewer-body]");
@@ -1874,6 +1993,21 @@
                 .then(r => r.ok ? r.text() : Promise.reject(new Error("No se ha podido abrir.")))
                 .then(function (html) {
                     body.innerHTML = html;
+                    // S163 (25/11): la ventana de una fila lleva debajo las
+                    // acciones de su vista, aplicadas solo a ella.
+                    body.querySelectorAll("[data-nui-row-sheet]").forEach(function (sheet) {
+                        const holder = sheet.querySelector("[data-nui-row-actions]");
+                        document.querySelectorAll("[data-nui-actions-for] [data-nui-window]").forEach(function (block) {
+                            if (block.closest("[data-nui-row-sheet]")) return;
+                            const tabs = (block.closest("[data-nui-actions-for]").dataset.nuiActionsFor || "").split(/\s+/);
+                            if (tabs.indexOf(sheet.dataset.tab) === -1) return;
+                            if (!(block.matches("form[data-nui-needs-selection]") || block.querySelector("form[data-nui-needs-selection]"))) return;
+                            const copy = block.cloneNode(true);
+                            copy.hidden = false;
+                            copy.classList.add("border", "rounded", "p-2", "mb-2");
+                            holder.appendChild(copy);
+                        });
+                    });
                     // S163 (24/11): formularios de la ventana que se rellenan
                     // con los datos guardados (horario, tipo de fichaje...).
                     body.querySelectorAll("form[data-nui-fill-url]").forEach(function (f) {
