@@ -718,7 +718,9 @@
             const ask = submitter && submitter.dataset.nuiConfirm;
             // S163 (25/11): en las ventanas de Acciones, lo que pedía
             // confirmación pasa a la lista con 5 s (como borrar).
-            if (ask && f.closest("[data-nui-window]") && window.nuiWindowAsk) {
+            // (S163, 25/11: y en cualquier formulario de Acciones o de la
+            // ventana, para que nada se confirme con el aviso del navegador.)
+            if (ask && window.nuiWindowAsk && (f.closest("[data-nui-window]") || f.closest("[data-nui-actions-stage]") || f.closest('[data-nui-panel="acciones"]') || f.closest("#nui-viewer"))) {
                 if (f.dataset.nuiConfirmed !== (submitter.name || "") + "=" + (submitter.value || "")) {
                     window.nuiWindowAsk(f, submitter, ask);
                     return;
@@ -1951,7 +1953,7 @@
             const q = document.createElement("div");
             q.textContent = question;
             box.appendChild(q);
-            const names = windowTargets(f.closest("[data-nui-window]")) || [];
+            const names = windowTargets(f.closest("[data-nui-window]") || f) || [];
             if (names.length) box.appendChild(targetList(names));
             const row = document.createElement("div");
             row.className = "d-flex gap-1 mt-2";

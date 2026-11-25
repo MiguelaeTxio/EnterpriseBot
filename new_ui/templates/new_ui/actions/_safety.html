@@ -5,7 +5,7 @@
     <p class="small text-muted mt-1 mb-0">Para los centros de gasto marcados (o el abierto).</p>
 </div>
 <div class="d-none" data-nui-actions-for="seguridad_reg">
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_rows' %}" class="mb-3" data-nui-reset-after>
+    <form data-nui-window="Cambiar sus fechas" data-nui-window-icon="bi-box-arrow-up-right" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_rows' %}" class="mb-3" data-nui-reset-after>
         {% csrf_token %}<input type="hidden" name="action" value="dates">
         <div class="small fw-semibold mb-1"><i class="bi bi-calendar-check me-1"></i>Cambiar sus fechas</div>
         <div class="row g-1 small mb-1">
@@ -16,7 +16,7 @@
         <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
         <span class="small text-muted">Las que dejes vacías no cambian.</span>
     </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_rows' %}" class="mb-3" data-nui-reset-after>
+    <form data-nui-window="Retirar o sustituir" data-nui-window-icon="bi-box-arrow-up-right" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:safety_rows' %}" class="mb-3" data-nui-reset-after>
         {% csrf_token %}<input type="hidden" name="action" value="retire">
         <div class="small fw-semibold mb-1"><i class="bi bi-box-arrow-right me-1"></i>Retirar o sustituir</div>
         <div class="row g-1 small mb-1">

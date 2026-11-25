@@ -1,6 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_service.html -- S163: anotar revisiones y lecturas de este centro de gasto y borrar las seleccionadas. Vista: new_ui/views_service.py. #}
 <div class="d-none" data-nui-actions-for="revisiones">
-    <form data-nui-action-form action="{% url 'new_ui:service_add' %}" class="mb-3">
+    <form data-nui-window="Anotar una revisión hecha" data-nui-window-icon="bi-box-arrow-up-right" data-nui-action-form action="{% url 'new_ui:service_add' %}" class="mb-3">
         {% csrf_token %}
         <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
         <div class="small fw-semibold mb-1"><i class="bi bi-plus-circle me-1"></i>Anotar una revisión hecha </div>
@@ -20,7 +20,7 @@
     </form>
 </div>
 <div class="d-none" data-nui-actions-for="lecturas">
-    <form data-nui-action-form action="{% url 'new_ui:reading_add' %}" class="mb-3">
+    <form data-nui-window="Anotar una lectura" data-nui-window-icon="bi-box-arrow-up-right" data-nui-action-form action="{% url 'new_ui:reading_add' %}" class="mb-3">
         {% csrf_token %}
         <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
         <div class="small fw-semibold mb-1"><i class="bi bi-plus-circle me-1"></i>Anotar una lectura </div>

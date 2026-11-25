@@ -4,7 +4,7 @@ S163. Centros de gasto › General: alta por documentos (o a mano), baja,
 reactivar y borrar los seleccionados. Vista: new_ui/views_machines.py.
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="general">
-    <form data-nui-action-form data-nui-intake action="{% url 'new_ui:machine_create' %}" data-read-url="{% url 'new_ui:machine_intake_extract' %}" data-nui-reset-after>
+    <form data-nui-window="Alta de un centro de gasto" data-nui-window-icon="bi-box-arrow-up-right" data-nui-action-form data-nui-intake action="{% url 'new_ui:machine_create' %}" data-read-url="{% url 'new_ui:machine_intake_extract' %}" data-nui-reset-after>
         <input type="hidden" name="reactivate_machine_id" value="" data-nui-clear data-nui-reactivate>
         <input type="hidden" name="insurance_info" value="">
         <div class="small fw-semibold mb-1"><i class="bi bi-truck me-1"></i>Alta de un centro de gasto</div>

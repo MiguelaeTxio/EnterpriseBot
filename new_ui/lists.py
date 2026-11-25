@@ -3403,7 +3403,10 @@ def list_def(section, tab):
         for sec, tab in (("per", "pedidos"), ("per", "solicitudes"),
                          ("per", "salud"), ("per", "ausencias"),
                          ("per", "fichajes"), ("per", "repostajes"),
-                         ("cdg", "repostajes")):
+                         ("cdg", "repostajes"), ("cdg", "revisiones"),
+                         ("cdg", "lecturas"), ("cdg", "seguridad_reg"),
+                         ("cdg", "equipos"), ("cdg", "accesorios"),
+                         ("cdg", "averias"), ("cdg", "libro")):
             definition = _CACHE[sec].get(tab)
             if definition is not None and definition.row_url is None:
                 definition.row_url = _row_sheet_url(sec, tab)
@@ -3411,6 +3414,10 @@ def list_def(section, tab):
                     "pedidos": "Documento pedido", "solicitudes": "Solicitud",
                     "salud": "Baja médica", "ausencias": "Ausencia",
                     "fichajes": "Fichaje", "repostajes": "Repostaje",
+                    "revisiones": "Revisión", "lecturas": "Lectura",
+                    "seguridad_reg": "Extintor o botiquín",
+                    "equipos": "Equipo", "accesorios": "Accesorio",
+                    "averias": "Avería", "libro": "Revisión del libro",
                 }[tab]
         # S163 (24/11): Empresa › EPIs › Lotes; «Familia» en las entregas.
         _CACHE["doc"]["lotes_epis"] = _epi_batches_def()

@@ -9,7 +9,7 @@ plantillas y correo conjunto). Sin desplegables: botones de opción.
 Variables: noun ("persona" / "máquina"), section ("per" / "cdg").
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="documentos laboral">
-    <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_documents' %}">
+    <form data-nui-window="Juntarlos en un dosier" data-nui-window-icon="bi-box-arrow-up-right" data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_documents' %}">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Juntarlos en un dosier</div>
         <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Cómo">
@@ -25,7 +25,7 @@ Variables: noun ("persona" / "máquina"), section ("per" / "cdg").
     </form>
 </div>
 <div class="d-none" data-nui-actions-for="{% if section == 'cdg' %}documentacion{% else %}requisitos{% endif %}">
-    <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_apply' section %}">
+    <form data-nui-window="Dosier de su documentación" data-nui-window-icon="bi-box-arrow-up-right" data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_apply' section %}">
         {% csrf_token %}
         <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Dosier de su documentación</div>
         {% if dossier_templates %}
