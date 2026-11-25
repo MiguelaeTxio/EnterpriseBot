@@ -275,6 +275,23 @@ def queue_for_entry(entry, requested_by=None):
     from .local_download_service import create_for_person
     from .models import PersonIdentity
 
+    if entry.domain_content_type_id and (
+            entry.domain_content_type.model == "companyfiscalprofile"):
+        # S156: lo de una empresa del grupo baja a la carpeta local de
+        # su clase (company_local_folder_service).
+        from .company_local_folder_service import create_for_company_entry
+
+        def run_company():
+            try:
+                create_for_company_entry(entry, requested_by=requested_by)
+            except Exception:  # noqa: BLE001 -- nunca rompe la subida
+                import logging
+                logging.getLogger(__name__).exception(
+                    "Descarga a local tras subir %s: no se pudo crear el "
+                    "trabajo.", entry.pk)
+
+        transaction.on_commit(run_company)
+        return
     if not entry.blob_name.startswith(PANEL_PREFIXES + PERSON_PREFIXES):
         return
     # S149: un documento confidencial (nómina, S147) no baja nunca a
