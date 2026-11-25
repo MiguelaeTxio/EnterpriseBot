@@ -62,26 +62,33 @@ class CaeSheetView(SuperuserRequiredMixin, View):
     """
     GET: what one notice asks for and what we have (viewer).
     ---
-    GET: en el visor, qué pide un aviso y qué tenemos de cada cosa,
-    con lo que tenemos marcado para descargar.
+    GET: en el visor, el aviso con el resumen por estados arriba; cada
+    estado es un botón (`?estado=`): «Lo tenemos» abre la vista para
+    descargar (marcar todos, descargar lo marcado) y los demás la de
+    resolverlo (subir, pedir por WhatsApp, corregir tipo o titular).
+    Sin estado, la tabla completa para leer.
     """
 
     def get(self, request, pk):
         mail = get_object_or_404(CaeMail, pk=pk)
         rows, counts = resolve_mail(mail)
+        state = request.GET.get("estado", "")
+        if state not in STATUS_LABELS:
+            state = ""
         for row in rows:
             row["holder_kind"] = _holder_kind(row["demand"])
-        pending = [row for row in rows if row["status"] != FOUND]
+        shown = [row for row in rows if row["status"] == state] if (
+            state) else rows
         return render(request, "new_ui/_cae_sheet.html", {
             "mail": mail,
-            "rows": rows,
-            "pending": pending,
-            **(_fix_choices() if pending else {}),
+            "rows": shown,
+            "has_rows": bool(rows),
+            "state": state,
+            "state_label": STATUS_LABELS.get(state, ""),
             "counts": [
                 (key, STATUS_LABELS[key], counts[key])
                 for key in STATUS_LABELS if counts[key]
             ],
-            "downloadable": sum(1 for row in rows if row["entry"]),
         })
 
 
@@ -217,7 +224,8 @@ def _fix_choices():
     """Types and holders to choose from when fixing a demand.
     ---
     Tipos (por ámbito) y titulares (empresas del grupo, trabajadores en
-    activo y centros de gasto activos) para corregir a mano una línea.
+    activo y centros de gasto activos) para corregir a mano una línea;
+    se eligen escribiendo para buscar, nunca en un desplegable.
     """
     types = DocumentTypeCatalog.objects.filter(is_active=True).order_by(
         "label")
@@ -226,16 +234,47 @@ def _fix_choices():
     for doc_type in types:
         groups.setdefault(domains.get(doc_type.domain, doc_type.domain),
                           []).append(doc_type)
-    return {
-        "fix_types": sorted(groups.items()),
-        "fix_companies": CompanyFiscalProfile.objects.order_by(
-            "legal_name"),
-        "fix_people": PersonIdentity.objects.filter(
-            is_active_employee=True).order_by(
-            "first_surname", "second_surname", "given_name"),
-        "fix_machines": MachineAsset.objects.filter(
-            is_active=True).order_by("code"),
-    }
+    holders = [
+        ("Empresas", [
+            ("company:%d" % c.pk, c.legal_name)
+            for c in CompanyFiscalProfile.objects.order_by("legal_name")]),
+        ("Trabajadores", [
+            ("person:%d" % p.pk, "%s %s, %s%s" % (
+                p.first_surname, p.second_surname or "", p.given_name,
+                " · %s" % p.dni if p.dni else ""))
+            for p in PersonIdentity.objects.filter(
+                is_active_employee=True).order_by(
+                "first_surname", "second_surname", "given_name")]),
+        ("Centros de gasto", [
+            ("machine:%d" % m.pk, "%s%s" % (
+                m.code, " · %s" % m.brand_model if m.brand_model else ""))
+            for m in MachineAsset.objects.filter(
+                is_active=True).order_by("code")]),
+    ]
+    return {"fix_types": sorted(groups.items()), "fix_holders": holders}
+
+
+class CaeFixFormView(SuperuserRequiredMixin, View):
+    """
+    GET ?demand=: the window to fix a demand's type or holder.
+    ---
+    GET: la ventana para corregir el tipo o el titular de una línea,
+    con listas que se filtran escribiendo (70 trabajadores no se eligen
+    en un desplegable).
+    """
+
+    def get(self, request):
+        pk = request.GET.get("demand", "")
+        demand = get_object_or_404(
+            CaeDemand.objects.select_related(
+                "document_type", "company", "person", "machine"),
+            pk=pk if pk.isdigit() else 0)
+        return render(request, "new_ui/_cae_fix.html", {
+            "demand": demand,
+            "holder": holder_of(demand),
+            "state": request.GET.get("estado", ""),
+            **_fix_choices(),
+        })
 
 
 def _demand(request):
@@ -278,7 +317,7 @@ class CaeFixView(SuperuserRequiredMixin, View):
             demand.company = holder if kind == _KIND_COMPANY else None
             fields += ["subject_type", "person", "machine", "company"]
         demand.save(update_fields=fields)
-        return _ok("Línea corregida.")
+        return _ok("Línea corregida.", id=demand.mail_id)
 
 
 class CaeAskView(SuperuserRequiredMixin, View):

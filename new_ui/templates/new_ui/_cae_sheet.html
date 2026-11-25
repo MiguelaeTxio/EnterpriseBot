@@ -1,8 +1,11 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_cae_sheet.html #}
 {% comment %}
-S156. Visor de un correo CAE (Empresa › Coordinación › Correos CAE): qué
-pide cada documento, de quién es y qué tenemos. Plantilla propia de la
-nueva interfaz (no comparte nada con la pestaña de la antigua).
+S156. Visor de un correo CAE (Empresa › Coordinación › Correos CAE).
+Arriba el resumen por estados; cada estado es un botón (Miguel Ángel:
+"cada color es un botón, en lo tenemos lleva a una vista para descargar
+[...] en no lo tenemos lleva a la vista para resolverlo"). Sin estado,
+la tabla completa para leer. Plantilla propia de la nueva interfaz.
+Vista: new_ui/views_cae.py (CaeSheetView).
 {% endcomment %}
 <div class="small mb-2">
     <div class="fw-semibold">{{ mail.platform|default:"Plataforma sin identificar" }}{% if mail.client %} · {{ mail.client }}{% endif %}{% if mail.our_company %} · {{ mail.our_company }}{% endif %}</div>
@@ -23,49 +26,67 @@ nueva interfaz (no comparte nada con la pestaña de la antigua).
         <button type="submit" name="action" value="reread" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Volver a leer este aviso? Lo que pide se sustituye por la nueva lectura."><i class="bi bi-arrow-repeat me-1"></i>Volver a leer</button>
     </form>
 </div>
-{% if rows %}
-<div class="d-flex flex-wrap gap-1 mb-2 small">
+{% if has_rows %}
+<div class="d-flex flex-wrap align-items-center gap-1 mb-2">
     {% for key, label, count in counts %}
-    <span class="badge {% if key == 'found' %}text-bg-success{% elif key == 'expired' or key == 'needs_new' %}text-bg-warning{% elif key == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ label }}: {{ count }}</span>
+    <button type="button" class="btn btn-sm {% if key == 'found' %}btn-success{% elif key == 'expired' or key == 'needs_new' %}btn-warning{% elif key == 'missing' %}btn-danger{% else %}btn-secondary{% endif %}{% if state and state != key %} opacity-50{% endif %}" data-nui-viewer-url="{% url 'new_ui:cae_sheet' mail.pk %}?estado={{ key }}" data-nui-viewer-title="Correo CAE">{{ label }}: {{ count }}</button>
     {% endfor %}
+    {% if state %}<button type="button" class="btn btn-sm btn-outline-secondary" data-nui-viewer-url="{% url 'new_ui:cae_sheet' mail.pk %}" data-nui-viewer-title="Correo CAE">Ver todo</button>{% endif %}
 </div>
+
+{% if not state %}
+<table class="table table-sm small mb-0">
+    <thead><tr><th>De quién</th><th>Qué pide</th><th>Lo nuestro</th></tr></thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>{% if row.holder %}<div>{{ row.holder }}</div>{% endif %}<div class="text-muted">{{ row.demand.subject_name|default:row.demand.get_subject_type_display }}{% if row.demand.subject_ref %} · {{ row.demand.subject_ref }}{% endif %}</div></td>
+            <td><div>{{ row.demand.document }}</div><div class="text-muted">{% if row.demand.state %}{{ row.demand.state }}{% endif %}{% if row.demand.due_date %} · hasta {{ row.demand.due_date|date:"d/m/Y" }}{% endif %}{% if row.demand.site %} · {{ row.demand.site }}{% endif %}</div></td>
+            <td>
+                <span class="badge {% if row.status == 'found' %}text-bg-success{% elif row.status == 'expired' or row.status == 'needs_new' %}text-bg-warning{% elif row.status == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status_label }}</span>
+                {% if row.demand.document_type %}<div class="text-muted">{{ row.demand.document_type.label }}</div>{% endif %}
+                {% if row.entry %}<div><a href="{% url 'new_ui:document_file' row.entry.pk %}" target="_blank" rel="noopener" title="Abrir el documento para verlo"><i class="bi bi-eye me-1"></i>{{ row.entry.name }}</a>{% if row.entry.expiry_date %} · caduca {{ row.entry.expiry_date|date:"d/m/Y" }}{% elif row.entry.issue_date %} · del {{ row.entry.issue_date|date:"d/m/Y" }}{% endif %}</div>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<p class="small text-muted mt-1 mb-0">Pulsa un estado de arriba: «Lo tenemos» para descargar; los demás para resolverlos.</p>
+
+{% elif state == "found" %}
 <form data-nui-action-form data-nui-download action="{% url 'new_ui:cae_download' %}">
     {% csrf_token %}
-    <table class="table table-sm small mb-2">
-        <thead>
-            <tr><th></th><th>De quién</th><th>Qué pide</th><th>Lo nuestro</th></tr>
-        </thead>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1 small">
+        <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-nui-check-all="entries" checked> <span class="form-check-label">Seleccionar todos</span></label>
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-download me-1"></i>Descargar los seleccionados</button>
+        <span class="text-muted">Uno se descarga tal cual; varios, en un ZIP. Ábrelos con el ojo antes de subirlos.</span>
+    </div>
+    <table class="table table-sm small mb-0">
+        <thead><tr><th></th><th>De quién</th><th>Qué pide</th><th>Lo nuestro</th></tr></thead>
         <tbody>
             {% for row in rows %}
             <tr>
-                <td>{% if row.entry %}<input class="form-check-input" type="checkbox" name="entries" value="{{ row.entry.pk }}" aria-label="Descargar {{ row.entry.name }}"{% if row.status == "found" %} checked{% endif %}>{% endif %}</td>
-                <td>
-                    {% if row.holder %}<div>{{ row.holder }}</div>{% endif %}
-                    <div class="text-muted">{{ row.demand.subject_name|default:row.demand.get_subject_type_display }}{% if row.demand.subject_ref %} · {{ row.demand.subject_ref }}{% endif %}</div>
-                </td>
-                <td>
-                    <div>{{ row.demand.document }}</div>
-                    <div class="text-muted">{% if row.demand.state %}{{ row.demand.state }}{% endif %}{% if row.demand.due_date %} · hasta {{ row.demand.due_date|date:"d/m/Y" }}{% endif %}{% if row.demand.site %} · {{ row.demand.site }}{% endif %}</div>
-                </td>
-                <td>
-                    <span class="badge {% if row.status == 'found' %}text-bg-success{% elif row.status == 'expired' or row.status == 'needs_new' %}text-bg-warning{% elif row.status == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status_label }}</span>
-                    {% if row.demand.document_type %}<div class="text-muted">{{ row.demand.document_type.label }}</div>{% endif %}
-                    {% if row.entry %}<div><a href="{% url 'new_ui:document_file' row.entry.pk %}" target="_blank" rel="noopener" title="Abrir el documento para verlo"><i class="bi bi-eye me-1"></i>{{ row.entry.name }}</a>{% if row.entry.expiry_date %} · caduca {{ row.entry.expiry_date|date:"d/m/Y" }}{% elif row.entry.issue_date %} · del {{ row.entry.issue_date|date:"d/m/Y" }}{% endif %}</div>{% endif %}
-                </td>
+                <td><input class="form-check-input" type="checkbox" name="entries" value="{{ row.entry.pk }}" checked aria-label="Descargar {{ row.entry.name }}"></td>
+                <td>{{ row.holder }}</td>
+                <td>{{ row.demand.document }}{% if row.demand.due_date %}<div class="text-muted">hasta {{ row.demand.due_date|date:"d/m/Y" }}</div>{% endif %}</td>
+                <td><a href="{% url 'new_ui:document_file' row.entry.pk %}" target="_blank" rel="noopener" title="Abrir el documento para verlo"><i class="bi bi-eye me-1"></i>{{ row.entry.name }}</a>{% if row.entry.expiry_date %}<div class="text-muted">caduca {{ row.entry.expiry_date|date:"d/m/Y" }}</div>{% elif row.entry.issue_date %}<div class="text-muted">del {{ row.entry.issue_date|date:"d/m/Y" }}</div>{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
-    {% if downloadable %}<button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-download me-1"></i>Descargar lo marcado para subirlo a la plataforma</button>{% endif %}
 </form>
-{% if pending %}
-<div class="fw-semibold small mt-3 mb-1"><i class="bi bi-tools me-1"></i>Resolver lo que falta</div>
-{% for row in pending %}
+
+{% else %}
+<div class="fw-semibold small mb-1">{{ state_label }}: {{ rows|length }}</div>
+{% for row in rows %}
 <div class="border rounded p-2 mb-2 small">
     <div class="d-flex justify-content-between gap-2 mb-1">
-        <span><span class="fw-semibold">{{ row.demand.document }}</span>{% if row.holder %} · {{ row.holder }}{% endif %}</span>
-        <span class="badge align-self-start {% if row.status == 'expired' or row.status == 'needs_new' %}text-bg-warning{% elif row.status == 'missing' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status_label }}</span>
+        <span><span class="fw-semibold">{{ row.demand.document }}</span>{% if row.demand.due_date %} <span class="text-muted">· hasta {{ row.demand.due_date|date:"d/m/Y" }}</span>{% endif %}</span>
+        <button type="button" class="btn btn-sm btn-link p-0 text-nowrap" data-nui-viewer-url="{% url 'new_ui:cae_fix_form' %}?demand={{ row.demand.pk }}&estado={{ state }}" data-nui-viewer-title="Corregir la línea">Corregir tipo o titular</button>
     </div>
+    <div class="mb-1">{% if row.holder %}<i class="bi bi-person me-1"></i>{{ row.holder }}{% else %}<span class="text-danger">Sin titular</span> <span class="text-muted">({{ row.demand.subject_name|default:"el aviso no lo dice" }})</span>{% endif %}
+        · {% if row.demand.document_type %}{{ row.demand.document_type.label }}{% else %}<span class="text-danger">sin tipo</span>{% endif %}</div>
+    {% if row.entry %}<div class="mb-1 text-muted">Lo que hay ahora: <a href="{% url 'new_ui:document_file' row.entry.pk %}" target="_blank" rel="noopener"><i class="bi bi-eye me-1"></i>{{ row.entry.name }}</a>{% if row.entry.expiry_date %} · caduca {{ row.entry.expiry_date|date:"d/m/Y" }}{% endif %}</div>{% endif %}
     {% if row.demand.document_type and row.holder %}
     {% if row.holder_kind == "company" %}
     <form data-nui-action-form action="{% url 'new_ui:cae_company_upload' %}" class="mb-1" data-nui-reset-after>
@@ -79,44 +100,27 @@ nueva interfaz (no comparte nada con la pestaña de la antigua).
     {% endif %}
         <div class="d-flex flex-wrap align-items-center gap-1">
             <input type="file" name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" class="form-control form-control-sm" style="max-width: 20rem;" aria-label="Archivo para {{ row.demand.document_type.label }}">
-            {% if row.demand.document_type.tracks_expiry %}
-            <label class="text-muted" for="nui-cae-d{{ row.demand.pk }}">Caducidad</label>
-            <input type="date" id="nui-cae-d{{ row.demand.pk }}" name="{% if row.holder_kind == 'company' %}date{% else %}expiry_date{% endif %}" class="form-control form-control-sm" style="width: 10rem;">
-            {% else %}
-            <label class="text-muted" for="nui-cae-d{{ row.demand.pk }}">Fecha del documento</label>
-            <input type="date" id="nui-cae-d{{ row.demand.pk }}" name="{% if row.holder_kind == 'company' %}date{% else %}issue_date{% endif %}" class="form-control form-control-sm" style="width: 10rem;">
-            {% endif %}
-            <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-upload me-1"></i>Subir a {% if row.holder_kind == "company" %}la empresa{% elif row.holder_kind == "person" %}su ficha{% else %}la ficha de la máquina{% endif %}</button>
+            <label class="text-muted" for="nui-cae-d{{ row.demand.pk }}">{% if row.demand.document_type.tracks_expiry and row.demand.document_type.expires %}Caducidad{% else %}Fecha del documento{% endif %}</label>
+            <input type="date" id="nui-cae-d{{ row.demand.pk }}" name="{% if row.holder_kind == 'company' %}date{% elif row.demand.document_type.tracks_expiry %}expiry_date{% else %}issue_date{% endif %}" class="form-control form-control-sm" style="width: 10rem;">
+            <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-upload me-1"></i>Subir {% if row.holder_kind == "company" %}a la empresa{% elif row.holder_kind == "person" %}a su ficha{% else %}a la ficha de la máquina{% endif %}</button>
         </div>
-        <div class="text-muted">{{ row.demand.document_type.label }}. Fecha opcional: sin ella se lee del propio documento.</div>
+        <div class="text-muted">Fecha opcional: sin ella se lee del propio documento.</div>
     </form>
     {% if row.holder_kind == "person" %}
-    <form data-nui-action-form action="{% url 'new_ui:cae_ask' %}" class="mb-1">
+    <form data-nui-action-form action="{% url 'new_ui:cae_ask' %}" class="mb-0">
         {% csrf_token %}<input type="hidden" name="demand" value="{{ row.demand.pk }}">
         <button type="submit" class="btn btn-sm btn-outline-success" data-nui-confirm="¿Pedirle por WhatsApp «{{ row.demand.document_type.label }}»?"><i class="bi bi-whatsapp me-1"></i>Pedírselo por WhatsApp</button>
     </form>
     {% endif %}
+    {% else %}
+    <div class="text-muted">Para subirlo, primero «Corregir tipo o titular».</div>
     {% endif %}
-    <details{% if not row.demand.document_type or not row.holder %} open{% endif %}>
-        <summary class="text-muted">Corregir el tipo o el titular</summary>
-        <form data-nui-action-form action="{% url 'new_ui:cae_fix' %}" class="d-flex flex-wrap align-items-center gap-1 mt-1">
-            {% csrf_token %}<input type="hidden" name="demand" value="{{ row.demand.pk }}">
-            <select name="document_type_code" class="form-select form-select-sm" style="max-width: 22rem;" aria-label="Tipo de documento">
-                <option value="">— Tipo (sin cambiar) —</option>
-                {% for group, types in fix_types %}<optgroup label="{{ group }}">{% for t in types %}<option value="{{ t.code }}"{% if t.pk == row.demand.document_type_id %} selected{% endif %}>{{ t.label }}</option>{% endfor %}</optgroup>{% endfor %}
-            </select>
-            <select name="holder" class="form-select form-select-sm" style="max-width: 22rem;" aria-label="Titular">
-                <option value="">— De quién (sin cambiar) —</option>
-                <optgroup label="Empresas">{% for c in fix_companies %}<option value="company:{{ c.pk }}">{{ c.legal_name }}</option>{% endfor %}</optgroup>
-                <optgroup label="Trabajadores">{% for p in fix_people %}<option value="person:{{ p.pk }}">{{ p.first_surname }} {{ p.second_surname }}, {{ p.given_name }}</option>{% endfor %}</optgroup>
-                <optgroup label="Centros de gasto">{% for m in fix_machines %}<option value="machine:{{ m.pk }}">{{ m.code }}{% if m.brand_model %} · {{ m.brand_model }}{% endif %}</option>{% endfor %}</optgroup>
-            </select>
-            <button type="submit" class="btn btn-sm btn-outline-primary">Guardar</button>
-        </form>
-    </details>
 </div>
+{% empty %}
+<p class="small text-muted mb-0">Nada en este estado.</p>
 {% endfor %}
 {% endif %}
+
 {% elif mail.status == "PENDING" %}
 <p class="small text-muted mb-0">Se está leyendo el aviso; ábrelo otra vez en un minuto.</p>
 {% else %}

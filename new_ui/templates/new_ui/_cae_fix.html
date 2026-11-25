@@ -1,0 +1,42 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_cae_fix.html #}
+{% comment %}
+S156. Ventana para corregir el tipo o el titular de una línea de un
+correo CAE. Se elige escribiendo para buscar, nunca en un desplegable
+(Miguel Ángel: "imagina dar un titular con 70 trabajadores desde un
+desplegable"). Al guardar vuelve al aviso, en el estado de donde vino.
+Vista: new_ui/views_cae.py (CaeFixFormView, CaeFixView).
+{% endcomment %}
+<div class="small">
+    <div class="fw-semibold">{{ demand.document }}</div>
+    <div class="text-muted mb-2">Ahora: {% if holder %}{{ holder }}{% else %}sin titular{% if demand.subject_name %} (el aviso dice «{{ demand.subject_name }}»){% endif %}{% endif %} · {% if demand.document_type %}{{ demand.document_type.label }}{% else %}sin tipo{% endif %}</div>
+    <form data-nui-action-form action="{% url 'new_ui:cae_fix' %}" data-nui-viewer-open-tpl="{% url 'new_ui:cae_sheet' 0 %}{% if state %}?estado={{ state }}{% endif %}" data-nui-viewer-open-title="Correo CAE">
+        {% csrf_token %}<input type="hidden" name="demand" value="{{ demand.pk }}">
+        <div class="row g-2">
+            <div class="col-md-6">
+                <div class="fw-semibold mb-1">De quién <span class="text-muted fw-normal">(vacío: no se cambia)</span></div>
+                <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe nombre, DNI, código o matrícula…" aria-label="Buscar titular" data-nui-filter-list>
+                <div class="border rounded px-2 py-1" style="max-height: 16rem; overflow-y: auto;" data-nui-filter-target>
+                    {% for group, items in fix_holders %}
+                    <div data-nui-filter-group>
+                        <div class="fw-semibold text-muted mt-1">{{ group }}</div>
+                        {% for key, label in items %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="holder" value="{{ key }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="fw-semibold mb-1">Tipo de documento <span class="text-muted fw-normal">(vacío: no se cambia)</span></div>
+                <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el tipo…" aria-label="Buscar tipo" data-nui-filter-list>
+                <div class="border rounded px-2 py-1" style="max-height: 16rem; overflow-y: auto;" data-nui-filter-target>
+                    {% for group, types in fix_types %}
+                    <div data-nui-filter-group>
+                        <div class="fw-semibold text-muted mt-1">{{ group }}</div>
+                        {% for t in types %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="document_type_code" value="{{ t.code }}"> <span class="form-check-label">{{ t.label }}</span></label>{% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary mt-2">Guardar y volver al aviso</button>
+    </form>
+</div>

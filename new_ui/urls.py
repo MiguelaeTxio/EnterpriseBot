@@ -273,6 +273,8 @@ urlpatterns = [
     path("cae/descargar/", views_cae.CaeDownloadView.as_view(),
          name="cae_download"),
     path("cae/corregir/", views_cae.CaeFixView.as_view(), name="cae_fix"),
+    path("cae/corregir/ventana/", views_cae.CaeFixFormView.as_view(),
+         name="cae_fix_form"),
     path("cae/pedir/", views_cae.CaeAskView.as_view(), name="cae_ask"),
     path("cae/subir-empresa/", views_cae.CaeCompanyUploadView.as_view(),
          name="cae_company_upload"),

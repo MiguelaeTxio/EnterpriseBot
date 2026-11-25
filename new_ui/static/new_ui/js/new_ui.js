@@ -1102,6 +1102,13 @@
                 group.classList.toggle("d-none", !any);
             });
         });
+        // S156: «Seleccionar todos» marca o desmarca las casillas de su
+        // formulario con el nombre que diga (p. ej. Correos CAE).
+        root.addEventListener("change", function (ev) {
+            const all = ev.target.closest("[data-nui-check-all]");
+            if (!all || !all.form) return;
+            all.form.querySelectorAll('input[type="checkbox"][name="' + all.dataset.nuiCheckAll + '"]').forEach(function (box) { box.checked = all.checked; });
+        });
         // Requisitos: ver solo un grupo (Personal, Centros de gasto,
         // Comunes) y una categoría; lo marcado y oculto se conserva.
         const reqForm = document.getElementById("nui-requirement-form");
