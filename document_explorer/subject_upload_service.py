@@ -61,7 +61,7 @@ from document_explorer.date_verification_service import (
 from document_explorer.filename_date_service import extract_date_by_filename
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
-    DocumentIndexEntry, PersonIdentity, path_digest,
+    CompanyFiscalProfile, DocumentIndexEntry, PersonIdentity, path_digest,
 )
 from document_explorer.move_service import _virtual_location_taken
 from document_explorer.required_documentation_service import (
@@ -157,8 +157,34 @@ def _resolve_target_folder(domain_content_type, domain_object_id, subject):
     )
 
 
+def _company_target_folder(document_type_code):
+    """DOC. EMPRESA folder of a group company's document (S156).
+    ---
+    Carpeta de un documento de una empresa del grupo: la subcarpeta fija
+    de su tipo en DOC. EMPRESA (seguros, fiscal...) o, si el tipo no
+    tiene (documentación CAE: TC, certificados...), la de la CAE.
+    """
+    from document_explorer.buckets import CAE_ROOT, COMPANY_TYPE_FOLDERS
+
+    return COMPANY_TYPE_FOLDERS.get(document_type_code, CAE_ROOT)
+
+
 def _build_filename(subject, document_type_code, upload_date, extension,
                     ordinal=None):
+    if isinstance(subject, CompanyFiscalProfile):
+        # S156: {EMPRESA}_{TIPO}_{FECHA}, como la documentación CAE.
+        from document_explorer.cae_documents import _COMPANY_TOKENS
+
+        token = _COMPANY_TOKENS.get(subject.tax_id)
+        if token:
+            return naming_service.build_filename_group_company(
+                token, document_type_code, upload_date,
+                ordinal=ordinal, extension=extension,
+            )
+        return naming_service.build_filename_company(
+            document_type_code, upload_date,
+            ordinal=ordinal, extension=extension,
+        )
     if isinstance(subject, MachineAsset):
         return naming_service.build_filename_machine(
             subject.code, document_type_code, upload_date,
@@ -554,8 +580,10 @@ def upload_subject_document(
     if document_type.tracks_expiry and not document_type.expires:
         typed_issue_date = typed_issue_date or typed_date
         typed_date = None
-    target_folder = _resolve_target_folder(
-        domain_content_type, subject.pk, subject,
+    target_folder = (
+        _company_target_folder(document_type.code)
+        if isinstance(subject, CompanyFiscalProfile)
+        else _resolve_target_folder(domain_content_type, subject.pk, subject)
     )
     today = timezone.now().date()
     ensure_folder_chain(BUCKET, target_folder)
