@@ -1,0 +1,43 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_document_upload.html -- S163 (25/11): la ventana de subir (o actualizar) documentos de la persona o máquina abierta: tipo sin desplegable, archivos, fechas y «No encuentro el tipo: crear uno nuevo». Al subir se queda abierta (para subir otro). Vista: new_ui/views_doc_actions.py (DocumentUploadFormView). #}
+<div class="small">
+    {% if who %}<div class="alert alert-info py-1 px-2 mb-2">Actualizar {{ chosen_label|default:"el documento" }} de {{ who }}: la versión nueva sustituye a la anterior.</div>{% endif %}
+    <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" enctype="multipart/form-data" class="mb-2">
+        {% csrf_token %}
+        <input type="hidden" name="domain" value="{{ domain }}">
+        <input type="hidden" name="subject_pk" value="{{ subject_pk }}">
+        <div class="fw-semibold mb-1">Qué documento es</div>
+        <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el tipo…" aria-label="Buscar tipo" data-nui-filter-list>
+        <div class="border rounded px-2 py-1 mb-2" style="max-height: 14rem; overflow-y: auto;" data-nui-filter-target>
+            {% for family, types in nui_doc_types %}
+            <div data-nui-filter-group>
+                <div class="fw-semibold text-muted mt-1">{{ family }}</div>
+                {% for code, label in types %}
+                <label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="document_type_code" value="{{ code }}" required{% if code == chosen_type %} checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+        <input type="file" name="file" multiple required class="form-control form-control-sm mb-2" aria-label="Archivos">
+        <div class="row g-2 mb-2">
+            <div class="col-6"><label class="text-muted d-block">Caducidad (si caduca)</label><input type="date" name="expiry_date" class="form-control form-control-sm"></div>
+            <div class="col-6"><label class="text-muted d-block">Fecha del documento (si no caduca)</label><input type="date" name="issue_date" class="form-control form-control-sm"></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-upload me-1"></i>Subir</button>
+        <span class="text-muted ms-1">Sin fecha, se lee del propio documento. La versión nueva sustituye a la anterior del mismo tipo. La ventana se queda abierta para subir otro.</span>
+    </form>
+    <details class="border rounded p-2">
+        <summary class="fw-semibold">No encuentro el tipo: crear uno nuevo</summary>
+        <form data-nui-action-form data-nui-viewer-reopen-param="type" action="{% url 'new_ui:document_type_quick_create' %}" class="mt-2">
+            {% csrf_token %}<input type="hidden" name="domain" value="{{ domain }}">
+            <label class="text-muted d-block" for="nui-qt-label">Nombre del tipo *</label>
+            <input id="nui-qt-label" name="label" maxlength="150" required class="form-control form-control-sm mb-2" placeholder="P. ej. Curso de carretillero">
+            <div class="text-muted">Familia *</div>
+            <div class="d-flex flex-wrap column-gap-3 mb-2" role="radiogroup" aria-label="Familia">
+                {% for code, label in families %}<label class="form-check mb-0"><input class="form-check-input" type="radio" name="family" value="{{ code }}" required> {{ label }}</label>{% endfor %}
+            </div>
+            <label class="form-check mb-2"><input class="form-check-input" type="checkbox" name="tracks_expiry" value="1"> Caduca (se avisa antes de que caduque)</label>
+            <div><button type="submit" class="btn btn-sm btn-primary">Crear el tipo</button></div>
+            <p class="text-muted mt-1 mb-0">Queda para {% if domain == "machine" %}Centros de gasto{% else %}Personal{% endif %} y ya elegido arriba.</p>
+        </form>
+    </details>
+</div>

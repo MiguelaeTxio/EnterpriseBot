@@ -1,38 +1,30 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_documents.html #}
 {% comment %}
-S163. Documentos de una persona o máquina (Acciones › De Documentos):
-subir o actualizar, cambiar el tipo y mandar a la papelera los seleccionados,
-y Separar (desde «Esta fila»). Descargar e Historial van en «Esta fila».
+S163. Documentos de una persona o máquina (Acciones › De Documentos).
+25/11: «Subir un documento» y «Cambiar el tipo» abren su ventana; la
+papelera, con la lista y 5 s. Separar desde «Esta fila» (Actualizar, desde
+«Esta fila», abre la ventana de subir con su tipo). Descargar e Historial
+van en «Esta fila».
 {% endcomment %}
 <div class="d-none" data-nui-actions-for="documentos laboral">
-    <form data-nui-action-form action="{% url 'new_ui:document_upload' %}" id="nui-upload-form" class="mb-3" data-nui-reset-after data-nui-for="one">
-        {% csrf_token %}
-        <input type="hidden" name="domain" value="{{ nui_doc_domain }}">
-        <input type="hidden" name="subject_pk" value="" data-nui-clear>
-        <div class="small fw-semibold mb-1"><i class="bi bi-upload me-1"></i><span data-nui-upload-title data-default="Añadir un documento">Añadir un documento</span></div>
-        <div class="small text-muted mb-1" data-nui-upload-who data-default="Elige qué documento es y luego el archivo.">Elige qué documento es y luego el archivo.</div>
-        {% include "new_ui/actions/_type_picker.html" %}
-        <input type="file" name="file" multiple required class="form-control form-control-sm mb-1" aria-label="Archivos">
-        <div class="row g-1 small mb-1">
-            <div class="col-6"><label class="text-muted d-block">Caducidad (si caduca)</label><input type="date" name="expiry_date" class="form-control form-control-sm"></div>
-            <div class="col-6"><label class="text-muted d-block">Fecha del documento (si no caduca)</label><input type="date" name="issue_date" class="form-control form-control-sm"></div>
-        </div>
-        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-upload me-1"></i>Subir</button>
-        <span class="small text-muted ms-1">Sin fecha, se lee del propio documento. La versión nueva sustituye a la anterior del mismo tipo.</span>
-    </form>
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-for="one" data-nui-viewer-url="{% url 'new_ui:document_upload_form' %}?domain={{ nui_doc_domain }}" data-nui-with-scope data-nui-upload-window data-nui-viewer-title="Subir un documento"><i class="bi bi-upload me-1"></i>Subir un documento</button>
+    <div class="small fw-semibold mb-1"><i class="bi bi-ui-checks me-1"></i>Con los documentos marcados</div>
     <form data-nui-action-form data-nui-needs-selection data-nui-download data-nui-no-refresh action="{% url 'new_ui:document_zip' %}" class="mb-2">
         {% csrf_token %}
         <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-zip me-1"></i>Descargar en un ZIP</button>
     </form>
-    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:document_change_type' %}" class="mb-2">
-        {% csrf_token %}
-        <div class="small fw-semibold mb-1"><i class="bi bi-arrow-left-right me-1"></i>Cambiar el tipo</div>
-        {% include "new_ui/actions/_type_picker.html" %}
-        <button type="submit" class="btn btn-sm btn-primary">Cambiar tipo</button>
-    </form>
+    <button type="button" class="btn btn-sm btn-outline-primary mb-2" data-nui-viewer-url="{% url 'new_ui:document_change_type_form' %}?domain={{ nui_doc_domain }}" data-nui-with-marked data-nui-viewer-title="Cambiar el tipo"><i class="bi bi-arrow-left-right me-1"></i>Cambiar el tipo</button>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:document_trash' %}" class="mb-3">
         {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Mandar a la papelera los documentos seleccionados? Se pueden recuperar desde la papelera."><i class="bi bi-trash me-1"></i>Mandar a la papelera</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-nui-countdown-ask><i class="bi bi-trash me-1"></i>Mandar a la papelera</button>
+        <div class="alert alert-danger small py-2 px-2 mt-1 mb-0 d-none" data-nui-countdown-box>
+            Van a la papelera (se pueden recuperar desde la papelera):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-nui-countdown-go disabled>A la papelera <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
     </form>
     <div id="nui-split-box" data-nui-for="one" data-nui-only-forced data-url="{% url 'new_ui:document_split' 0 %}"></div>
 </div>

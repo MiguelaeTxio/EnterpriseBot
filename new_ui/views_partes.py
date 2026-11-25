@@ -228,3 +228,65 @@ class ParteSheetView(SuperuserRequiredMixin, View):
             "blocks": [{"entry": e, "lines": by_entry.get(e.pk, [])}
                        for e in entries],
         })
+
+
+class PartesSummaryView(SuperuserRequiredMixin, View):
+    """
+    GET: the period summary of one worker's partes (?pk=&periodo...).
+
+    ---
+
+    S163 (25/11), como el resumen de la ficha antigua (S77, Miguel
+    Ángel: «quiero saber las horas que ha echado, en qué máquina ha
+    estado trabajando, el parte del día resumen con toda la hora del
+    periodo»): horas totales, horas por máquina (de más a menos) y por
+    día; al pulsar un día, su parte. Las horas son las de las líneas
+    del parte, sin la hora fantasma de vacaciones. Periodo: el del
+    filtro; sin periodo, el de pago en curso (del 21 al 20).
+    """
+
+    def get(self, request):
+        from decimal import Decimal
+
+        from document_explorer.models import PersonIdentity
+        from new_ui.lists import person_name
+        from new_ui.views_pay import pay_period
+        from work_order_processor.models import WorkOrderEntryLine
+
+        person = PersonIdentity.objects.filter(
+            pk=request.GET.get("pk") or 0).select_related(
+            "company_user").first()
+        if person is None:
+            raise Http404
+        start, end = pay_period(request.GET)
+        machines, days = {}, {}
+        total = Decimal("0")
+        if person.company_user_id:
+            lines = WorkOrderEntryLine.objects.filter(
+                entry__work_order__company=request.user.company_user.company,
+                entry__work_order__uploaded_by_id=person.company_user_id,
+                entry__work_date__gte=start, entry__work_date__lte=end,
+            ).exclude(vacation_period__isnull=False).select_related(
+                "machine_asset", "entry")
+            for line in lines:
+                hours = line.delta_hours or Decimal("0")
+                total += hours
+                if line.machine_asset_id:
+                    asset = line.machine_asset
+                    label = ("%s — %s" % (asset.code, asset.brand_model)
+                             if asset.brand_model else asset.code)
+                else:
+                    label = line.machine_raw or "Sin máquina"
+                machines[label] = machines.get(label, Decimal("0")) + hours
+                day = days.setdefault(line.entry.work_date, {
+                    "hours": Decimal("0"), "partes": set()})
+                day["hours"] += hours
+                day["partes"].add(line.entry.work_order_id)
+        return render(request, "new_ui/_partes_summary.html", {
+            "name": person_name(person),
+            "start": start, "end": end, "total": total,
+            "has_account": bool(person.company_user_id),
+            "machines": sorted(machines.items(), key=lambda x: -x[1]),
+            "days": [(d, v["hours"], sorted(v["partes"]))
+                     for d, v in sorted(days.items())],
+        })

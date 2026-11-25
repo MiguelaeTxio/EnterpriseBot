@@ -1,0 +1,23 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_document_change_type.html -- S163 (25/11): la ventana de cambiar el tipo de los documentos marcados. Vista: new_ui/views_doc_actions.py (DocumentChangeTypeFormView). #}
+<div class="small">
+    <div class="fw-semibold mb-1">Documentos ({{ entries|length }})</div>
+    <ul class="mb-2" style="max-height: 8rem; overflow-y: auto;">{% for e in entries %}<li>{{ e.name }} <span class="text-muted">({{ e.document_type.label|default:"sin tipo" }})</span></li>{% empty %}<li class="text-muted">Ninguno.</li>{% endfor %}</ul>
+    {% if entries %}
+    <form data-nui-action-form data-nui-viewer-close-after action="{% url 'new_ui:document_change_type' %}">
+        {% csrf_token %}
+        {% for e in entries %}<input type="hidden" name="selected" value="{{ e.pk }}">{% endfor %}
+        <div class="fw-semibold mb-1">Tipo nuevo</div>
+        <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el tipo…" aria-label="Buscar tipo" data-nui-filter-list>
+        <div class="border rounded px-2 py-1 mb-2" style="max-height: 14rem; overflow-y: auto;" data-nui-filter-target>
+            {% for family, types in nui_doc_types %}
+            <div data-nui-filter-group>
+                <div class="fw-semibold text-muted mt-1">{{ family }}</div>
+                {% for code, label in types %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="document_type_code" value="{{ code }}" required> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Cambiar el tipo</button>
+        <span class="text-muted ms-1">Cambia su nombre al del tipo nuevo; el archivo no se toca.</span>
+    </form>
+    {% endif %}
+</div>

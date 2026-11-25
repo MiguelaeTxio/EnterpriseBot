@@ -1655,14 +1655,36 @@ def _partes_def():
     def queryset(company):
         from work_order_processor.models import WorkOrderEntry
 
+        from django.db.models import Q as DQ
+        from django.db.models import Sum
+
+        # S163 (25/11): las horas de cada parte (sin la hora fantasma de
+        # vacaciones), para la columna y la fila TOTAL.
         return WorkOrderEntry.objects.filter(
             work_order__company=company,
             work_order__uploaded_by__isnull=False,
-        ).select_related("work_order__uploaded_by__person_identity")
+        ).select_related("work_order__uploaded_by__person_identity").annotate(
+            nui_horas=Sum("lines__delta_hours", filter=DQ(
+                lines__vacation_period__isnull=True)))
 
     def entity_of(row):
         user = row.work_order.uploaded_by
         return getattr(user, "person_identity", None) if user else None
+
+    def totals(qs):
+        from decimal import Decimal
+
+        hours, diets, count = Decimal("0"), 0, 0
+        for row in qs:
+            count += 1
+            hours += row.nui_horas or Decimal("0")
+            diets += 1 if row.has_diet else 0
+        return {
+            "fecha": "TOTAL (%d parte%s)" % (count, "" if count == 1
+                                            else "s"),
+            "horas": fmt_num(hours),
+            "dieta": "%d dieta%s" % (diets, "" if diets == 1 else "s"),
+        }
 
     return ListDef(
         "Partes", queryset,
@@ -1677,10 +1699,13 @@ def _partes_def():
                 if r.no_lunch_break else " – ".join(
                     t.strftime("%H:%M") for t in (r.lunch_break_start,
                                                   r.lunch_break_end) if t)),
+            Col("horas", "Horas", lambda r: fmt_num(r.nui_horas)
+                if r.nui_horas else "", "nui_horas", "text-end"),
             Col("dieta", "Dieta", lambda r: "Sí" if r.has_diet else "",
                 "has_diet"),
         ],
         entity="person", entity_filter=_partes_filter, entity_of=entity_of,
+        totals=totals,
         search=("worker_name",), date_field="work_date",
         default_order=("-work_date",),
         actions=lambda r: _person_actions(entity_of(r)),
@@ -3174,7 +3199,7 @@ def _parte_line_extras(path_to_order):
             entry__work_order__company=company,
             machine_asset__isnull=False).values_list(
             "machine_asset_id", "machine_asset__code",
-            "machine_asset__name").distinct()
+            "machine_asset__brand_model").distinct()
         return sorted(((str(pk), ("%s — %s" % (code, name)) if name
                         else code) for pk, code, name in rows),
                       key=lambda x: x[1].upper())

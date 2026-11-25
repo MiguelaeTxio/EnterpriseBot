@@ -781,6 +781,12 @@
                         const modal = document.getElementById("nui-viewer");
                         if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
                         result(data.message || "Hecho.", false);
+                    } else if (f.dataset.nuiViewerReopenParam && data[f.dataset.nuiViewerReopenParam] && window.nuiViewerUrl) {
+                        // S163 (25/11): se vuelve a abrir la ventana con lo
+                        // creado ya elegido (p. ej. el tipo documental nuevo).
+                        const u = new URL(window.nuiViewerUrl(), location.origin);
+                        u.searchParams.set(f.dataset.nuiViewerReopenParam, data[f.dataset.nuiViewerReopenParam]);
+                        window.nuiOpenViewer(u.pathname + u.search, data.message);
                     } else if (f.dataset.nuiViewerOpenTpl && data.id && window.nuiOpenViewer) {
                         // Guardado con otro nombre: se abre el nuevo.
                         window.nuiOpenViewer(f.dataset.nuiViewerOpenTpl.replace("/0/", "/" + data.id + "/"), data.message, f.dataset.nuiViewerOpenTitle || "Requisito");
@@ -948,6 +954,14 @@
                 ownFilter("x_documentos_estado", "", "");
                 result("Historial del tipo: todos sus documentos, vigentes y sustituidos.", false);
                 setScope({pk: parts[1], label: decodeURIComponent(parts[3] || "")}, "documentos");
+                return;
+            }
+            if (kind === "nui-doc-update" && !uploadForm) {
+                // S163 (25/11): Actualizar abre la ventana de subir con su tipo.
+                const opener = document.querySelector("[data-nui-upload-window]");
+                if (!opener || !window.nuiOpenViewer) return;
+                const base = opener.dataset.nuiViewerUrl.split("?")[0];
+                window.nuiOpenViewer(base + "?domain=" + encodeURIComponent(parts[1]) + "&pk=" + encodeURIComponent(parts[2]) + "&type=" + encodeURIComponent(parts[3]) + "&who=" + encodeURIComponent(decodeURIComponent(parts[5] || "")), null, "Actualizar " + decodeURIComponent(parts[4] || ""));
                 return;
             }
             if (kind === "nui-doc-update" && uploadForm) {
@@ -1840,6 +1854,7 @@
         new MutationObserver(function () {
             document.querySelectorAll("[data-nui-req-sheet]:not([data-ready])").forEach(function (box) { box.setAttribute("data-ready", ""); reqSheetView(box); });
         }).observe(document.body, {childList: true, subtree: true});
+        window.nuiViewerUrl = function () { return viewerUrl; };
         window.nuiOpenViewer = function (url, note, title) {
             const modal = document.getElementById("nui-viewer");
             if (!modal) return;
@@ -1886,6 +1901,17 @@
             if (!opener) return;
             ev.preventDefault();
             let url = opener.dataset.nuiViewerUrl;
+            if (opener.hasAttribute("data-nui-with-scope")) {
+                // S163 (25/11): la ventana es de la persona o máquina abierta.
+                if (!scope || !scope.pk) { result("Abre primero la persona o la máquina.", true); return; }
+                url += (url.indexOf("?") === -1 ? "?" : "&") + "pk=" + encodeURIComponent(scope.pk);
+            }
+            if (opener.hasAttribute("data-nui-with-marked")) {
+                // S163 (25/11): solo lo marcado en la lista (p. ej. documentos).
+                const marked = Array.from(sel().keys());
+                if (!marked.length) { result("Marca primero con la casilla, en la lista de abajo, a qué aplicarlo.", true); return; }
+                url += (url.indexOf("?") === -1 ? "?" : "&") + "ids=" + encodeURIComponent(marked.join(","));
+            }
             if (opener.hasAttribute("data-nui-with-selection")) {
                 // S163 (24/11): la ventana es para los marcados (o el abierto).
                 let ids = Array.from(sel().keys());

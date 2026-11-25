@@ -95,6 +95,112 @@ def doc_types_context(section):
     }
 
 
+def _type_section(domain):
+    return "cdg" if domain == "machine" else "per"
+
+
+class DocumentUploadFormView(SuperuserRequiredMixin, View):
+    """
+    GET: the upload window of one person or machine.
+
+    ---
+
+    S163 (25/11): la ventana de subir (o actualizar) un documento de la
+    persona o máquina abierta: tipo sin desplegable, archivo, fechas y
+    «No encuentro el tipo: crear uno nuevo». `?domain=personal|machine
+    &pk=<sujeto>`; para Actualizar, `&type=<código>&who=<nombre>`.
+    """
+
+    def get(self, request):
+        domain = request.GET.get("domain", "personal")
+        domain = "machine" if domain == "machine" else "personal"
+        pk = request.GET.get("pk", "")
+        if not pk.isdigit():
+            return HttpResponse(
+                '<p class="small text-danger mb-0">Abre primero la persona '
+                "o la máquina.</p>")
+        context = doc_types_context(_type_section(domain))
+        chosen = request.GET.get("type", "")
+        for_person = domain == "personal"
+        context.update({
+            "domain": domain,
+            "subject_pk": pk,
+            "chosen_type": chosen,
+            "chosen_label": dict(
+                (code, label) for _f, types in context["nui_doc_types"]
+                for code, label in types).get(chosen, ""),
+            "who": request.GET.get("who", ""),
+            "families": [(code, DocumentTypeCatalog.family_label(
+                code, for_person=for_person))
+                for code, _label in DocumentTypeCatalog.FAMILY_CHOICES],
+        })
+        return render(request, "new_ui/_document_upload.html", context)
+
+
+class DocumentChangeTypeFormView(SuperuserRequiredMixin, View):
+    """
+    GET: the «change type» window for the marked documents (?ids=).
+
+    ---
+
+    S163 (25/11): la ventana de cambiar el tipo de los documentos
+    marcados, con el buscador de tipos.
+    """
+
+    def get(self, request):
+        ids = [v for v in request.GET.get("ids", "").split(",")
+               if v.isdigit()]
+        entries = list(DocumentIndexEntry.objects.filter(
+            pk__in=ids, bucket=BUCKET, deleted_at__isnull=True,
+            purged_at__isnull=True).select_related("document_type"))
+        domain = request.GET.get("domain", "personal")
+        context = doc_types_context(_type_section(domain))
+        context.update({"entries": entries})
+        return render(request, "new_ui/_document_change_type.html", context)
+
+
+class DocumentTypeQuickCreateView(SuperuserRequiredMixin, View):
+    """
+    POST: create a document type from the upload window.
+
+    ---
+
+    S163 (25/11), como DocumentTypeQuickCreateView de la antigua (S51):
+    alta de un tipo documental nuevo desde la ventana de subir, cuando
+    no se encuentra. Nombre, familia (de las fijas) y si caduca; el
+    código sale del nombre; de Personal o de Centros de gasto según
+    dónde se esté. Devuelve su código («type») para dejarlo elegido.
+    """
+
+    def post(self, request):
+        from document_explorer import naming_service
+
+        domain = request.POST.get("domain", "")
+        if domain not in ("personal", "machine"):
+            return _error("Falta de qué es el tipo.")
+        label = (request.POST.get("label") or "").strip()
+        family = (request.POST.get("family") or "").strip()
+        if not label:
+            return _error("Escribe el nombre del tipo.")
+        if family not in dict(DocumentTypeCatalog.FAMILY_CHOICES):
+            return _error("Elige la familia del tipo.")
+        code = naming_service._sanitize_token(label)[:40]
+        if not code:
+            return _error("Ese nombre no sirve: escribe otro.")
+        existing = DocumentTypeCatalog.objects.filter(code=code).first()
+        if existing is not None:
+            return _error("Ya existe el tipo «%s»%s: búscalo en la lista." % (
+                existing.label, "" if existing.is_active
+                else " (desactivado)"))
+        DocumentTypeCatalog.objects.create(
+            code=code, label=label, family=family,
+            domain=(DocumentTypeCatalog.DOMAIN_MACHINE if domain == "machine"
+                    else DocumentTypeCatalog.DOMAIN_PERSONAL),
+            tracks_expiry=request.POST.get("tracks_expiry") == "1")
+        return JsonResponse({"ok": True, "type": code, "message": (
+            "Tipo «%s» creado y elegido." % label)})
+
+
 class DocumentUploadView(SuperuserRequiredMixin, View):
     """
     POST: upload documents of one person or machine, with a summary.
