@@ -155,8 +155,23 @@ def render_jornadas(request, person):
     from new_ui.views_albaranes import albaranes_by_day
 
     albaranes = albaranes_by_day(person, date_from, date_to)
+    # S163 (25/11): el «Parte del día» de la antigua: los partes digitales
+    # de ese día (se abren en la ventana).
+    partes = {}
+    if person.company_user_id:
+        from work_order_processor.models import WorkOrderEntry
+
+        for entry in WorkOrderEntry.objects.filter(
+                work_order__company=company,
+                work_order__uploaded_by_id=person.company_user_id,
+                work_date__gte=date_from, work_date__lte=date_to).values(
+                "work_date", "work_order_id"):
+            day_partes = partes.setdefault(entry["work_date"], [])
+            if entry["work_order_id"] not in day_partes:
+                day_partes.append(entry["work_order_id"])
     for row in rows:
         row["albaranes"] = albaranes.get(row["day"], [])
+        row["partes"] = partes.get(row["day"], [])
     clock_types = list(ClockType.objects.filter(company=company))
     for row in rows:
         row["edit_rows"] = [

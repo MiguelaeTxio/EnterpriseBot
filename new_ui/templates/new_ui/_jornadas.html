@@ -26,7 +26,7 @@
         <tbody>
         {% for row in rows %}
             <tr{% if row.status == "issues" %} class="table-danger"{% elif row.status == "hold" %} class="table-secondary"{% elif row.status == "reviewed" %} class="table-warning"{% endif %}>
-                <td class="text-nowrap">{{ row.day|date:"D d/m/Y"|capfirst }}</td>
+                <td class="text-nowrap">{{ row.day|date:"D d/m/Y"|capfirst }}{% for wo in row.partes %}<div><a href="#" data-nui-viewer-url="{% url 'new_ui:parte_sheet' wo %}" data-nui-viewer-title="Parte del {{ row.day|date:'d/m/Y' }}" class="small"><i class="bi bi-file-earmark-text me-1"></i>Ver su parte</a></div>{% endfor %}</td>
                 <td class="text-nowrap">{% for part in row.parts %}{% if part.entry %}{{ part.entry.time|time:"H:i" }}{% if part.entry.correction %} <span class="text-primary" title="Corregida">✎</span>{% endif %}<br>{% endif %}{% endfor %}</td>
                 <td class="text-nowrap">{% for part in row.parts %}{% if part.exit %}{{ part.exit.time|time:"H:i" }}{% if part.exit.correction %} <span class="text-primary" title="Corregida">✎</span>{% endif %}<br>{% endif %}{% endfor %}</td>
                 <td class="text-end text-nowrap">{{ row.duration|default:"" }}</td>
