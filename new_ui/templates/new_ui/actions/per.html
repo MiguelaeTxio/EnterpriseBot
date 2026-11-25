@@ -27,3 +27,8 @@
 {% include "new_ui/actions/_requests.html" %}
 {% include "new_ui/actions/_requests_sent.html" %}
 {% include "new_ui/actions/_pay.html" with section="per" %}
+{# S163 (25/11): Partes del trabajador abierto: el resumen del periodo (como la ficha antigua). #}
+<div class="d-none" data-nui-actions-for="partes">
+    <button type="button" class="btn btn-sm btn-primary mb-2" data-nui-viewer-url="{% url 'new_ui:partes_summary' %}" data-nui-with-scope data-nui-with-period data-nui-viewer-title="Resumen de partes del periodo"><i class="bi bi-bar-chart me-1"></i>Resumen del periodo</button>
+    <p class="small text-muted mb-0">Horas del periodo, por máquina y por día. Pulsa un parte de la lista para verlo.</p>
+</div>

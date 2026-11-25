@@ -1906,6 +1906,14 @@
                 if (!scope || !scope.pk) { result("Abre primero la persona o la máquina.", true); return; }
                 url += (url.indexOf("?") === -1 ? "?" : "&") + "pk=" + encodeURIComponent(scope.pk);
             }
+            if (opener.hasAttribute("data-nui-with-period")) {
+                // S163 (25/11): con el periodo del filtro de arriba.
+                ["periodo", "cual", "desde", "hasta"].forEach(function (k) {
+                    const filters = document.getElementById("nui-filters");
+                    const el = filters && filters.elements[k];
+                    if (el && el.value) url += (url.indexOf("?") === -1 ? "?" : "&") + k + "=" + encodeURIComponent(el.value);
+                });
+            }
             if (opener.hasAttribute("data-nui-with-marked")) {
                 // S163 (25/11): solo lo marcado en la lista (p. ej. documentos).
                 const marked = Array.from(sel().keys());
