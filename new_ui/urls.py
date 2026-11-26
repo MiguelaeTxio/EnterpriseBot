@@ -511,6 +511,11 @@ urlpatterns = [
          views_docs.MachineQrImageView.as_view(), name="machine_qr_image"),
     path("maquina/<int:pk>/qr/imprimir/",
          views_docs.MachineQrPrintView.as_view(), name="machine_qr_print"),
+    path("maquinas/qr/pegatinas.zip",
+         views_docs.MachineQrZipView.as_view(), name="machine_qr_zip"),
+    path("maquinas/qr/imprimir/",
+         views_docs.MachineQrPrintManyView.as_view(),
+         name="machine_qr_print_many"),
     path("maquina/<int:pk>/qr/", views_docs.MachineQrActionView.as_view(),
          name="machine_qr_action"),
     # Circulares (copia de la antigua).

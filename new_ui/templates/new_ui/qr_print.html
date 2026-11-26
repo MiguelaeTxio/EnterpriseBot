@@ -3,22 +3,29 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Pegatina QR {{ code }}</title>
+<title>Pegatinas QR</title>
 <style>
     @page { margin: 10mm; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
-    .sticker { width: 70mm; margin: 0 auto; padding: 3mm; border: 0.3mm dashed #999; text-align: center; }
+    .sheet { display: flex; flex-wrap: wrap; justify-content: center; gap: 4mm; }
+    .sticker { width: 70mm; padding: 3mm; border: 0.3mm dashed #999; text-align: center; break-inside: avoid; page-break-inside: avoid; }
     .sticker svg { width: 64mm; height: 64mm; display: block; margin: 0 auto; }
     .code { font-size: 14mm; font-weight: bold; line-height: 1.1; margin-top: 1mm; letter-spacing: 0.5mm; }
     .tip { font-size: 11px; color: #666; text-align: center; margin: 4mm 0; }
-    @media print { .tip { display: none; } .sticker { border: none; } }
+    @media print { .tip { display: none; } }
 </style>
 </head>
 <body>
-<p class="tip">Se abre el cuadro de imprimir. La línea de puntos es para recortar y no se imprime.</p>
+<p class="tip">Se abre el cuadro de imprimir. La línea de puntos marca por dónde recortar ({{ stickers|length }} pegatina{{ stickers|length|pluralize }}).</p>
+<div class="sheet">
+{% for code, svg in stickers %}
 <div class="sticker">
-    {{ qr_svg|safe }}
+    {{ svg|safe }}
     <div class="code">{{ code }}</div>
+</div>
+{% empty %}
+<p class="tip">No hay vehículos marcados.</p>
+{% endfor %}
 </div>
 <script>window.addEventListener("load", function () { window.print(); });</script>
 </body>

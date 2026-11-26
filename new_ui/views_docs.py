@@ -375,6 +375,71 @@ class MachineQrImageView(SuperuserRequiredMixin, View):
         return response
 
 
+def _marked_machines(request, raw):
+    ids = [v for v in raw if str(v).isdigit()]
+    return list(MachineAsset.objects.filter(
+        company=_company(request), pk__in=ids).order_by("code"))
+
+
+class MachineQrZipView(SuperuserRequiredMixin, View):
+    """
+    POST `selected`: the QR stickers of the marked machines in a ZIP.
+
+    ---
+
+    S163 (26/11, Miguel Ángel: «descargar todos los QR de los vehículos
+    seleccionados»): un ZIP con la pegatina (QR y código debajo) de cada
+    centro de gasto marcado, QR_<código>.png.
+    """
+
+    def post(self, request):
+        import io
+        import zipfile
+
+        machines = _marked_machines(request, request.POST.getlist(
+            "selected"))
+        if not machines:
+            return JsonResponse({"ok": False, "message": (
+                "Marca primero los vehículos.")}, status=400)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for machine in machines:
+                sheet = qr.sheet_for(machine)
+                archive.writestr("QR_%s.png" % machine.code.replace(
+                    "/", "-"), qr.sticker_png(
+                    qr.public_url(request, sheet), machine.code))
+        response = HttpResponse(buffer.getvalue(),
+                                content_type="application/zip")
+        response["Content-Disposition"] = (
+            'attachment; filename="Pegatinas_QR_%d.zip"' % len(machines))
+        return response
+
+
+class MachineQrPrintManyView(SuperuserRequiredMixin, View):
+    """
+    GET ?ids=: a page to print the QR stickers of the marked machines.
+
+    ---
+
+    S163 (26/11): las pegatinas de los marcados en una página para
+    imprimir (varias por hoja, cada una con su código debajo).
+    """
+
+    def get(self, request):
+        from django.shortcuts import render
+
+        machines = _marked_machines(request, request.GET.get(
+            "ids", "").split(","))
+        stickers = []
+        for machine in machines:
+            sheet = qr.sheet_for(machine)
+            stickers.append((machine.code, qr.qr_image(
+                qr.public_url(request, sheet), "svg", scale=10)))
+        return render(request, "new_ui/qr_print.html", {
+            "stickers": stickers,
+        })
+
+
 class MachineQrPrintView(SuperuserRequiredMixin, View):
     """
     GET: a page to print the machine's QR sticker (QR + its code).
@@ -391,9 +456,8 @@ class MachineQrPrintView(SuperuserRequiredMixin, View):
         machine = _machine(request, pk)
         sheet = qr.sheet_for(machine)
         return render(request, "new_ui/qr_print.html", {
-            "code": machine.code,
-            "qr_svg": qr.qr_image(qr.public_url(request, sheet), "svg",
-                                  scale=10),
+            "stickers": [(machine.code, qr.qr_image(
+                qr.public_url(request, sheet), "svg", scale=10))],
         })
 
 

@@ -620,6 +620,16 @@
                 result(err.message || "No se ha podido subir la carpeta.", true);
             }
         });
+        // S163 (26/11): abre en otra pestaña una página con los marcados
+        // (p. ej. imprimir las pegatinas QR).
+        root.addEventListener("click", function (ev) {
+            const btn = ev.target.closest("[data-nui-open-marked]");
+            if (!btn) return;
+            ev.preventDefault();
+            const marked = Array.from(sel().keys());
+            if (!marked.length) { result("Marca primero con la casilla, en la lista de abajo, a qué aplicarlo.", true); return; }
+            window.open(btn.dataset.nuiOpenMarked + "?ids=" + encodeURIComponent(marked.join(",")), "_blank", "noopener");
+        });
         // S163 (24/11): «Ver sus nóminas» (y similares): cierra la ventana,
         // pone el filtro propio de la pestaña y la abre.
         root.addEventListener("click", function (ev) {
