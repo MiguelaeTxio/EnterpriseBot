@@ -1401,14 +1401,20 @@
                 // lo que vamos a filtrar»): Estado, Empresa, Grupo y Sección
                 // solo en las listas de personas o máquinas, y el periodo solo
                 // donde hay fecha. Sin marca (vistas propias), se ven todos.
-                const marker = box.querySelector("[data-nui-filters]");
-                const wanted = marker ? marker.dataset.nuiFilters.split(/\s+/) : ["entity", "period"];
-                root.querySelectorAll("[data-nui-common]").forEach(function (el) {
-                    el.classList.toggle("d-none", wanted.indexOf(el.dataset.nuiCommon) === -1);
-                });
+                showCommonFilters(box, ["entity", "period"]);
             }
             refreshSelection();
         }
+        // S163 (26/11): qué filtros comunes se ven según lo cargado (la
+        // marca data-nui-filters; sin marca, `fallback`).
+        function showCommonFilters(box, fallback) {
+            const marker = box && box.querySelector("[data-nui-filters]");
+            const wanted = marker ? marker.dataset.nuiFilters.split(/\s+/) : fallback;
+            root.querySelectorAll("[data-nui-common]").forEach(function (el) {
+                el.classList.toggle("d-none", wanted.indexOf(el.dataset.nuiCommon) === -1);
+            });
+        }
+        window.nuiShowCommonFilters = showCommonFilters;
         const listExtra = {};
         window.nuiListExtra = function () { return Object.assign({q: (form.querySelector('[name="q"]') || {}).value || ""}, listExtra[tab()] || {}); };
         function params(extra) {
@@ -2288,7 +2294,13 @@
             const extra = (cardView.pk === scope.pk && cardView.tab === tab()) ? cardView.extra : {};
             return fetch(urls.card + "?" + params(Object.assign({pk: scope.pk}, extra)).toString(), {credentials: "same-origin"})
                 .then(r => r.ok ? r.text() : Promise.reject(r.status))
-                .then(function (html) { if (ticket === loading) box.innerHTML = html; })
+                .then(function (html) {
+                    if (ticket !== loading) return;
+                    box.innerHTML = html;
+                    // Las fichas: solo los filtros que usan (el periodo en
+                    // Cálculo y Jornadas); el resto, ninguno.
+                    if (window.nuiShowCommonFilters) window.nuiShowCommonFilters(box, []);
+                })
                 .catch(function () { if (ticket === loading) box.innerHTML = '<p class="text-danger small p-3 mb-0">No se ha podido cargar la ficha.</p>'; });
         }
         function cardResult(text, isError) {

@@ -429,9 +429,37 @@ def render_worker(request, person):
                              end).get(person.company_user_id)
     days = []
     lines = []
+    # S163 (26/11, Miguel Ángel): revisados / sin revisar. Un día de
+    # fichaje está revisado si está visado; uno de parte, si todos sus
+    # partes de ese día están revisados.
+    reviewed_days = set()
+    parte_days = {}
+    if result is not None and person.company_user_id:
+        from hr_calendar.models import ClockDayReview
+        from work_order_processor.models import WorkOrderEntry
+
+        reviewed_days = set(ClockDayReview.objects.filter(
+            company_user_id=person.company_user_id,
+            day__gte=start, day__lte=end).values_list("day", flat=True))
+        for work_date, reviewed in WorkOrderEntry.objects.filter(
+                work_order__company=company,
+                work_order__uploaded_by_id=person.company_user_id,
+                work_date__gte=start, work_date__lte=end).values_list(
+                "work_date", "work_order__reviewed"):
+            parte_days[work_date] = parte_days.get(work_date, True) and bool(
+                reviewed)
+    revision = request.GET.get("revision", "")
     if result is not None:
         for row in reversed(result.days):
+            if row["source"] == pay.PARTE:
+                is_reviewed = parte_days.get(row["day"], False)
+            else:
+                is_reviewed = row["day"] in reviewed_days
+            if (revision == "si" and not is_reviewed) or (
+                    revision == "no" and is_reviewed):
+                continue
             days.append({
+                "reviewed": is_reviewed,
                 "day": row["day"], "holiday": row["holiday"],
                 "source": "Parte" if row["source"] == pay.PARTE
                 else "Fichaje",
@@ -455,7 +483,16 @@ def render_worker(request, person):
                 "amount": result.amount(key)})
     prices = (result.prices if result is not None else {}) or {}
     diet_mode = pay.mode_of(pay.settings_of(company), pay.DIETA)
+    unreviewed = 0
+    if result is not None:
+        for row in result.days:
+            if row["source"] == pay.PARTE:
+                unreviewed += 0 if parte_days.get(row["day"]) else 1
+            else:
+                unreviewed += 0 if row["day"] in reviewed_days else 1
     return render(request, "new_ui/_pay_worker.html", {
+        "revision": revision,
+        "unreviewed": unreviewed,
         "person": person,
         "has_account": person.company_user_id is not None,
         "date_from": start, "date_to": end,

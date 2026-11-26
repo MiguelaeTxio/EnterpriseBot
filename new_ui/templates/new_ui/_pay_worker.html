@@ -1,5 +1,7 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_pay_worker.html -- S163: Personal › Horas y pagos › Cálculo del trabajador abierto (día a día, importe y bolsa). Vista: new_ui/views_pay.py (render_worker). #}
 <div class="nui-ficha p-2">
+    {# S163 (26/11): aquí sí cuenta el periodo del filtro de arriba. #}
+    <div class="d-none" data-nui-filters="period"></div>
     <div data-nui-pane-result></div>
     <div class="d-flex flex-wrap align-items-baseline gap-3 mb-2 small">
         <span class="fw-semibold">{{ date_from|date:"d/m/Y" }} – {{ date_to|date:"d/m/Y" }}</span>
@@ -31,20 +33,30 @@
     </table>
     {% endif %}
 
-    <div class="small fw-semibold mb-1">Día a día</div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1 small">
+        <span class="fw-semibold">Día a día</span>
+        {% if unreviewed %}<span class="badge text-bg-warning fw-normal">{{ unreviewed }} día{{ unreviewed|pluralize }} sin revisar</span>{% endif %}
+        <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Revisión">
+            <button type="button" class="btn btn-outline-secondary{% if not revision %} active{% endif %}" data-nui-card-param="revision" data-value="">Todos</button>
+            <button type="button" class="btn btn-outline-secondary{% if revision == 'si' %} active{% endif %}" data-nui-card-param="revision" data-value="si">Revisados</button>
+            <button type="button" class="btn btn-outline-secondary{% if revision == 'no' %} active{% endif %}" data-nui-card-param="revision" data-value="no">Sin revisar</button>
+        </div>
+    </div>
+    {% if revision %}<p class="small text-muted mb-1">Los totales de arriba son de todo el periodo; aquí solo los días {% if revision == 'si' %}revisados{% else %}sin revisar{% endif %}.</p>{% endif %}
     <table class="table table-sm small align-middle mb-3">
-        <thead class="table-light"><tr><th>Día</th><th>De</th><th>Horas</th><th>Se paga</th><th class="text-end">A la bolsa</th></tr></thead>
+        <thead class="table-light"><tr><th>Día</th><th>De</th><th>Revisión</th><th>Horas</th><th>Se paga</th><th class="text-end">A la bolsa</th></tr></thead>
         <tbody>
         {% for d in days %}
         <tr{% if d.holiday %} class="table-warning"{% endif %}>
             <td class="text-nowrap">{{ d.day|date:"D d/m/Y"|capfirst }}{% if d.holiday %} <span class="badge text-bg-light border fw-normal">festivo</span>{% endif %}{% if d.diet %} <span class="badge text-bg-light border fw-normal">dieta</span>{% endif %}</td>
             <td>{{ d.source }}</td>
+            <td>{% if d.reviewed %}<span class="badge text-bg-success fw-normal">{% if d.source == "Parte" %}Revisado{% else %}Visado{% endif %}</span>{% else %}<span class="badge text-bg-warning fw-normal">Sin revisar</span>{% endif %}</td>
             <td>{% for label, value in d.hours %}<span class="text-nowrap">{{ label }} {{ value }}</span>{% if not forloop.last %} · {% endif %}{% endfor %}</td>
             <td>{% for label, value in d.paid %}<span class="text-nowrap">{{ label }} {{ value }}</span>{% if not forloop.last %} · {% endif %}{% empty %}<span class="text-muted">nada</span>{% endfor %}</td>
             <td class="text-end">{{ d.to_bag }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-muted">Sin horas en el periodo.</td></tr>
+        <tr><td colspan="6" class="text-muted">{% if revision %}Ningún día {% if revision == 'si' %}revisado{% else %}sin revisar{% endif %} en el periodo.{% else %}Sin horas en el periodo.{% endif %}</td></tr>
         {% endfor %}
         </tbody>
     </table>

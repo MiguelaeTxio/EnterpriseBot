@@ -22,5 +22,5 @@
         {% if tab.note %}<p class="small text-muted mb-0">{{ tab.note }}</p>{% endif %}
     </div>
     {% endfor %}
-    {% for key in entity_tabs %}<p class="small text-muted mt-2 mb-0 d-none" data-nui-note-for="{{ key }}">Los filtros no se aplican aquí; sí a los listados.</p>{% endfor %}
+    {% for key in entity_tabs %}<p class="small text-muted mt-2 mb-0 d-none" data-nui-note-for="{{ key }}">{% if key == "pagos" or key == "jornadas" %}Aquí cuenta el periodo de arriba; los demás filtros, solo en los listados.{% else %}Los filtros no se aplican aquí; sí a los listados.{% endif %}</p>{% endfor %}
     {% endif %}
