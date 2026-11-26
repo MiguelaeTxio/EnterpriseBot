@@ -155,13 +155,14 @@ def _filter_users(request):
     if params.get("only_selected") == "1" and selected:
         return list(users.filter(pk__in=selected))
     search = params.get("q", "").strip()
-    if search:
+    for word in search.split():
+        # S163 (26/11): cada palabra, en cualquiera de los campos.
         users = users.filter(
-            Q(user__username__icontains=search)
-            | Q(user__first_name__icontains=search)
-            | Q(user__last_name__icontains=search)
-            | Q(dni__icontains=search)
-            | Q(phone__icontains=search)
+            Q(user__username__icontains=word)
+            | Q(user__first_name__icontains=word)
+            | Q(user__last_name__icontains=word)
+            | Q(dni__icontains=word)
+            | Q(phone__icontains=word)
         )
     state = params.get("estado", "1")
     if state == "1":

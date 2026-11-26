@@ -3515,6 +3515,30 @@ def list_def(section, tab):
 
 
 # --------------------------------------------------------- consulta común
+_NAME_PARTS = ("given_name", "first_surname", "second_surname")
+
+
+def _search_fields(fields):
+    """
+    The search fields, with every name part of each person path.
+
+    ---
+
+    Los campos de búsqueda; si uno es parte del nombre de una persona
+    (nombre o un apellido), se añaden las otras dos partes de esa misma
+    persona.
+    """
+    out = list(fields)
+    for field in fields:
+        for part in _NAME_PARTS:
+            if field == part or field.endswith("__" + part):
+                prefix = field[:-len(part)]
+                for other in _NAME_PARTS:
+                    if prefix + other not in out:
+                        out.append(prefix + other)
+    return out
+
+
 def filtered(definition, company, params, scope_pk=None):
     """
     Queryset of a list with every common filter applied (unsorted).
@@ -3546,10 +3570,16 @@ def filtered(definition, company, params, scope_pk=None):
         return qs.filter(pk__in=selected)
     search = params.get("q", "").strip()
     if search and definition.search:
-        query = Q()
-        for field in definition.search:
-            query |= Q(**{field + "__icontains": search})
-        qs = qs.filter(query)
+        # S163 (26/11, Miguel Ángel: «quint» no encontraba a Antonio
+        # Jesús Díaz Quintero): cada palabra por separado, en cualquiera
+        # de los campos, y con el nombre de una persona siempre los dos
+        # apellidos.
+        fields = _search_fields(definition.search)
+        for word in search.split():
+            query = Q()
+            for field in fields:
+                query |= Q(**{field + "__icontains": word})
+            qs = qs.filter(query)
     if definition.date_field:
         start, end = period_range(params)
         suffix = "__date" if definition.date_is_datetime else ""
