@@ -158,6 +158,9 @@ class SuperuserRequiredMixin:
             messages.error(request, "Tu cuenta no tiene acceso al panel. "
                                     "Contacta con tu administrador.")
             return redirect(LOGIN_URL)
+        # Como en el panel: primero el cambio de contraseña pendiente.
+        if company_user.must_change_password:
+            return redirect("/panel/password/change/")
         if not allowed(company_user, request):
             if request.method == "GET" and not request.headers.get(
                     "HX-Request") and required_key(request) not in (
