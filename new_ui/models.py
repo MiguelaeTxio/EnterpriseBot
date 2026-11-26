@@ -55,6 +55,14 @@ class UiUserGroup(models.Model):
         verbose_name="Creado por",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # S163 (26/11): el grupo es un «perfil de permisos». Quien no está
+    # en ningún perfil toma el que tenga su puesto aquí (así un gruista
+    # nuevo ya entra con el perfil Trabajador).
+    default_roles = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Perfil por defecto de los puestos",
+    )
 
     class Meta:
         verbose_name = "Grupo de usuarios (nueva interfaz)"

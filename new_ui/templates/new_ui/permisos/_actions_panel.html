@@ -36,10 +36,10 @@ acción avisa de lo que hizo o de por qué falló (#nui-result).
         <label class="form-label small mb-1" for="nui-subject">Permisos de</label>
         <select class="form-select form-select-sm mb-2" id="nui-subject">
             <option value="">El usuario marcado (marca solo uno)</option>
-            <optgroup label="Grupos de usuarios">
+            <optgroup label="Perfiles de permisos">
                 {% for group in user_groups %}<option value="group:{{ group.pk }}">{{ group.name }}</option>{% endfor %}
             </optgroup>
-            <optgroup label="Roles">
+            <optgroup label="Puestos">
                 {% for code, label in roles %}<option value="role:{{ code }}">{{ label }}</option>{% endfor %}
             </optgroup>
         </select>

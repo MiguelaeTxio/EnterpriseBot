@@ -546,10 +546,10 @@ def _subject(company, raw):
         group = UiUserGroup.objects.filter(
             company=company, pk=int(value)).first()
         if group:
-            return ("group", group, "Grupo «%s»" % group.name)
+            return ("group", group, "Perfil «%s»" % group.name)
     if kind == "role" and value in dict(CompanyUser.ROLE_CHOICES):
         return ("role", value,
-                "Rol «%s»" % dict(CompanyUser.ROLE_CHOICES)[value])
+                "Puesto «%s»" % dict(CompanyUser.ROLE_CHOICES)[value])
     return None
 
 

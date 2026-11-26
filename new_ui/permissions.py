@@ -27,9 +27,28 @@ RANK = {
 LABELS = dict(UiViewGrant.LEVEL_CHOICES)
 
 
+def profile_ids(company_user):
+    """
+    Ids of this user's permission profiles (user groups).
+
+    ---
+
+    Perfiles de permisos (grupos) del usuario: aquellos en los que está;
+    si no está en ninguno, los que tienen su puesto como perfil por
+    defecto (S163, 26/11).
+    """
+    from new_ui.models import UiUserGroup
+
+    ids = list(company_user.new_ui_user_groups.values_list("pk", flat=True))
+    if ids:
+        return ids
+    return [group.pk for group in UiUserGroup.objects.filter(
+        company_id=company_user.company_id)
+        if company_user.role in (group.default_roles or [])]
+
+
 def _grants_for(company_user, keys):
-    group_ids = list(company_user.new_ui_user_groups.values_list(
-        "pk", flat=True))
+    group_ids = profile_ids(company_user)
     grants = UiViewGrant.objects.filter(
         company=company_user.company, view_key__in=keys,
     ).select_related("user_group")
@@ -57,8 +76,8 @@ def _resolve(grants, company_user, key):
             continue
         if best is None or RANK[grant.level] > RANK[best]:
             best = grant.level
-            origin = ("Grupo «%s»" % grant.user_group.name
-                      if grant.user_group_id else "Rol")
+            origin = ("Perfil «%s»" % grant.user_group.name
+                      if grant.user_group_id else "Puesto")
     return best, origin
 
 
@@ -221,23 +240,10 @@ def permission_tree(company):
                               if RANK[effective[k][0]] and "." in k),
                 "diffs": diffs,
             })
-        from panel import access_profiles
         from panel.access_rules import ENFORCE
 
-        moving_in = [
-            name for (pk, name), new_role in
-            access_profiles.ROLE_CHANGES.items()
-            if new_role == code and not any(
-                m.pk == pk and m.role == code for m in users)]
-        moving_out = [
-            name for (pk, name), new_role in
-            access_profiles.ROLE_CHANGES.items()
-            if new_role != code and any(
-                m.pk == pk and m.role == code for m in users)]
         roles.append({
             "enforce": ENFORCE,
-            "moving_in": moving_in,
-            "moving_out": moving_out,
             "preview": legacy["preview"][code],
             "preview_access": sum(1 for a in legacy["preview"][code]
                                   if a["allowed"]),
@@ -250,18 +256,69 @@ def permission_tree(company):
             "access": sum(s["open"] for s in role_views),
             "members": members,
         })
+    from panel.access_rules import panel_area_list
+
+    role_labels = dict(CompanyUser.ROLE_CHOICES)
+    area_labels = dict(panel_area_list())
     groups = []
-    for group in UiUserGroup.objects.filter(company=company).prefetch_related(
-            "members__user"):
+    explicit = {}
+    all_groups = list(UiUserGroup.objects.filter(
+        company=company).prefetch_related("members__user"))
+    for group in all_groups:
+        for member in group.members.all():
+            explicit.setdefault(member.pk, []).append(group.pk)
+    for group in all_groups:
         group_grants = [g for g in grants if g.user_group_id == group.pk]
         group_views = views_of(group_grants)
+        panel_grants = sorted(
+            ({"label": ("Todo el panel" if g.view_key == PANEL_KEY else
+                        area_labels.get(g.view_key.split(".", 1)[1],
+                                        g.view_key)),
+              "level": g.level, "rank": RANK[g.level]}
+             for g in group_grants
+             if section_key(g.view_key) == PANEL_KEY),
+            key=lambda a: a["label"])
+        defaults = group.default_roles or []
+        people = []
+        for cu in users:
+            if cu.pk in explicit:
+                if group.pk not in explicit[cu.pk]:
+                    continue
+                how = "Puesto a mano"
+            elif cu.role in defaults:
+                how = "Por su puesto"
+            else:
+                continue
+            change = legacy["user_change"].get(cu.pk, {})
+            people.append({
+                "pk": cu.pk,
+                "name": cu.user.get_full_name() or cu.user.username,
+                "username": cu.user.username,
+                "role": role_labels.get(cu.role, cu.role),
+                "active": cu.is_active,
+                "superuser": cu.user.is_superuser,
+                "how": "metido a mano" if how == "Puesto a mano" else
+                       "por su puesto",
+                "gains": change.get("gains", []),
+                "losses": change.get("losses", []),
+                "preview_count": change.get("count", 0),
+            })
         groups.append({
             "pk": group.pk, "name": group.name, "views": group_views,
             "access": sum(s["open"] for s in group_views),
+            "panel_grants": panel_grants,
+            "default_roles": [role_labels.get(r, r) for r in defaults],
+            "people": people,
             "members": [m.user.get_full_name() or m.user.username
                         for m in group.members.all()],
         })
-    return {"roles": roles, "groups": groups}
+    no_profile = [
+        {"pk": cu.pk, "name": cu.user.get_full_name() or cu.user.username,
+         "role": role_labels.get(cu.role, cu.role)}
+        for cu in users if cu.is_active and not cu.user.is_superuser
+        and cu.pk not in explicit and not any(
+            cu.role in (g.default_roles or []) for g in all_groups)]
+    return {"roles": roles, "groups": groups, "no_profile": no_profile}
 
 
 def legacy_panel(company, users):
@@ -282,7 +339,7 @@ def legacy_panel(company, users):
     from ivr_config.models import CompanyUser
     from panel.access_rules import panel_areas, role_stand_in
 
-    key = "nui_legacy_panel_%s" % company.pk
+    key = "nui_legacy_panel_v2_%s" % company.pk
     cached = cache.get(key)
     if cached is not None:
         return cached
@@ -309,7 +366,19 @@ def legacy_panel(company, users):
             diffs.append(dict(area, role_allowed=(
                 other["allowed"] if other else 0)))
         user_diffs[cu.pk] = diffs
+    user_change = {}
+    for cu in users:
+        if not cu.is_active:
+            continue
+        today = {a["label"] for a in panel_areas(cu).values()
+                 if a["allowed"]}
+        after = {a["label"] for a in panel_areas(cu, preview=True).values()
+                 if a["allowed"]}
+        user_change[cu.pk] = {"gains": sorted(after - today),
+                              "losses": sorted(today - after),
+                              "count": len(after)}
     result = {
+        "user_change": user_change,
         "preview": preview,
         "roles": {code: ordered(areas) for code, areas in roles.items()},
         "user_diffs": user_diffs,

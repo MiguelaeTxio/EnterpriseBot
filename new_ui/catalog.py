@@ -326,9 +326,9 @@ SECTIONS = OrderedDict([
     ])),
     (PERMISSIONS, ("Permisos", "bi-shield-lock", [
         ("usuarios", "Usuarios"),
-        ("grupos", "Grupos de usuarios"),
+        ("grupos", "Perfiles de permisos"),
         ("vistas", "Por vista"),
-        ("roles", "Roles"),
+        ("roles", "Puestos"),
         ("arbol", "Árbol"),
     ])),
 ])

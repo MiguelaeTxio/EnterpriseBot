@@ -6,10 +6,11 @@ Apply the agreed access profiles (panel/access_profiles.py).
 
 Aplica los perfiles de acceso acordados (S163, panel/access_profiles.py).
 
---grants  da los permisos de cada rol y los accesos propios (áreas del
-          panel y nueva interfaz) en Permisos.
---roles   cambia los roles, hace superadministrador a Alejandro y
-          desactiva el usuario de pruebas.
+--grants  crea los perfiles de permisos (grupos de usuarios), con sus
+          puestos por defecto, sus personas y sus permisos, y los
+          accesos propios. No cambia el puesto de nadie.
+--people  hace superadministrador a Alejandro y desactiva el usuario
+          de pruebas.
 Sin --apply solo dice lo que haría. Escribe en pantalla y en
 --log-file a la vez.
 """
@@ -32,7 +33,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--grants", action="store_true")
-        parser.add_argument("--roles", action="store_true")
+        parser.add_argument("--people", action="store_true")
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", default="")
 
@@ -46,8 +47,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.log = (open(options["log_file"], "a", encoding="utf-8")
                     if options["log_file"] else None)
-        if not (options["grants"] or options["roles"]):
-            raise CommandError("Indica --grants y/o --roles.")
+        if not (options["grants"] or options["people"]):
+            raise CommandError("Indica --grants y/o --people.")
         apply = options["apply"]
         self._log("Modo: %s" % ("APLICAR" if apply else "solo mirar"))
         owner = CompanyUser.objects.select_related(
@@ -57,16 +58,19 @@ class Command(BaseCommand):
         with transaction.atomic():
             if options["grants"]:
                 self._grants(company, owner, valid, apply)
-            if options["roles"]:
-                self._roles(company, apply)
+            if options["people"]:
+                self._people(company, apply)
             if not apply:
                 transaction.set_rollback(True)
         self._log("Fin.")
 
     def _user(self, company, pk, username):
-        cu = CompanyUser.objects.select_related("user").filter(
-            pk=pk, company=company).first()
-        if cu is None or cu.user.username != username:
+        found = CompanyUser.objects.select_related("user").filter(
+            company=company, user__username=username)
+        if pk is not None:
+            found = found.filter(pk=pk)
+        cu = found.first()
+        if cu is None:
             self._log("  !! %s (pk %s) no coincide: se salta" % (
                 username, pk))
             return None
@@ -79,9 +83,9 @@ class Command(BaseCommand):
             return
         current = UiViewGrant.objects.filter(
             company=company, view_key=key,
-            role=subject.get("role", ""),
+            role="",
             company_user=subject.get("company_user"),
-            user_group=None).first()
+            user_group=subject.get("user_group")).first()
         if current and current.level == level:
             return
         self._log("  %s · %s: %s -> %s" % (
@@ -90,39 +94,42 @@ class Command(BaseCommand):
             set_grant(company, key, level, owner, **subject)
 
     def _grants(self, company, owner, valid, apply):
-        self._log("== Permisos por rol")
-        for role, areas in profiles.ROLE_AREAS.items():
-            for slug, level in areas.items():
+        from new_ui.models import UiUserGroup
+
+        for name, profile in profiles.PROFILES.items():
+            self._log("== Perfil %s" % name)
+            group = UiUserGroup.objects.filter(
+                company=company, name=name).first()
+            if group is None:
+                self._log("  se crea el perfil")
+                group = UiUserGroup.objects.create(
+                    company=company, name=name, created_by=owner)
+            if group.default_roles != profile["default_roles"]:
+                self._log("  puestos por defecto: %s -> %s" % (
+                    group.default_roles, profile["default_roles"]))
+                group.default_roles = profile["default_roles"]
+                group.save(update_fields=["default_roles"])
+            for pk, username in profile["members"]:
+                cu = self._user(company, pk, username)
+                if cu and not group.members.filter(pk=cu.pk).exists():
+                    self._log("  entra %s (puesto %s)" % (username, cu.role))
+                    group.members.add(cu)
+            for slug, level in profile["areas"].items():
                 key = PANEL_KEY if slug == "*" else "%s.%s" % (
                     PANEL_KEY, slug)
                 self._set(company, owner, valid, key, level, apply,
-                          "rol " + role, role=role)
-            for key, level in profiles.ROLE_NEW_UI.get(role, {}).items():
+                          name, user_group=group)
+            for key, level in profile["new_ui"].items():
                 self._set(company, owner, valid, key, level, apply,
-                          "rol " + role, role=role)
+                          name, user_group=group)
         self._log("== Accesos propios")
-        for (pk, username), areas in profiles.USER_AREAS.items():
-            cu = self._user(company, pk, username)
-            for slug, level in (areas.items() if cu else ()):
-                self._set(company, owner, valid,
-                          "%s.%s" % (PANEL_KEY, slug), level, apply,
-                          username, company_user=cu)
-        for (pk, username), keys in profiles.USER_NEW_UI.items():
+        for (pk, username), keys in profiles.USER_GRANTS.items():
             cu = self._user(company, pk, username)
             for key, level in (keys.items() if cu else ()):
                 self._set(company, owner, valid, key, level, apply,
                           username, company_user=cu)
 
-    def _roles(self, company, apply):
-        self._log("== Cambios de rol")
-        for (pk, username), role in profiles.ROLE_CHANGES.items():
-            cu = self._user(company, pk, username)
-            if cu is None or cu.role == role:
-                continue
-            self._log("  %s: %s -> %s" % (username, cu.role, role))
-            if apply:
-                cu.role = role
-                cu.save(update_fields=["role"])
+    def _people(self, company, apply):
         self._log("== Superadministrador")
         for pk, username in profiles.SUPERADMINS:
             cu = self._user(company, pk, username)

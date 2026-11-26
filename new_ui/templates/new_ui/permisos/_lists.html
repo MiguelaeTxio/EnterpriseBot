@@ -115,6 +115,45 @@ new_ui/views.py.
         <span class="text-muted"><span class="badge text-bg-secondary">Sin acceso</span> <span class="badge text-bg-primary">Ver</span> <span class="badge text-bg-success">Ver y modificar</span></span>
     </div>
     <div class="small nui-perm-tree">
+        <div class="fw-semibold mb-1">Perfiles de permisos</div>
+        <p class="text-muted mb-1">Lo que puede abrir cada persona lo decide su perfil (el puesto solo dice su trabajo). Quien no está metido a mano en un perfil toma el de su puesto.</p>
+        {% for group in tree.groups %}
+        <details class="mb-1" data-nui-tree-node data-search="{{ group.name|lower }} {% for p in group.people %}{{ p.name|lower }} {{ p.username|lower }} {% endfor %}">
+            <summary><span class="fw-semibold">{{ group.name }}</span> <span class="text-muted">· {{ group.people|length }} persona{{ group.people|length|pluralize }}{% if group.default_roles %} · por defecto para: {{ group.default_roles|join:", " }}{% endif %}</span> <a href="#" class="ms-1" data-nui-edit="group:{{ group.pk }}" title="Ver y cambiar sus permisos"><i class="bi bi-pencil-square"></i></a></summary>
+            <div class="ms-3">
+                <div class="my-1"><span class="text-muted">Panel actual:</span>
+                    {% for a in group.panel_grants %}<span class="badge {% if a.rank == 2 %}text-bg-success{% elif a.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal me-1" title="{% if a.rank == 2 %}Ver y modificar: entra a todo{% elif a.rank == 1 %}Ver: entra, con las reglas de su puesto{% else %}Sin acceso{% endif %}">{{ a.label }}</span>{% empty %}<span class="text-muted">nada</span>{% endfor %}
+                </div>
+                <div class="my-1"><span class="text-muted">Nueva interfaz:</span>
+                    {% for section in group.views %}{% if section.rank or section.open %}<span class="badge {% if section.rank == 2 %}text-bg-success{% elif section.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal me-1">{{ section.label }}{% if not section.rank %} ({{ section.open }} vistas){% endif %}</span>{% endif %}{% empty %}{% endfor %}{% if not group.access %}<span class="text-muted">nada</span>{% endif %}
+                </div>
+                <details open>
+                    <summary class="text-muted">Sus personas{% if not tree.roles.0.enforce %} y qué cambia al activar{% endif %}</summary>
+                    <ul class="list-unstyled ms-3 mb-1">
+                        {% for p in group.people %}
+                        <li class="my-1" data-nui-tree-person data-search="{{ p.name|lower }} {{ p.username|lower }}">
+                            <a href="#" data-nui-edit="user:{{ p.pk }}" class="{% if not p.active %}text-muted{% endif %}"><i class="bi bi-person me-1"></i>{{ p.name }}</a>
+                            <span class="text-muted">({{ p.role }}, {{ p.how }}{% if not p.active %}, inactivo{% endif %})</span>
+                            {% if p.superuser %}<span class="badge text-bg-dark fw-normal">Superusuario: todo</span>
+                            {% elif not tree.roles.0.enforce %}
+                                {% for g in p.gains %}<span class="badge text-bg-success fw-normal me-1" title="Gana al activar">+ {{ g }}</span>{% endfor %}
+                                {% for l in p.losses %}<span class="badge text-bg-danger fw-normal me-1" title="Pierde al activar">− {{ l }}</span>{% endfor %}
+                                {% if not p.gains and not p.losses %}<span class="text-muted">· no cambia</span>{% endif %}
+                            {% endif %}
+                        </li>
+                        {% empty %}<li class="text-muted">Nadie.</li>{% endfor %}
+                    </ul>
+                </details>
+            </div>
+        </details>
+        {% empty %}
+        <p class="text-muted">Todavía no hay perfiles de permisos.</p>
+        {% endfor %}
+        {% if tree.no_profile %}
+        <div class="text-danger mt-1">Sin perfil (al activar no podrán entrar a nada): {% for p in tree.no_profile %}<a href="#" data-nui-edit="user:{{ p.pk }}">{{ p.name }}</a> ({{ p.role }}){% if not forloop.last %}, {% endif %}{% endfor %}</div>
+        {% endif %}
+        <div class="fw-semibold mt-3 mb-1">Puestos</div>
+        <p class="text-muted mb-1">Lo que abre hoy cada puesto en el panel actual.</p>
         {% for role in tree.roles %}
         <details class="mb-1" data-nui-tree-node data-search="{{ role.label|lower }} {% for m in role.members %}{{ m.name|lower }} {{ m.username|lower }} {% endfor %}">
             <summary><span class="fw-semibold">{{ role.label }}</span> <span class="text-muted">· {{ role.members|length }} usuario{{ role.members|length|pluralize }} · {{ role.access }} vista{{ role.access|pluralize }} con acceso</span> <a href="#" class="ms-1" data-nui-edit="role:{{ role.code }}" title="Ver y cambiar"><i class="bi bi-pencil-square"></i></a></summary>
@@ -128,8 +167,7 @@ new_ui/views.py.
                 </details>
                 {% if not role.enforce %}
                 <details data-nui-tree-part>
-                    <summary class="text-muted">Panel con el reparto nuevo (aún sin activar) · {{ role.preview_access }} área{{ role.preview_access|pluralize }}{% if role.preview_mismatch %} · <span class="text-danger">{{ role.preview_mismatch|length }} en el menú sin acceso</span>{% endif %}</summary>
-                    {% if role.moving_in or role.moving_out %}<div class="ms-3 small">{% if role.moving_in %}Pasan a este rol: {{ role.moving_in|join:", " }}. {% endif %}{% if role.moving_out %}Dejan este rol: {{ role.moving_out|join:", " }}.{% endif %}</div>{% endif %}
+                    <summary class="text-muted">Con el reparto nuevo, si no tiene perfil a mano (aún sin activar) · {{ role.preview_access }} área{{ role.preview_access|pluralize }}{% if role.preview_mismatch %} · <span class="text-danger">{{ role.preview_mismatch|length }} en el menú sin acceso</span>{% endif %}</summary>
                     <div class="ms-3 d-flex flex-wrap gap-1 my-1">
                         {% for area in role.preview %}<span class="badge {% if area.menu_mismatch %}text-bg-danger{% elif area.rank == 2 %}text-bg-success{% elif area.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal{% if area.allowed and not area.in_menu %} opacity-75{% endif %}"{% if not area.allowed and not area.menu_mismatch %} data-nui-tree-none{% endif %} title="Entra a {{ area.allowed }} de {{ area.total }} pantallas · permiso del área: {{ area.level }} · {% if area.in_menu %}en su menú{% else %}sin enlace en su menú{% endif %}">{% if area.in_menu %}<i class="bi bi-list me-1"></i>{% endif %}{{ area.label }}{% if area.rank == 1 %} · {{ area.allowed }}/{{ area.total }}{% endif %}</span>{% endfor %}
                     </div>
@@ -172,21 +210,5 @@ new_ui/views.py.
             </div>
         </details>
         {% endfor %}
-        {% if tree.groups %}
-        <div class="fw-semibold mt-3 mb-1">Grupos de usuarios</div>
-        {% for group in tree.groups %}
-        <details class="mb-1" data-nui-tree-node data-search="{{ group.name|lower }} {% for m in group.members %}{{ m|lower }} {% endfor %}">
-            <summary><span class="fw-semibold">{{ group.name }}</span> <span class="text-muted">· {{ group.members|length }} miembro{{ group.members|length|pluralize }} · {{ group.access }} vista{{ group.access|pluralize }} con acceso</span> <a href="#" class="ms-1" data-nui-edit="group:{{ group.pk }}" title="Ver y cambiar"><i class="bi bi-pencil-square"></i></a></summary>
-            <div class="ms-3">
-                {% for section in group.views %}
-                <div data-nui-tree-section{% if not section.rank and not section.open %} data-nui-tree-empty{% endif %}><span class="badge {% if section.rank == 2 %}text-bg-success{% elif section.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal">{{ section.label }}</span>
-                    {% for view in section.views %}<span class="badge {% if view.rank == 2 %}text-bg-success{% elif view.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal"{% if not view.rank %} data-nui-tree-none{% endif %}>{{ view.label }}</span>{% endfor %}
-                </div>
-                {% endfor %}
-                <div class="text-muted">Miembros: {{ group.members|join:", "|default:"ninguno" }}</div>
-            </div>
-        </details>
-        {% endfor %}
-        {% endif %}
     </div>
 </div>
