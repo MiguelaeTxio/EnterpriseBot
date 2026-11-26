@@ -21,7 +21,7 @@ from new_ui import (
     views_notices, views_partes, views_pay, views_photos, views_safety,
     views_signatures_nui, views_cae, views_insurance_nui,
     views_logbook, views_refuels, views_requirements, views_schedules,
-    views_service, views_traffic,
+    views_service, views_traffic, views_vacation_chart,
 )
 
 app_name = "new_ui"
@@ -567,6 +567,10 @@ urlpatterns = [
          name="perm_tree_export"),
     path("permisos/grupos/usuarios/", views.PermGroupMembersView.as_view(),
          name="perm_members"),
+    # S165: cuadrante de vacaciones de los gruistas (Empresa › Vacaciones).
+    path("vacaciones/cuadrante/",
+         views_vacation_chart.VacationChartUploadView.as_view(),
+         name="vacation_chart_upload"),
     # S165: Tráfico (planning de grúas, envíos, nombres, obras, clientes).
     path("trafico/planning/cargar/",
          views_traffic.PlanningUploadView.as_view(),

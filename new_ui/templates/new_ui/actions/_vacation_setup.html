@@ -14,6 +14,17 @@
         </div>
     </form>
     <p class="small text-muted mt-2 mb-0">Pulsa una regla para verla o crear otra a partir de ella.</p>
+    {# S165: el cuadrante de vacaciones de los gruistas (una hoja por año, una X por día). #}
+    <form data-nui-window="Cargar el cuadrante de vacaciones" data-nui-window-icon="bi-calendar2-check" data-nui-action-form action="{% url 'new_ui:vacation_chart_upload' %}" enctype="multipart/form-data" class="mt-3" data-nui-for="new">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-calendar2-check me-1"></i>Cargar el cuadrante de vacaciones (Excel)</div>
+        <input type="file" name="planilla" accept=".xlsx,.xlsm" class="form-control form-control-sm mb-1" aria-label="Excel del cuadrante" required>
+        <div class="d-flex flex-wrap gap-1">
+            <button type="submit" name="action" value="check" class="btn btn-sm btn-outline-primary">Comprobar</button>
+            <button type="submit" name="action" value="load" class="btn btn-sm btn-success" data-nui-confirm="¿Registrar los periodos de vacaciones del cuadrante?"><i class="bi bi-upload me-1"></i>Cargar</button>
+        </div>
+        <p class="small text-muted mt-1 mb-0">Una hoja por año y una X por día de vacaciones. Cada racha de días seguidos es un periodo; lo ya registrado no se repite. Los nombres que no se reconozcan se asignan una vez en Tráfico › Nombres. El Excel no se guarda.</p>
+    </form>
 </div>
 <div class="d-none" data-nui-actions-for="tipos_ausencia">
     <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:absence_type_sheet' 0 %}" data-nui-viewer-title="Nuevo tipo de ausencia"><i class="bi bi-plus-circle me-1"></i>Nuevo tipo de ausencia</button>
