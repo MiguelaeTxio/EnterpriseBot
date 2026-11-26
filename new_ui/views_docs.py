@@ -415,6 +415,22 @@ class MachineQrZipView(SuperuserRequiredMixin, View):
         return response
 
 
+def _print_svg(url):
+    """
+    The QR as an SVG that scales whole to the sticker size.
+
+    ---
+
+    S163 (26/11, Miguel Ángel: «imprime una cosa totalmente diferente y
+    no sirve»): el SVG del QR trae ancho y alto fijos sin viewBox; al
+    encajarlo en los 64 mm de la pegatina solo se imprimía la esquina de
+    arriba a la izquierda. Con viewBox se imprime entero.
+    """
+    from new_ui.views import _scalable_svg
+
+    return _scalable_svg(qr.qr_image(url, "svg", scale=10))
+
+
 class MachineQrPrintManyView(SuperuserRequiredMixin, View):
     """
     GET ?ids=: a page to print the QR stickers of the marked machines.
@@ -433,8 +449,8 @@ class MachineQrPrintManyView(SuperuserRequiredMixin, View):
         stickers = []
         for machine in machines:
             sheet = qr.sheet_for(machine)
-            stickers.append((machine.code, qr.qr_image(
-                qr.public_url(request, sheet), "svg", scale=10)))
+            stickers.append((machine.code, _print_svg(
+                qr.public_url(request, sheet))))
         return render(request, "new_ui/qr_print.html", {
             "stickers": stickers,
         })
@@ -456,8 +472,8 @@ class MachineQrPrintView(SuperuserRequiredMixin, View):
         machine = _machine(request, pk)
         sheet = qr.sheet_for(machine)
         return render(request, "new_ui/qr_print.html", {
-            "stickers": [(machine.code, qr.qr_image(
-                qr.public_url(request, sheet), "svg", scale=10))],
+            "stickers": [(machine.code, _print_svg(
+                qr.public_url(request, sheet)))],
         })
 
 
