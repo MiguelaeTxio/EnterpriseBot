@@ -422,7 +422,7 @@ class CompanyUserCreateForm(forms.Form):
         widget=forms.TextInput(attrs={"class": "form-control"}),
     )
     role = forms.ChoiceField(
-        choices=CompanyUser.ROLE_CHOICES,
+        choices=CompanyUser.ACTIVE_ROLE_CHOICES,
         label="Rol",
         initial=CompanyUser.ROLE_WORKSHOP,
         widget=forms.Select(attrs={"class": "form-select", "id": "id_role"}),

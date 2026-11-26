@@ -320,6 +320,15 @@ class CompanyUser(models.Model):
         (ROLE_SALES,         "Comercial"),
         (ROLE_SERVICES,      "Servicios"),
     ]
+    # S163 (26/11, Miguel Ángel): puestos retirados de los listados
+    # (sin nadie activo). Siguen siendo valores válidos para no romper
+    # registros antiguos; solo no se ofrecen al elegir puesto.
+    RETIRED_ROLES = (ROLE_OPERATOR, ROLE_WORKSHOPBOSS)
+    # (filter + lambda: una comprensión no ve los nombres de la clase.)
+    ACTIVE_ROLE_CHOICES = list(filter(
+        lambda choice, retired=RETIRED_ROLES: choice[0] not in retired,
+        ROLE_CHOICES,
+    ))
     # Puestos de trabajador (alta por WhatsApp, fichaje). Worker roles.
     WORKER_ROLES = (
         ROLE_WORKSHOP, ROLE_DRIVER, ROLE_OFFICE, ROLE_NIGHTGUARD,

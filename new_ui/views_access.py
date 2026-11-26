@@ -100,7 +100,7 @@ class AccessPreviewView(SuperuserRequiredMixin, View):
             "sections": Section.objects.filter(
                 company=company).order_by("name"),
             "bases": Base.objects.filter(company=company).order_by("name"),
-            "worker_roles": list(CompanyUser.ROLE_CHOICES),
+            "worker_roles": list(CompanyUser.ACTIVE_ROLE_CHOICES),
         })
 
 

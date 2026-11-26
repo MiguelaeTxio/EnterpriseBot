@@ -55,7 +55,7 @@ class PersonalAccessPreviewView(SupervisorAccessMixin, View):
         # S149 (Miguel Ángel, 19/11: "la lista de roles [...] no es la
         # misma cuando lo hacemos a través del fichaje que a través del
         # CRUD de usuarios"): los mismos roles que al crear un usuario.
-        worker_roles = list(CompanyUser.ROLE_CHOICES)
+        worker_roles = list(CompanyUser.ACTIVE_ROLE_CHOICES)
         for row in rows:
             section = sections.get(row["person"].pk)
             row["section"] = section

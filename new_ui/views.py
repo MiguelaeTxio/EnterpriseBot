@@ -504,7 +504,7 @@ class NewUiView(SuperuserRequiredMixin, View):
                 pk=company_user.company_id),
             "user_groups": UiUserGroup.objects.filter(
                 company=company_user.company),
-            "roles": CompanyUser.ROLE_CHOICES,
+            "roles": CompanyUser.ACTIVE_ROLE_CHOICES,
             "levels": UiViewGrant.LEVEL_CHOICES,
             "view_keys": all_view_keys(),
         }
@@ -517,7 +517,7 @@ class NewUiView(SuperuserRequiredMixin, View):
                 "groups": [("none", "Sin grupo", True)] + [
                     (str(g.pk), g.name, True)
                     for g in context["user_groups"]],
-                "families": list(CompanyUser.ROLE_CHOICES),
+                "families": list(CompanyUser.ACTIVE_ROLE_CHOICES),
                 "family_label": "Sección (rol)",
             }
         else:

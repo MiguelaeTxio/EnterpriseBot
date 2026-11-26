@@ -333,7 +333,7 @@ def _choices(company):
     from panel.views_worker_schedules import _schedules, _sections
 
     return {
-        "role_choices": CompanyUser.ROLE_CHOICES,
+        "role_choices": CompanyUser.ACTIVE_ROLE_CHOICES,
         "sections": _sections(company),
         "schedules": _schedules(company),
         "bases": list(Base.objects.filter(company=company).order_by("name")),

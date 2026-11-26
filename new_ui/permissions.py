@@ -251,7 +251,7 @@ def _permission_tree(company):
                          "user__username"))
     legacy = legacy_panel(company, users)
     roles = []
-    for code, label in CompanyUser.ROLE_CHOICES:
+    for code, label in CompanyUser.ACTIVE_ROLE_CHOICES:
         role_grants = [g for g in grants if g.role == code
                        and not g.user_group_id and not g.company_user_id]
         role_views = views_of(role_grants)
