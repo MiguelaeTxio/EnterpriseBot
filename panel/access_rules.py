@@ -20,7 +20,7 @@ from ivr_config.models import CompanyUser
 # decide como siempre (por rol) y Permisos › Árbol enseña además cómo
 # quedaría con los permisos por área; encendido, manda el permiso de
 # cada área («panel.<área>» en Permisos).
-ENFORCE = False
+ENFORCE = True
 # Vista previa (solo para pintar el árbol): como si estuviera encendida.
 _PREVIEW = []
 # Modo «muchos usuarios a la vez» (el árbol de Permisos): datos leídos de
@@ -312,6 +312,7 @@ def _walk(patterns, prefix=""):
 
 
 _SCREENS = None
+_SCREEN_ROUTES = None
 
 
 def panel_screens():
@@ -547,6 +548,14 @@ def area_level_of_route(company_user, route):
     """
     if not route.startswith("panel/") or route.startswith(
             "panel/nueva-interfaz/"):
+        return None, None
+    # Solo pantallas con usuario del panel (las de panel_screens): el
+    # login, la salida, los agentes, etc. no pasan por la puerta.
+    global _SCREEN_ROUTES
+    if _SCREEN_ROUTES is None:
+        _rules, screens = panel_screens()
+        _SCREEN_ROUTES = frozenset(screen[4] for screen in screens)
+    if route not in _SCREEN_ROUTES:
         return None, None
     area = _area_of(route)
     if area is None:
