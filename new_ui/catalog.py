@@ -108,6 +108,16 @@ TAB_NOUNS = {
         "libro": ("anotación del libro", "anotaciones del libro", "f"),
         "equipos": ("equipo", "equipos"),
     },
+    # S165: Tráfico (planning de grúas, envíos, albaranes, obras).
+    "tra": {
+        "servicios": ("servicio", "servicios"),
+        "cargas": ("carga", "cargas", "f"),
+        "nombres": ("nombre", "nombres"),
+        "envios": ("envío", "envíos"),
+        "albaranes": ("albarán", "albaranes"),
+        "obras": ("obra", "obras", "f"),
+        "clientes": ("cliente", "clientes"),
+    },
 }
 
 # S163 (Miguel Ángel, 23/11): las vistas de cada sección, agrupadas en un
@@ -159,6 +169,13 @@ TAB_GROUPS = {
         # «Partes» se ve en las dos: la de todos y, con un trabajador
         # abierto, solo los suyos (S163, 23/11).
         ("Horas y pagos", ("pagos_trab", "pagos_partes", "pagos")),
+    ],
+    # S165: Tráfico.
+    "tra": [
+        ("Planning", ("servicios", "cargas", "nombres")),
+        ("Envíos", ("envios",)),
+        ("Albaranes", ("albaranes",)),
+        ("Obras y clientes", ("obras", "clientes")),
     ],
 }
 # S163 (23/11): la lista de todos («all», sin persona abierta) o lo de
@@ -323,6 +340,18 @@ SECTIONS = OrderedDict([
         ("equipos", "Equipos"),
         ("seguridad", "Seguridad"),
         ("seguridad_reg", "Extintores y botiquines"),
+    ])),
+    # S165 (Miguel Ángel, 26/11): «Tráfico», al nivel de Empresa,
+    # Centros de gasto y Personal: el planning de las grúas, los envíos
+    # a los gruistas, los albaranes, las obras y los clientes.
+    ("tra", ("Tráfico", "bi-signpost-split", [
+        ("servicios", "Servicios"),
+        ("cargas", "Cargas"),
+        ("nombres", "Nombres"),
+        ("envios", "Envíos a los gruistas"),
+        ("albaranes", "Albaranes"),
+        ("obras", "Obras"),
+        ("clientes", "Clientes"),
     ])),
     (PERMISSIONS, ("Permisos", "bi-shield-lock", [
         ("usuarios", "Usuarios"),

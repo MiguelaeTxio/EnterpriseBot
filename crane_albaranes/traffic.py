@@ -39,6 +39,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from crane_albaranes.models import (
+    PlanningAlias,
     PlanningImport,
     PlanningName,
     PlanningNotice,
@@ -427,11 +428,13 @@ class SiteResolver:
     ---
 
     Cliente por su nombre sin tildes ni signos y obra por cliente y
-    lugar; si no existen se dan de alta (obra con su código OBRA-0001,
-    sin coordenadas: el mapa solo va cuando la oficina las pone).
+    lugar, mirando antes los alias guardados al unir duplicados
+    (PlanningAlias); si no existen se dan de alta (obra con su código
+    OBRA-0001, sin coordenadas: el mapa solo va cuando la oficina las
+    pone).
     """
 
-    def __init__(self):
+    def __init__(self, company):
         from worksites.models import Client, Worksite
 
         self.Client, self.Worksite = Client, Worksite
@@ -440,7 +443,13 @@ class SiteResolver:
             self.clients.setdefault(plain(client.name), client)
         self.sites = {}
         for site in Worksite.objects.order_by("-is_active", "pk"):
-            self.sites.setdefault((site.client_id, plain(site.name)), site)
+            self.sites.setdefault(site_key(site.client_id, site.name), site)
+        for alias in PlanningAlias.objects.filter(
+                company=company).select_related("client", "worksite"):
+            if alias.kind == PlanningAlias.KIND_CLIENT and alias.client:
+                self.clients[alias.key] = alias.client
+            elif alias.worksite:
+                self.sites[alias.key] = alias.worksite
         self.created_clients = 0
         self.created_sites = 0
 
@@ -458,22 +467,104 @@ class SiteResolver:
         return client
 
     def site(self, client, text):
-        key = plain(text)
-        if not key:
+        if not plain(text):
             return None
-        client_id = client.pk if client else None
-        site = self.sites.get((client_id, key))
+        key = site_key(client.pk if client else None, text)
+        site = self.sites.get(key)
         if site is None:
-            name = clean(text, 200)
             site = self.Worksite.objects.create(
-                name=name, address=clean(text, 300), client=client,
-                client_name=client.name if client else "",
+                name=clean(text, 200), address=clean(text, 300),
+                client=client, client_name=client.name if client else "",
                 notes="Dada de alta al cargar el planning.")
             site.code = "OBRA-%04d" % site.pk
             site.save(update_fields=["code"])
-            self.sites[(client_id, key)] = site
+            self.sites[key] = site
             self.created_sites += 1
         return site
+
+
+def site_key(client_id, place):
+    """«12|nave antequera»: key of a worksite by client and place."""
+    return "%s|%s" % (client_id or "", plain(place))
+
+
+def merge_clients(company, target, others):
+    """
+    Move everything of `others` to `target`, remember their names, delete.
+    ---
+    Une clientes repetidos (erratas del planning) en `target`: sus obras,
+    servicios del planning y albaranes pasan a él, sus nombres quedan
+    como alias para las siguientes cargas, y se borran. Si al pasar una
+    obra ya hay otra igual en `target`, se unen también.
+    """
+    from crane_albaranes.models import CraneAlbaran
+    from worksites.models import Worksite
+
+    moved = 0
+    with transaction.atomic():
+        for other in others:
+            if other.pk == target.pk:
+                continue
+            PlanningAlias.objects.update_or_create(
+                company=company, kind=PlanningAlias.KIND_CLIENT,
+                key=plain(other.name), defaults={"client": target})
+            PlanningAlias.objects.filter(client=other).update(client=target)
+            PlanningService.objects.filter(client=other).update(
+                client=target)
+            CraneAlbaran.objects.filter(client=other).update(client=target)
+            for site in Worksite.objects.filter(client=other):
+                twin = Worksite.objects.filter(client=target).exclude(
+                    pk=site.pk)
+                twin = next((w for w in twin if plain(w.name) == plain(
+                    site.name)), None)
+                if twin is not None:
+                    merge_worksites(company, twin, [site])
+                else:
+                    site.client = target
+                    site.client_name = target.name
+                    site.save(update_fields=["client", "client_name",
+                                             "updated_at"])
+            other.delete()
+            moved += 1
+    return moved
+
+
+def merge_worksites(company, target, others):
+    """
+    Move everything of `others` to `target`, remember their keys, delete.
+    ---
+    Une obras repetidas en `target`: servicios del planning y albaranes
+    pasan a ella, su lugar queda como alias y se borran (salvo las que
+    tienen circulares, que se dejan finalizadas).
+    """
+    from crane_albaranes.models import CraneAlbaran
+
+    moved = 0
+    with transaction.atomic():
+        for other in others:
+            if other.pk == target.pk:
+                continue
+            PlanningAlias.objects.update_or_create(
+                company=company, kind=PlanningAlias.KIND_WORKSITE,
+                key=site_key(other.client_id, other.name),
+                defaults={"worksite": target})
+            PlanningAlias.objects.filter(worksite=other).update(
+                worksite=target)
+            PlanningService.objects.filter(worksite=other).update(
+                worksite=target)
+            CraneAlbaran.objects.filter(worksite=other).update(
+                worksite=target)
+            try:
+                with transaction.atomic():
+                    other.delete()
+            except Exception:  # noqa: BLE001 -- protegida (circulares)
+                other.is_active = False
+                other.notes = ("%s\nUnida a %s." % (
+                    other.notes, target.code or target.name)).strip()
+                other.save(update_fields=["is_active", "notes",
+                                          "updated_at"])
+            moved += 1
+    return moved
 
 
 # ---------------------------------------------------------------------
@@ -632,7 +723,7 @@ def import_planning(company, uploaded, date_from=None, date_to=None,
     machines = MachineResolver(company)
     counters = {"total": 0, "created": 0, "updated": 0, "removed": 0}
     with transaction.atomic():
-        sites = SiteResolver()
+        sites = SiteResolver(company)
         planning = PlanningImport.objects.create(
             company=company, file_name=getattr(uploaded, "name", "")[:255],
             uploaded_by=created_by, date_from=date_from, date_to=date_to)
@@ -646,6 +737,12 @@ def import_planning(company, uploaded, date_from=None, date_to=None,
         planning.days_loaded = len(days)
         planning.problems = _group_problems(problems)
         planning.save()
+        remember_unknown(company, [
+            s.raw_person for s in PlanningService.objects.filter(
+                company=company, day__gte=date_from, day__lte=date_to,
+                person__isnull=True,
+                kind=PlanningService.KIND_SERVICE).exclude(raw_person="")],
+            people)
     logger.info(
         "# [TRÁFICO] Planning %s: %d días, %d filas (%d nuevas, %d "
         "cambiadas, %d quitadas), %d clientes y %d obras nuevos.",
@@ -675,6 +772,28 @@ def _group_problems(problems):
     return [{"row": grouped[r][0], "reasons": [
         r if grouped[r][1] == 1 else "%s (%d filas)" % (r, grouped[r][1])]}
         for r in order]
+
+
+def remember_unknown(company, texts, people=None):
+    """
+    Add the names not recognised to the names table, «Sin asignar».
+    ---
+    Apunta en Tráfico › Nombres los textos que no se han reconocido (y
+    que no estaban ya), para asignarlos una vez. Devuelve cuántos.
+    """
+    people = people or NameResolver(company)
+    known = set(PlanningName.objects.filter(company=company).values_list(
+        "key", flat=True))
+    new = {}
+    for text in texts:
+        key = plain(text)
+        if key and key not in known and key not in new:
+            person, _why = people.resolve(text)
+            if person is None:
+                new[key] = PlanningName(company=company, key=key[:120],
+                                        text=clean(text, 120))
+    PlanningName.objects.bulk_create(new.values(), ignore_conflicts=True)
+    return len(new)
 
 
 def relink_names(company, keys=None):
@@ -912,9 +1031,18 @@ def send_notice(service, sent_by=None, client=None, template=None):
 
     assert LOCATION_ONLY_NOTICE, "Solo ubicación y hora (S162/S165)."
     error = why_not_sendable(service)
-    phone = worker_phone(service.person) if service.person_id else ""
-    text = notice_text(service) if service.kind == \
-        PlanningService.KIND_SERVICE else ""
+    if error:
+        # Sin gruista, sin móvil, anotación o quitado: no se intenta y
+        # no se apunta como envío (solo en el servicio, con el motivo).
+        if service.kind == PlanningService.KIND_SERVICE and \
+                not service.removed_from_planning:
+            service.notice_status = PlanningService.Notice.FAILED
+            service.notice_error = error[:255]
+            service.save(update_fields=["notice_status", "notice_error",
+                                        "updated_at"])
+        return PlanningNotice(service=service, ok=False, error=error)
+    phone = worker_phone(service.person)
+    text = notice_text(service)
     notice = PlanningNotice.objects.create(
         company=service.company, service=service,
         person=service.person, day=service.day, phone=phone, text=text,

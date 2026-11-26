@@ -50,6 +50,7 @@ from new_ui.views_signatures_nui import signatures_context
 from new_ui.views_epis import epis_context
 from new_ui.views_accessories import accessories_context
 from new_ui.views_vacations import vacations_context
+from new_ui.views_traffic import traffic_context
 from new_ui.views_logbook import logbook_context
 from new_ui.views_machines import machines_context
 from new_ui.mixins import SuperuserRequiredMixin
@@ -435,6 +436,7 @@ def _section_context(company_user, section):
         **(logbook_context() if section == "cdg" else {}),
         **accessories_context(section),
         **vacations_context(section, company_user.company),
+        **traffic_context(section, company_user.company),
         "selections": selections,
         # S163: plantillas de columnas de cada vista (como las plantillas
         # de exportación antiguas de Personal).

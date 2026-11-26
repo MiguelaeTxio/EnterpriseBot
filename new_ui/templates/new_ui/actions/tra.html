@@ -1,0 +1,95 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/tra.html #}
+{% comment %}
+S165 (invasora H11). Acciones de Tráfico, un bloque por vista
+(data-nui-actions-for), repartidas por new_ui.js en «Con los
+seleccionados», «Con lo pulsado» y «Nuevo y ajustes». Vista:
+new_ui/views_traffic.py; lógica: crane_albaranes/traffic.py.
+{% endcomment %}
+<div class="d-none" data-nui-actions-for="servicios cargas">
+    <form data-nui-window="Cargar el planning" data-nui-window-icon="bi-file-earmark-excel" data-nui-action-form action="{% url 'new_ui:traffic_planning_upload' %}" enctype="multipart/form-data" class="mb-3" data-nui-for="new" data-nui-reset-after>
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-excel me-1"></i>Cargar el planning (Excel)</div>
+        <input type="file" name="planning" accept=".xlsx,.xlsm" class="form-control form-control-sm mb-1" aria-label="Excel del planning" required>
+        <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+            <label class="small text-muted mb-0" for="nui-tra-from">Días del</label>
+            <input type="date" id="nui-tra-from" name="date_from" value="{{ tra_today }}" class="form-control form-control-sm" style="width: 10rem;">
+            <label class="small text-muted mb-0" for="nui-tra-to">al</label>
+            <input type="date" id="nui-tra-to" name="date_to" value="{{ tra_until }}" class="form-control form-control-sm" style="width: 10rem;">
+            <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-upload me-1"></i>Cargar</button>
+        </div>
+        <p class="small text-muted mb-0">El Excel tal cual, una hoja por día (PERSONAL, VEHICULO, TONS, EMPRESA, LUGAR DE TRABAJO, HORA...). Solo se cargan los días elegidos; volver a cargarlo actualiza sin duplicar, y lo ya avisado que cambie de hora o de lugar queda marcado para reenviarlo.</p>
+    </form>
+</div>
+<div class="d-none" data-nui-actions-for="servicios">
+    <form data-nui-window="Enviar ubicación y hora" data-nui-window-icon="bi-whatsapp" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:traffic_send' %}" class="mb-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-whatsapp me-1"></i>Enviar a los gruistas de los servicios marcados</div>
+        <label class="form-check small mb-1" title="Hasta que la dirección ordene implantar el albarán digital, al gruista solo se le envía la ubicación de la obra y la hora."><input class="form-check-input" type="checkbox" checked disabled> <span class="form-check-label">Solo ubicación y hora (fijo)</span></label>
+        <label class="form-check small mb-1"><input class="form-check-input" type="checkbox" name="only_pending" value="1" checked> <span class="form-check-label">Solo los no avisados, los fallidos y los cambiados</span></label>
+        <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Enviar por WhatsApp la ubicación y la hora a los gruistas de los servicios marcados?"><i class="bi bi-send me-1"></i>Enviar</button>
+    </form>
+    <form data-nui-window="Enviar los de un día" data-nui-window-icon="bi-calendar-day" data-nui-action-form action="{% url 'new_ui:traffic_send' %}" data-nui-for="new" class="mb-2">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-calendar-day me-1"></i>Enviar los servicios de un día</div>
+        <label class="form-check small mb-1"><input class="form-check-input" type="checkbox" checked disabled> <span class="form-check-label">Solo ubicación y hora (fijo)</span></label>
+        <label class="form-check small mb-1"><input class="form-check-input" type="checkbox" name="only_pending" value="1" checked> <span class="form-check-label">Solo los no avisados, los fallidos y los cambiados</span></label>
+        <div class="d-flex flex-wrap align-items-center gap-1">
+            <input type="date" name="day" value="{{ tra_tomorrow }}" class="form-control form-control-sm" style="width: 10rem;" aria-label="Día" required>
+            <button type="submit" class="btn btn-sm btn-success" data-nui-confirm="¿Enviar por WhatsApp la ubicación y la hora a los gruistas de todos los servicios de ese día?"><i class="bi bi-send me-1"></i>Enviar el día</button>
+        </div>
+        <p class="small text-muted mt-1 mb-0">Un WhatsApp por servicio a su gruista. No se avisan las anotaciones (BAJA, vacaciones), lo quitado del planning ni los servicios sin gruista reconocido o sin móvil: se dice cuáles.</p>
+    </form>
+</div>
+<div class="d-none" data-nui-actions-for="nombres">
+    <form data-nui-window="Asignar trabajador" data-nui-window-icon="bi-person-check" data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:traffic_names' %}" class="mb-3">
+        {% csrf_token %}<input type="hidden" name="action" value="assign">
+        <div class="small fw-semibold mb-1"><i class="bi bi-person-check me-1"></i>Es este trabajador</div>
+        <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar al trabajador…" aria-label="Buscar trabajador" data-nui-filter-list>
+        <div class="border rounded px-2 py-1 mb-1 small" style="max-height: 10rem; overflow-y: auto;" data-nui-filter-target>
+            {% for pk, label in tra_people %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="person" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+        </div>
+        <button type="submit" class="btn btn-sm btn-success">Asignar</button>
+        <p class="small text-muted mt-1 mb-0">Vale para siempre: el planning y el cuadrante de vacaciones lo reconocerán así.</p>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:traffic_names' %}" class="d-flex flex-wrap gap-1">
+        {% csrf_token %}
+        <button type="submit" name="action" value="not_worker" class="btn btn-sm btn-outline-secondary">No es un trabajador</button>
+        <button type="submit" name="action" value="clear" class="btn btn-sm btn-outline-secondary">Dejar sin asignar</button>
+    </form>
+</div>
+<div class="d-none" data-nui-actions-for="obras">
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:traffic_worksite_sheet' 0 %}" data-nui-viewer-title="Nueva obra"><i class="bi bi-plus-circle me-1"></i>Nueva obra</button>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:traffic_sites_mass' %}" class="d-flex flex-wrap gap-1">
+        {% csrf_token %}<input type="hidden" name="what" value="obras">
+        <button type="submit" name="action" value="active" class="btn btn-sm btn-outline-success">Activar</button>
+        <button type="submit" name="action" value="inactive" class="btn btn-sm btn-outline-secondary">Finalizar</button>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-nui-countdown-ask><i class="bi bi-intersect me-1"></i>Unir</button>
+        <div class="alert alert-warning small py-2 px-2 mt-1 mb-0 w-100 d-none" data-nui-countdown-box>
+            Se van a unir estas obras en la que más servicios tiene (las demás se borran y su nombre queda para las siguientes cargas):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" name="action" value="merge" class="btn btn-sm btn-primary" data-nui-countdown-go disabled>Unir <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
+    <p class="small text-muted mt-2 mb-0">Pulsa una obra para modificarla y ponerle la ubicación y las coordenadas.</p>
+</div>
+<div class="d-none" data-nui-actions-for="clientes">
+    <button type="button" class="btn btn-sm btn-success mb-2" data-nui-viewer-url="{% url 'new_ui:traffic_client_sheet' 0 %}" data-nui-viewer-title="Nuevo cliente"><i class="bi bi-plus-circle me-1"></i>Nuevo cliente</button>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:traffic_sites_mass' %}" class="d-flex flex-wrap gap-1">
+        {% csrf_token %}<input type="hidden" name="what" value="clientes">
+        <button type="submit" name="action" value="active" class="btn btn-sm btn-outline-success">Activar</button>
+        <button type="submit" name="action" value="inactive" class="btn btn-sm btn-outline-secondary">Dar de baja</button>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-nui-countdown-ask><i class="bi bi-intersect me-1"></i>Unir</button>
+        <div class="alert alert-warning small py-2 px-2 mt-1 mb-0 w-100 d-none" data-nui-countdown-box>
+            Se van a unir estos clientes en el que más servicios tiene (sus obras pasan a él; los demás se borran y su nombre queda para las siguientes cargas):
+            <ul class="mb-1" data-nui-countdown-list></ul>
+            <div class="d-flex gap-1 mt-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-nui-countdown-cancel>Cancelar</button>
+                <button type="submit" name="action" value="merge" class="btn btn-sm btn-primary" data-nui-countdown-go disabled>Unir <span data-nui-countdown-left></span></button>
+            </div>
+        </div>
+    </form>
+    <p class="small text-muted mt-2 mb-0">Pulsa un cliente para modificarlo.</p>
+</div>

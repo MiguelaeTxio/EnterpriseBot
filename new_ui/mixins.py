@@ -51,6 +51,8 @@ PREFIX_KEYS = {
     "lecturas": "cdg", "accesorios": "cdg", "repostajes": "cdg",
     "libro-historial": "cdg", "revisiones-que-faltan": "cdg",
     "seguridad": "cdg", "equipos": "cdg",
+    # Tráfico (S165)
+    "trafico": "tra",
     # Documentos de cualquiera de las tres
     "documentos": ANY, "documento": ANY, "subir": ANY,
 }
@@ -64,7 +66,7 @@ PATH_KEYS = (
     ("nominas", "/entregas/", "doc.entregas_nominas"),
     ("pagos", "/origen/", "per"),
 )
-SECTION_KEYS = ("doc", "per", "cdg")
+SECTION_KEYS = ("doc", "per", "cdg", "tra")
 
 
 def required_key(request):

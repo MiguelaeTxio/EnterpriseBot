@@ -1,0 +1,29 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_traffic_worksite.html -- S165: una obra en la ventana (Tráfico › Obras), nueva (0) o al pulsarla. Vista: new_ui/views_traffic.py (WorksiteSheetView). #}
+<div class="small">
+    <form data-nui-action-form action="{% if site %}{% url 'new_ui:traffic_worksite_sheet' site.pk %}{% else %}{% url 'new_ui:traffic_worksite_sheet' 0 %}{% endif %}">
+        {% csrf_token %}
+        {% if site %}<div class="mb-2"><span class="badge text-bg-light border">{{ site.code }}</span> {% if site.is_active %}<span class="badge text-bg-success">Activa</span>{% else %}<span class="badge text-bg-secondary">Finalizada</span>{% endif %}</div>{% endif %}
+        <div class="row g-2 mb-2">
+            <div class="col-md-7"><label class="form-label mb-0" for="nui-ws-name">Obra *</label><input id="nui-ws-name" name="name" value="{{ site.name|default:'' }}" maxlength="200" class="form-control form-control-sm" required></div>
+            <div class="col-md-5"><label class="form-label mb-0" for="nui-ws-client">Cliente</label>
+                <select id="nui-ws-client" name="client" class="form-select form-select-sm">
+                    <option value="">—</option>
+                    {% for pk, name in clients %}<option value="{{ pk }}"{% if site.client_id == pk %} selected{% endif %}>{{ name }}</option>{% endfor %}
+                </select></div>
+            <div class="col-md-12"><label class="form-label mb-0" for="nui-ws-address">Ubicación (dirección)</label><input id="nui-ws-address" name="address" value="{{ site.address|default:'' }}" maxlength="300" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-ws-locality">Localidad</label><input id="nui-ws-locality" name="locality" value="{{ site.locality|default:'' }}" maxlength="120" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-ws-province">Provincia</label><input id="nui-ws-province" name="province" value="{{ site.province|default:'' }}" maxlength="80" class="form-control form-control-sm"></div>
+            <div class="col-md-4"><label class="form-label mb-0" for="nui-ws-lat">Latitud</label><input id="nui-ws-lat" name="latitude" value="{{ site.latitude|default_if_none:''|stringformat:'s' }}" class="form-control form-control-sm" inputmode="decimal"></div>
+            <div class="col-md-4"><label class="form-label mb-0" for="nui-ws-lng">Longitud</label><input id="nui-ws-lng" name="longitude" value="{{ site.longitude|default_if_none:''|stringformat:'s' }}" class="form-control form-control-sm" inputmode="decimal"></div>
+            <div class="col-md-4 d-flex align-items-end"><label class="form-check mb-1"><input class="form-check-input" type="checkbox" name="geocode" value="1" checked> <span class="form-check-label">Sin coordenadas, buscarlas por la ubicación</span></label></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-ws-cname">Persona de contacto</label><input id="nui-ws-cname" name="contact_name" value="{{ site.contact_name|default:'' }}" maxlength="120" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-ws-cphone">Teléfono de contacto</label><input id="nui-ws-cphone" name="contact_phone" value="{{ site.contact_phone|default:'' }}" maxlength="40" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-ws-project">Nº de proyecto</label><input id="nui-ws-project" name="project_number" value="{{ site.project_number|default:'' }}" maxlength="60" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-ws-order">Nº de pedido</label><input id="nui-ws-order" name="order_number" value="{{ site.order_number|default:'' }}" maxlength="60" class="form-control form-control-sm"></div>
+            <div class="col-md-12"><label class="form-label mb-0" for="nui-ws-notes">Notas</label><textarea id="nui-ws-notes" name="notes" rows="2" class="form-control form-control-sm">{{ site.notes|default:'' }}</textarea></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>{% if site %}Guardar{% else %}Crear obra{% endif %}</button>
+        {% if map_url %}<a href="{{ map_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary ms-1"><i class="bi bi-geo-alt me-1"></i>Ver en el mapa</a>{% endif %}
+    </form>
+    <p class="text-muted mt-2 mb-0">El aviso al gruista lleva el enlace del mapa solo si la obra tiene coordenadas; si no, la ubicación escrita.</p>
+</div>

@@ -21,7 +21,7 @@ from new_ui import (
     views_notices, views_partes, views_pay, views_photos, views_safety,
     views_signatures_nui, views_cae, views_insurance_nui,
     views_logbook, views_refuels, views_requirements, views_schedules,
-    views_service,
+    views_service, views_traffic,
 )
 
 app_name = "new_ui"
@@ -567,4 +567,22 @@ urlpatterns = [
          name="perm_tree_export"),
     path("permisos/grupos/usuarios/", views.PermGroupMembersView.as_view(),
          name="perm_members"),
+    # S165: Tráfico (planning de grúas, envíos, nombres, obras, clientes).
+    path("trafico/planning/cargar/",
+         views_traffic.PlanningUploadView.as_view(),
+         name="traffic_planning_upload"),
+    path("trafico/enviar/", views_traffic.TrafficSendView.as_view(),
+         name="traffic_send"),
+    path("trafico/nombres/", views_traffic.NamesAssignView.as_view(),
+         name="traffic_names"),
+    path("trafico/cargas/<int:pk>/", views_traffic.ImportSheetView.as_view(),
+         name="traffic_import_sheet"),
+    path("trafico/obras/<int:pk>/",
+         views_traffic.WorksiteSheetView.as_view(),
+         name="traffic_worksite_sheet"),
+    path("trafico/clientes/<int:pk>/",
+         views_traffic.ClientSheetView.as_view(),
+         name="traffic_client_sheet"),
+    path("trafico/obras-clientes/", views_traffic.SitesMassView.as_view(),
+         name="traffic_sites_mass"),
 ]

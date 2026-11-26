@@ -545,3 +545,57 @@ class PlanningNotice(models.Model):
         """
         return self.STATUS_LABELS.get(self.whatsapp_status,
                                       self.whatsapp_status)
+
+
+class PlanningAlias(models.Model):
+    """
+    Another way the planning writes a client or a worksite (S165).
+
+    ---
+
+    Otra forma en que el planning escribe un cliente («VOTORAMTIN») o una
+    obra. Se guarda al unir duplicados en Tráfico (Clientes u Obras):
+    así la siguiente carga del planning no vuelve a dar de alta la
+    errata.
+    """
+
+    KIND_CLIENT = "CLIENT"
+    KIND_WORKSITE = "WORKSITE"
+    KIND_CHOICES = [
+        (KIND_CLIENT, "Cliente"),
+        (KIND_WORKSITE, "Obra"),
+    ]
+
+    company = models.ForeignKey(
+        "ivr_config.Company", on_delete=models.CASCADE,
+        related_name="planning_aliases", verbose_name="Empresa",
+    )
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES,
+                            verbose_name="Tipo")
+    key = models.CharField(
+        max_length=320, verbose_name="Clave",
+        help_text="Cliente: su nombre sin tildes ni signos. Obra: el "
+                  "cliente y el lugar («12|nave antequera»).")
+    client = models.ForeignKey(
+        "worksites.Client", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="planning_aliases",
+        verbose_name="Cliente",
+    )
+    worksite = models.ForeignKey(
+        "worksites.Worksite", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="planning_aliases",
+        verbose_name="Obra",
+    )
+    created_at = models.DateTimeField(auto_now_add=True,
+                                      verbose_name="Creado")
+
+    class Meta:
+        verbose_name = "Alias del planning"
+        verbose_name_plural = "Alias del planning"
+        constraints = [
+            models.UniqueConstraint(fields=["company", "kind", "key"],
+                                    name="planningalias_unique_key"),
+        ]
+
+    def __str__(self):
+        return self.key

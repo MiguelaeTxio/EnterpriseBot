@@ -4049,6 +4049,10 @@ def list_def(section, tab):
         _CACHE["cdg"] = _cdg_lists()
         _CACHE["per"] = _per_lists()
         _CACHE["doc"] = _doc_lists()
+        # S165: Tráfico (planning de grúas, envíos, obras y clientes).
+        from new_ui.traffic_lists import traffic_lists
+
+        _CACHE["tra"] = traffic_lists()
         # S163 (23/11): se configuran en Empresa (catalog.MOVED_VIEWS).
         for key in ("lista_horarios", "tipos_fichaje", "catalogo_epis"):
             _CACHE["doc"][key] = _CACHE["per"].pop(key)

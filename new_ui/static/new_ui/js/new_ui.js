@@ -1679,8 +1679,9 @@
             loadEntityActions();
         }
         function setScope(value, target) {
-            if (section === "doc") {
-                // En Documentos, la persona se abre en Personal.
+            if (section === "doc" || section === "tra") {
+                // En Documentos y en Tráfico (S165), la persona se abre en
+                // Personal.
                 const values = {"scope_per": value};
                 tabs["per:listado"] = "ficha";
                 values.tabs = tabs;
@@ -1811,6 +1812,17 @@
             post(decodeURIComponent(parts[1]), body)
                 .then(function (data) { result(data.message || "Hecho.", false); load(); loadEntityActions(); })
                 .catch(function (err) { result(err.message, true); });
+        });
+
+        // S165: «Abrir» desde el menú de la fila (#nui-open:<url>:<título>),
+        // lo mismo que pulsar la fila (filas sin persona ni máquina: obras,
+        // clientes, cargas...).
+        document.addEventListener("click", function (ev) {
+            const link = ev.target.closest('a[href^="#nui-open:"]');
+            if (!link) return;
+            ev.preventDefault();
+            const parts = link.getAttribute("href").split(":");
+            if (window.nuiOpenViewer) window.nuiOpenViewer(decodeURIComponent(parts[1]), null, decodeURIComponent(parts[2] || ""));
         });
 
         // Pestaña "Ficha" (S163): la ficha de la persona o máquina vista

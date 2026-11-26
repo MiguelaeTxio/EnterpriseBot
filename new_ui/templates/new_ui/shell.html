@@ -179,7 +179,7 @@ body.nui-dragging { user-select: none; }
             </div>
             {% if section == "permisos" %}
             {% include "new_ui/permisos/_groups_panel.html" %}
-            {% elif section == "doc" %}
+            {% elif section == "doc" or section == "tra" %}
             <div class="nui-body"><p class="text-muted small mb-0">Los grupos de personas se aplican aquí con el filtro «Grupo» de «Buscar y filtrar»: cada listado se queda con las filas de las personas de ese grupo.</p></div>
             {% else %}
             <div class="nui-body d-flex flex-column p-0"><div class="d-flex flex-column flex-grow-1 position-relative">
@@ -215,7 +215,7 @@ body.nui-dragging { user-select: none; }
                         <div id="nui-row-actions" class="mb-2"></div>
                         {# S163 (24/11): primero las acciones de la pestaña; lo común del trabajador o la máquina, detrás. #}
                         <div data-nui-sec-body></div>
-                        {% if section != "doc" %}<div id="nui-entity-actions" class="mt-2"></div>{% endif %}
+                        {% if section != "doc" and section != "tra" %}<div id="nui-entity-actions" class="mt-2"></div>{% endif %}
                     </section>
                     <section class="mb-3" data-nui-sec="new">
                         <h6 class="nui-sec-title fw-semibold border-bottom pb-1 mb-2">Nuevo y ajustes</h6>

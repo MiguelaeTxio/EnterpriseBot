@@ -1,0 +1,21 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_traffic_client.html -- S165: un cliente en la ventana (Tráfico › Clientes), nuevo (0) o al pulsarlo. Vista: new_ui/views_traffic.py (ClientSheetView). #}
+<div class="small">
+    <form data-nui-action-form action="{% if client %}{% url 'new_ui:traffic_client_sheet' client.pk %}{% else %}{% url 'new_ui:traffic_client_sheet' 0 %}{% endif %}">
+        {% csrf_token %}
+        <div class="row g-2 mb-2">
+            <div class="col-md-8"><label class="form-label mb-0" for="nui-cl-name">Cliente *</label><input id="nui-cl-name" name="name" value="{{ client.name|default:'' }}" maxlength="200" class="form-control form-control-sm" required></div>
+            <div class="col-md-4"><label class="form-label mb-0" for="nui-cl-nif">N.I.F.</label><input id="nui-cl-nif" name="tax_id" value="{{ client.tax_id|default:'' }}" maxlength="20" class="form-control form-control-sm"></div>
+            <div class="col-md-12"><label class="form-label mb-0" for="nui-cl-address">Domicilio</label><input id="nui-cl-address" name="address" value="{{ client.address|default:'' }}" maxlength="300" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-cl-locality">Localidad</label><input id="nui-cl-locality" name="locality" value="{{ client.locality|default:'' }}" maxlength="120" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-cl-province">Provincia</label><input id="nui-cl-province" name="province" value="{{ client.province|default:'' }}" maxlength="80" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-cl-phone">Teléfono</label><input id="nui-cl-phone" name="phone" value="{{ client.phone|default:'' }}" maxlength="40" class="form-control form-control-sm"></div>
+            <div class="col-md-6"><label class="form-label mb-0" for="nui-cl-email">Correo para los albaranes</label><input id="nui-cl-email" name="email" value="{{ client.email|default:'' }}" maxlength="254" class="form-control form-control-sm"></div>
+            <div class="col-md-12"><label class="form-label mb-0" for="nui-cl-notes">Notas</label><textarea id="nui-cl-notes" name="notes" rows="2" class="form-control form-control-sm">{{ client.notes|default:'' }}</textarea></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>{% if client %}Guardar{% else %}Crear cliente{% endif %}</button>
+    </form>
+    {% if sites %}
+    <h6 class="fw-semibold mt-3">Sus obras</h6>
+    <ul class="mb-0">{% for site in sites %}<li>{{ site.code }} {{ site.name }}{% if not site.is_active %} <span class="text-muted">(finalizada)</span>{% endif %}</li>{% endfor %}</ul>
+    {% endif %}
+</div>
