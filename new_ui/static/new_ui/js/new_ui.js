@@ -2301,6 +2301,15 @@
                 })
                 .catch(function () { put(btn.dataset.reason); });
         });
+        // S163 (26/11): «quitar» los filtros propios desde la lista.
+        lists.addEventListener("click", function (ev) {
+            const clear = ev.target.closest("[data-nui-clear-own-filters]");
+            if (!clear) return;
+            ev.preventDefault();
+            const prefix = "x_" + tab() + "_";
+            document.querySelectorAll('select[form="nui-filters"][name^="' + prefix + '"], #nui-filters [name^="' + prefix + '"]').forEach(function (el) { el.value = ""; });
+            load();
+        });
         lists.addEventListener("click", function (ev) {
             const view = ev.target.closest("[data-nui-card-view]");
             const day = ev.target.closest("[data-nui-card-day]");

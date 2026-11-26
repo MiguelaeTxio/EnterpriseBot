@@ -8,6 +8,7 @@ salida: sin botones; las acciones de cada fila van ocultas y salen en
 Acciones › Esta fila al marcarla, y en su botón derecho.
 {% endcomment %}
 <div class="nui-list-state d-none"{% if definition.entity %} data-scopeable="1"{% if not definition.entity_path and not definition.entity_filter %} data-entity-rows="1"{% endif %}{% endif %} data-count="{{ total }}" data-sorted="{% if sort_active %}1{% endif %}" data-note="{{ definition.note }}" data-period="{{ period_summary }}" data-nui-filters="{% if definition.entity %}entity{% endif %}{% if definition.date_field %} period{% endif %}"></div>
+{% if own_filters %}<div class="small px-2 pt-1 text-muted"><i class="bi bi-funnel-fill me-1"></i>Filtrado por {% for label, value in own_filters %}<strong>{{ label }}: {{ value }}</strong>{% if not forloop.last %} · {% endif %}{% endfor %} <a href="#" class="ms-1" data-nui-clear-own-filters>quitar</a></div>{% endif %}
 {% if limited %}<div class="alert alert-warning small py-1 px-2 m-2">Se muestran {{ shown }} de {{ total }}: afina los filtros para ver el resto (exportar saca todas).</div>{% endif %}
 <table class="table table-sm table-hover align-middle small mb-0">
     <thead>

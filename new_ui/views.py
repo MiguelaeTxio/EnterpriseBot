@@ -1011,6 +1011,19 @@ class NewUiListView(SuperuserRequiredMixin, View):
             columns = [c for c in columns if not c.entity] or columns
         qs, post = apply_extras(definition, company_user.company, qs,
                                 request.GET, tab)
+        # S163 (26/11): los filtros propios puestos, a la vista encima
+        # de la lista (antes, un filtro guardado vaciaba la lista sin
+        # que se viera por qué).
+        from new_ui.lists import extra_param, extras_for
+
+        own_filters = []
+        for extra in extras_for(definition, company_user.company):
+            value = request.GET.get(extra_param(tab, extra), "")
+            if value:
+                options = extra.options(company_user.company) if callable(
+                    extra.options) else extra.options
+                own_filters.append((extra.label, dict(
+                    (str(k), v) for k, v in options).get(value, value)))
         qs, current = sorted_qs(definition, qs, request.GET.get("sort", ""))
         # Sin orden elegido por el usuario: los vigentes primero (como la
         # ficha de siempre), con la vigencia real, no solo la marcada en
@@ -1028,6 +1041,7 @@ class NewUiListView(SuperuserRequiredMixin, View):
         from new_ui.filters import period_summary
 
         return render(request, "new_ui/_list.html", {
+            "own_filters": own_filters,
             "period_summary": period_summary(*period_range(request.GET)),
             "totals_row": totals_row,
             "section": section,
@@ -1081,6 +1095,19 @@ class NewUiExportView(SuperuserRequiredMixin, View):
             qs = qs.filter(pk__in=selected)
         qs, post = apply_extras(definition, company_user.company, qs,
                                 request.GET, tab)
+        # S163 (26/11): los filtros propios puestos, a la vista encima
+        # de la lista (antes, un filtro guardado vaciaba la lista sin
+        # que se viera por qué).
+        from new_ui.lists import extra_param, extras_for
+
+        own_filters = []
+        for extra in extras_for(definition, company_user.company):
+            value = request.GET.get(extra_param(tab, extra), "")
+            if value:
+                options = extra.options(company_user.company) if callable(
+                    extra.options) else extra.options
+                own_filters.append((extra.label, dict(
+                    (str(k), v) for k, v in options).get(value, value)))
         qs, _current = sorted_qs(definition, qs, request.GET.get("sort", ""))
         objects, _total = materialize(definition, qs, post, 20000)
         rows = rows_for(definition, objects, columns)
