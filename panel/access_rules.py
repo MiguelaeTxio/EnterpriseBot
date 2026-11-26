@@ -457,6 +457,15 @@ def menu_areas(company_user):
     from django.template.loader import render_to_string
     from django.urls import Resolver404, resolve, reverse
 
+    filtering = bool(ENFORCE or _PREVIEW) and not company_user.user.is_superuser
+    memo_key = (
+        company_user.role, company_user.user.is_superuser,
+        bool(getattr(company_user, "can_view_budget_breakdown", False)),
+        filtering,
+        tuple(sorted(area_levels(company_user).items())) if filtering
+        else ())
+    if memo_key in _MENU_MEMO:
+        return _MENU_MEMO[memo_key]
     try:
         html = render_to_string("panel/_nav_items.html", {
             "company_user": company_user,
@@ -478,6 +487,9 @@ def menu_areas(company_user):
         area = _area_of(route)
         if area is not None:
             keys.add(area[0])
+    if len(_MENU_MEMO) > 500:
+        _MENU_MEMO.clear()
+    _MENU_MEMO[memo_key] = keys
     return keys
 
 
@@ -554,6 +566,9 @@ def area_full(company_user, slug):
 
 
 _MENU_ITEM = None
+# El menú solo depende del puesto y de los permisos por área: se pinta
+# una vez por combinación (el árbol pregunta por cada persona).
+_MENU_MEMO = {}
 
 
 def filter_menu_html(html, company_user):
