@@ -231,6 +231,28 @@
     // ---- Periodo rápido ----
     const form = document.getElementById("nui-filters");
     let submitFilters = function () {};
+    // S163 (26/11, Miguel Ángel: «pulso periodo actual y sigue año»): los
+    // dos botones dicen a qué se refieren («Este año / Año anterior»...),
+    // y sin unidad elegida toman el periodo de pago.
+    const WHICH_LABELS = {
+        dia: ["Hoy", "Ayer"], semana: ["Esta semana", "Semana anterior"],
+        mes: ["Este mes", "Mes anterior"],
+        pago: ["Este periodo de pago", "Periodo de pago anterior"],
+        anio: ["Este año", "Año anterior"], ano: ["Este año", "Año anterior"],
+    };
+    function paintPeriod() {
+        if (!form) return;
+        const unit = (form.querySelector('[name="periodo"]') || {}).value || "";
+        const cual = (form.querySelector('[name="cual"]') || {}).value || "actual";
+        const typed = !!((form.querySelector('[name="desde"]') || {}).value || (form.querySelector('[name="hasta"]') || {}).value);
+        form.querySelectorAll("[data-period-unit]").forEach(b => b.classList.toggle("active", !typed && b.dataset.periodUnit === unit));
+        const labels = WHICH_LABELS[unit] || ["Periodo actual", "Periodo anterior"];
+        form.querySelectorAll("[data-period-which]").forEach(function (b) {
+            b.textContent = labels[b.dataset.periodWhich === "anterior" ? 1 : 0];
+            b.classList.toggle("active", !typed && !!unit && b.dataset.periodWhich === cual);
+        });
+    }
+    window.nuiPaintPeriod = paintPeriod;
     if (form) {
         form.addEventListener("click", function (ev) {
             const unit = ev.target.closest("[data-period-unit]");
@@ -240,17 +262,20 @@
             const input = form.querySelector('[name="periodo"]');
             if (unit) {
                 input.value = input.value === unit.dataset.periodUnit ? "" : unit.dataset.periodUnit;
-                form.querySelectorAll("[data-period-unit]").forEach(b => b.classList.toggle("active", b.dataset.periodUnit === input.value));
+                form.querySelector('[name="cual"]').value = "actual";
             } else {
+                if (!input.value) input.value = "pago";
                 form.querySelector('[name="cual"]').value = which.dataset.periodWhich;
             }
-            // S163 (24/11): «actual / anterior» solo marcado con una unidad.
-            const cual = form.querySelector('[name="cual"]').value || "actual";
-            form.querySelectorAll("[data-period-which]").forEach(b => b.classList.toggle("active", !!input.value && b.dataset.periodWhich === cual));
             form.querySelector('[name="desde"]').value = "";
             form.querySelector('[name="hasta"]').value = "";
+            paintPeriod();
             submitFilters();
         });
+        form.addEventListener("change", function (ev) {
+            if (ev.target.name === "desde" || ev.target.name === "hasta") paintPeriod();
+        });
+        paintPeriod();
     }
 
     // ---- Visor de seleccionados (común) ----
@@ -1437,9 +1462,21 @@
         // La que pintó el servidor: la pestaña que estaba abierta.
         let shownView = tabs[section + ":listado"] || tab();
         let typing = null;
+        // S163 (26/11): en Horas y pagos, sin periodo elegido, el de pago
+        // en curso, y marcado (antes se aplicaba sin verse).
+        const PAY_VIEWS = ["pagos_trab", "pagos_partes", "pagos", "liquidaciones"];
+        function defaultPayPeriod(t) {
+            if (PAY_VIEWS.indexOf(t) === -1) return;
+            const unit = form.elements.periodo, from = form.elements.desde, to = form.elements.hasta;
+            if (!unit || unit.value || (from && from.value) || (to && to.value)) return;
+            unit.value = "pago";
+            if (form.elements.cual) form.elements.cual.value = "actual";
+            if (window.nuiPaintPeriod) window.nuiPaintPeriod();
+        }
         function load() {
             const t = tab();
             if (t !== shownView) switchView(t);
+            defaultPayPeriod(t);
             if (shownView) viewFilters[shownView] = readView();
             if (isEntityTab(t)) { loadCard(); return; }
             const box = pane(t);
@@ -1480,10 +1517,7 @@
                 el.value = v;
                 if (el.tagName === "SELECT" && el.selectedIndex < 0) el.selectedIndex = 0;
             });
-            const unit = form.elements.periodo ? form.elements.periodo.value : "";
-            const cual = form.elements.cual ? form.elements.cual.value : "actual";
-            form.querySelectorAll("[data-period-unit]").forEach(b => b.classList.toggle("active", !!unit && b.dataset.periodUnit === unit));
-            form.querySelectorAll("[data-period-which]").forEach(b => b.classList.toggle("active", !!unit && b.dataset.periodWhich === cual));
+            if (window.nuiPaintPeriod) window.nuiPaintPeriod();
         }
         function switchView(t) {
             if (t === shownView) return;
@@ -2300,6 +2334,9 @@
                     // Las fichas: solo los filtros que usan (el periodo en
                     // Cálculo y Jornadas); el resto, ninguno.
                     if (window.nuiShowCommonFilters) window.nuiShowCommonFilters(box, []);
+                    const marker = box.querySelector("[data-nui-filters][data-period]");
+                    const summary = document.getElementById("nui-period-summary");
+                    if (marker && summary) summary.textContent = marker.dataset.period;
                 })
                 .catch(function () { if (ticket === loading) box.innerHTML = '<p class="text-danger small p-3 mb-0">No se ha podido cargar la ficha.</p>'; });
         }

@@ -3279,14 +3279,31 @@ def _pay_partes_def():
 
     from work_order_processor.models import WorkOrder, WorkOrderEntry
 
+    from django.db.models import Subquery
+
+    from hr_calendar.models import PayLine
+
     def queryset(company):
         diet = WorkOrderEntry.objects.filter(work_order=OuterRef("pk"),
                                              has_diet=True)
+        # S163 (26/11, Miguel Ángel: «ver los partes que se le han pagado
+        # a Pablo»): liquidado = su día cae en un periodo ya liquidado de
+        # ese trabajador.
+        first_day = WorkOrderEntry.objects.filter(
+            work_order=OuterRef("pk")).order_by("work_date").values(
+            "work_date")[:1]
+        paid = PayLine.objects.filter(
+            company_user=OuterRef("uploaded_by"),
+            period__date_from__lte=OuterRef("nui_dia"),
+            period__date_to__gte=OuterRef("nui_dia"))
         return WorkOrder.objects.filter(
             company=company, uploaded_by__isnull=False,
             source__in=[WorkOrder.Source.DIGITAL,
                         WorkOrder.Source.GENERATED],
         ).annotate(
+            nui_dia=Subquery(first_day),
+        ).annotate(
+            nui_liquidado=Exists(paid),
             nui_fecha=Min("entries__work_date"),
             nui_bloques=Count("entries__lines"),
             nui_horas=Sum("entries__lines__delta_hours"),
@@ -3329,6 +3346,8 @@ def _pay_partes_def():
                 "nui_dieta"),
             Col("revisado", "Revisado", lambda r: "Sí" if r.reviewed
                 else "Pendiente", "reviewed"),
+            Col("liquidado", "Liquidado", lambda r: "Sí" if r.nui_liquidado
+                else "", "nui_liquidado"),
             Col("revisado_por", "Revisado por", lambda r: who(r.reviewed_by),
                 "reviewed_by__user__first_name"),
             Col("revisado_el", "Revisado el", lambda r: fmt_datetime(
@@ -3348,11 +3367,15 @@ def _pay_partes_def():
         row_url=lambda r: reverse("new_ui:parte_sheet", args=[r.pk]),
         totals=_pay_partes_totals,
         default_cols=["persona", "fecha", "entrada", "salida", "bloques",
-                      "horas", "extra", "festivas", "dieta", "revisado"],
+                      "horas", "extra", "festivas", "dieta", "revisado",
+                      "liquidado"],
         extras=[
             Extra("revisado", "Revisión", lambda company: [
                 ("no", "Pendientes de revisar"), ("si", "Revisados")],
                 apply=lambda qs, v: qs.filter(reviewed=(v == "si"))),
+            Extra("liquidado", "Liquidación", lambda company: [
+                ("si", "Liquidados (pagados)"), ("no", "Sin liquidar")],
+                apply=lambda qs, v: qs.filter(nui_liquidado=(v == "si"))),
             Extra("dieta", "Dieta", lambda company: [
                 ("si", "Con dieta"), ("no", "Sin dieta")],
                 apply=lambda qs, v: qs.filter(nui_dieta=(v == "si"))),
