@@ -3518,6 +3518,33 @@ def list_def(section, tab):
 _NAME_PARTS = ("given_name", "first_surname", "second_surname")
 
 
+_MACHINE_FIELDS = ("code", "brand_model", "plate", "type_name",
+                   "chassis_number", "company_name", "family",
+                   "crane_serial_number")
+
+
+def _machine_prefix(definition, qs):
+    """
+    Path to the machine of a machines list ("" or "machine__"...), or None.
+
+    ---
+
+    El camino hasta la máquina en una lista de centros de gasto, si se
+    puede buscar por sus campos; None si no es de máquinas.
+    """
+    from django.core.exceptions import FieldError
+
+    if definition.entity != "machine":
+        return None
+    prefix = (definition.entity_path + "__") if definition.entity_path \
+        else ""
+    try:
+        qs.filter(**{prefix + "plate__icontains": ""}).query.__str__()
+    except (FieldError, ValueError):
+        return None
+    return prefix
+
+
 # Lo que se mira además del nombre cuando se busca a una persona.
 _PERSON_EXTRA = ("dni", "nickname", "email")
 
@@ -3603,6 +3630,16 @@ def filtered(definition, company, params, scope_pk=None):
         # de los campos, y con el nombre de una persona siempre los dos
         # apellidos.
         fields = _search_fields(definition.search)
+        # S163 (26/11): buscando una máquina, como en Centros de gasto de
+        # la antigua (y algo más): código, marca y modelo, matrícula,
+        # tipo, bastidor, empresa, familia y nº de serie de la grúa.
+        machine_prefix = _machine_prefix(definition, qs)
+        if machine_prefix is not None:
+            for name in _MACHINE_FIELDS:
+                if machine_prefix + name not in fields:
+                    fields.append(machine_prefix + name)
+            qs = qs.annotate(nui_matricula=_digits_expr(
+                machine_prefix + "plate"))
         # Como en Personal de la antigua: los teléfonos se comparan solo
         # por sus cifras («600 12 34 56» = «600123456»).
         phones = []
@@ -3622,6 +3659,11 @@ def filtered(definition, company, params, scope_pk=None):
             if len(digits) >= 3:
                 for alias in phones:
                     query |= Q(**{alias + "__contains": digits})
+            if machine_prefix is not None:
+                # «1234-ABC», «1234 ABC» o «1234ABC»: la misma matrícula.
+                plate = "".join(ch for ch in word if ch.isalnum())
+                if plate:
+                    query |= Q(nui_matricula__icontains=plate)
             qs = qs.filter(query)
     if definition.date_field:
         start, end = period_range(params)
