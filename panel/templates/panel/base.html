@@ -1,5 +1,6 @@
 <!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/base.html -->
 {% load static %}
+{% load panel_access %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -42,7 +43,7 @@
         </div>
 
         <div class="sidebar-nav-scroll">
-            {% include "panel/_nav_items.html" %}
+            {% panel_nav %}
         </div>
 
         <!-- Logout link at the bottom of the fixed sidebar -->
@@ -83,7 +84,7 @@
             <!-- Navigation links — same structure as fixed sidebar -->
             <!-- Enlaces de navegación — misma estructura que el sidebar fijo -->
             <div class="sidebar-nav-scroll">
-                {% include "panel/_nav_items.html" %}
+                {% panel_nav %}
             </div>
 
             <!-- Logout link at the bottom of the offcanvas sidebar -->

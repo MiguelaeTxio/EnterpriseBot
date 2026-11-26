@@ -170,6 +170,11 @@ def _company_user_for_role_check(request):
     company_user = getattr(request.user, "company_user", None)
     if company_user is None or not company_user.is_active:
         return None
+    # S163 (26/11): con la puerta por áreas encendida, quien tiene «Ver
+    # y modificar» en el área de esta pantalla pasa la regla de rol
+    # (PanelAreaGateMiddleware deja el nivel en la petición).
+    if getattr(request, "panel_area_level", None) == "EDIT":
+        return None
     return company_user
 
 

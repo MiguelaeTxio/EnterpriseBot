@@ -200,6 +200,9 @@ MIDDLEWARE = [
     # "Volver" (panel/navigation_history.py).
     'panel.navigation_history.NavigationHistoryMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    # S163 (26/11): puerta por áreas del panel (panel/access_rules.py,
+    # interruptor ENFORCE).
+    'panel.middleware.PanelAreaGateMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -227,6 +230,8 @@ TEMPLATES = [
                 # sidebar, sustituye sessionStorage. Ver
                 # panel/context_processors.sidebar_navigation_context.
                 'panel.context_processors.sidebar_navigation_context',
+                # S163 (26/11): ¿puerta por áreas encendida?
+                'panel.access_rules.panel_gate_context',
                 # H37 (S132): URL de "Volver" (panel_back_url).
                 'panel.navigation_history.back_url_context',
                 # H31 (S94): a dónde lleva el enlace "Documentación"

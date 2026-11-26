@@ -126,6 +126,16 @@ new_ui/views.py.
                     </div>
                     <div class="ms-3 text-muted">Verde: entra a todas sus pantallas; azul: a una parte (cuántas de cuántas); <i class="bi bi-list"></i>: lo tiene en el menú; *: parte depende de la persona.</div>
                 </details>
+                {% if not role.enforce %}
+                <details data-nui-tree-part>
+                    <summary class="text-muted">Panel con el reparto nuevo (aún sin activar) · {{ role.preview_access }} área{{ role.preview_access|pluralize }}{% if role.preview_mismatch %} · <span class="text-danger">{{ role.preview_mismatch|length }} en el menú sin acceso</span>{% endif %}</summary>
+                    {% if role.moving_in or role.moving_out %}<div class="ms-3 small">{% if role.moving_in %}Pasan a este rol: {{ role.moving_in|join:", " }}. {% endif %}{% if role.moving_out %}Dejan este rol: {{ role.moving_out|join:", " }}.{% endif %}</div>{% endif %}
+                    <div class="ms-3 d-flex flex-wrap gap-1 my-1">
+                        {% for area in role.preview %}<span class="badge {% if area.menu_mismatch %}text-bg-danger{% elif area.rank == 2 %}text-bg-success{% elif area.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal{% if area.allowed and not area.in_menu %} opacity-75{% endif %}"{% if not area.allowed and not area.menu_mismatch %} data-nui-tree-none{% endif %} title="Entra a {{ area.allowed }} de {{ area.total }} pantallas · permiso del área: {{ area.level }} · {% if area.in_menu %}en su menú{% else %}sin enlace en su menú{% endif %}">{% if area.in_menu %}<i class="bi bi-list me-1"></i>{% endif %}{{ area.label }}{% if area.rank == 1 %} · {{ area.allowed }}/{{ area.total }}{% endif %}</span>{% endfor %}
+                    </div>
+                    <div class="ms-3 text-muted">Rojo: lo tiene en el menú pero no podría entrar (se arregla antes de activar).</div>
+                </details>
+                {% endif %}
                 <details data-nui-tree-part>
                     <summary class="text-muted">Nueva interfaz · {{ role.access }} vista{{ role.access|pluralize }} con acceso</summary>
                 {% for section in role.views %}

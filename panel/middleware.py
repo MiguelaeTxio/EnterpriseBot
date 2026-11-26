@@ -93,3 +93,54 @@ class HtmxLoginRedirectMiddleware:
             return htmx_response
         return response
 
+
+
+class PanelAreaGateMiddleware:
+    """
+    S163 (26/11): the panel area gate.
+
+    ---
+
+    Puerta por áreas del panel actual (S163, Miguel Ángel: «nadie entra
+    a nada que no tenga dado»). Con panel.access_rules.ENFORCE
+    encendido: quien no tiene permiso en el área de la pantalla
+    («panel.<área>» en Permisos) no entra; con «Ver» entra y siguen
+    mandando las reglas de cada pantalla; con «Ver y modificar» pasa
+    también las reglas de rol. El superusuario pasa siempre. Apagado,
+    no hace nada.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+
+        from panel import access_rules
+
+        if not access_rules.ENFORCE or not request.path.startswith(
+                "/panel/"):
+            return None
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated or user.is_superuser:
+            return None
+        company_user = getattr(user, "company_user", None)
+        match = getattr(request, "resolver_match", None)
+        if company_user is None or not company_user.is_active or not match:
+            return None
+        slug, level = access_rules.area_level_of_route(
+            company_user, match.route)
+        if slug is None:
+            return None
+        request.panel_area_level = level
+        if level != "NONE":
+            return None
+        if request.method != "GET" or request.headers.get("HX-Request"):
+            return HttpResponseForbidden(
+                "Sin acceso a esta parte del panel.")
+        messages.error(request, "No tienes acceso a esa parte del panel.")
+        return redirect("/panel/")

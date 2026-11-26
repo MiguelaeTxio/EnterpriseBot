@@ -16,6 +16,14 @@ funciones `can_...`) y las pestañas de Documentación
 
 from ivr_config.models import CompanyUser
 
+# S163 (26/11): interruptor de la puerta por áreas. Apagado, el panel
+# decide como siempre (por rol) y Permisos › Árbol enseña además cómo
+# quedaría con los permisos por área; encendido, manda el permiso de
+# cada área («panel.<área>» en Permisos).
+ENFORCE = False
+# Vista previa (solo para pintar el árbol): como si estuviera encendida.
+_PREVIEW = []
+
 
 def documentation_tabs(company_user):
     """
@@ -43,14 +51,15 @@ def documentation_tabs(company_user):
     can_use_inbox = company_user.role in (
         CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_DOCS_SUPERVISOR,
-    )
+    ) or area_full(company_user, "doc-bandeja")
     if not can_use_inbox:
         valid_tabs = tuple(t for t in valid_tabs if t != "bandeja")
     # S148: "Pedir documentos", mismos roles que pedir desde Avisos.
     from panel.views_document_alerts import DOC_REQUEST_ROLES
 
     can_request_docs = (
-        company_user.role in DOC_REQUEST_ROLES)
+        company_user.role in DOC_REQUEST_ROLES
+        or area_full(company_user, "doc-pedir"))
     if not can_request_docs:
         valid_tabs = tuple(t for t in valid_tabs if t != "pedir")
     # H24 (S129): "Fichajes" lleva posiciones GPS -- solo los roles
@@ -58,7 +67,7 @@ def documentation_tabs(company_user):
     can_view_clock_events = company_user.role in (
         CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
-    )
+    ) or area_full(company_user, "doc-fichajes")
     if not can_view_clock_events:
         valid_tabs = tuple(
             t for t in valid_tabs
@@ -177,6 +186,8 @@ def _area_of(route):
     Documentación, la pestaña del hub que la muestra. None si es
     fontanería.
     """
+    from django.utils.text import slugify
+
     parts = route.split("/")
     first = parts[1] if len(parts) > 1 else ""
     if first in SKIP_AREAS:
@@ -186,14 +197,14 @@ def _area_of(route):
     if first == "documentacion":
         sub = parts[2].split("<")[0] if len(parts) > 2 else ""
         label, tab = DOC_LABELS.get(sub, ("General", ""))
-        key = "doc:" + (tab or (sub if sub in DOC_LABELS else "general"))
+        key = "doc-" + (tab or (sub if sub in DOC_LABELS else "general"))
         return (key, "Documentación › " + label, tab)
     if first == "cae":
-        return ("cae", "Documentación › Correos CAE", "cae")
+        return ("doc-cae", "Documentación › Correos CAE", "cae")
     if first == "nominas":
-        return ("doc:nominas", "Documentación › Nóminas", "nominas")
+        return ("doc-nominas", "Documentación › Nóminas", "nominas")
     label = AREA_LABELS.get(first, first.replace("-", " ").capitalize())
-    return (label, label, "")
+    return (slugify(label), label, "")
 
 
 def _rules():
@@ -344,7 +355,7 @@ def _passes(check, company_user):
         return False
 
 
-def panel_areas(company_user):
+def panel_areas(company_user, preview=False):
     """
     {area key: {...}} of what this user can enter in the current panel.
 
@@ -352,33 +363,61 @@ def panel_areas(company_user):
 
     Por área del panel actual: cuántas pantallas tiene, a cuántas entra
     este usuario, qué puertas las guardan, si alguna depende de la
-    persona y si la pestaña de Documentación se le oculta.
+    persona y si la pestaña de Documentación se le oculta. Con
+    `preview`, como quedaría con la puerta por áreas encendida: sin
+    permiso en el área no entra a nada; con «Ver y modificar» pasa las
+    reglas de rol.
     """
+    from panel import mixins
+    from workorder_spare_parts.views import CatalogReadAccessMixin
+
     rules, screens = panel_screens()
     ok = [_passes(rule[2], company_user) for rule in rules]
-    menu = menu_areas(company_user)
+    bypassable = [
+        rule[0] is CatalogReadAccessMixin or (
+            rule[0].__module__ == mixins.__name__
+            and rule[0] not in (mixins.SuperuserRequiredMixin,
+                                mixins.CompanyUserRequiredMixin))
+        for rule in rules]
+    levels = area_levels(company_user) if preview else {}
+    if preview:
+        _PREVIEW.append(True)
     try:
-        tabs = set(documentation_tabs(company_user))
-    except Exception:  # noqa: BLE001
-        tabs = set()
+        menu = menu_areas(company_user)
+        try:
+            tabs = set(documentation_tabs(company_user))
+        except Exception:  # noqa: BLE001
+            tabs = set()
+    finally:
+        if preview:
+            _PREVIEW.pop()
+    superuser = company_user.user.is_superuser
     areas = {}
     for key, label, tab, index, _route in screens:
+        level = levels.get(key, "NONE")
         area = areas.setdefault(key, {
             "key": key, "label": label, "total": 0, "allowed": 0,
-            "rules": [], "per_person": False,
+            "rules": [], "per_person": False, "level": level,
             "hidden_tab": bool(tab) and tab not in tabs,
             "in_menu": key in menu or (
-                key.startswith("doc:") and "doc:general" in menu
+                key.startswith("doc-") and "doc-general" in menu
                 and (not tab or tab in tabs)),
         })
         area["total"] += 1
-        area["allowed"] += 1 if ok[index] else 0
+        passes = ok[index] or (
+            preview and level == "EDIT" and bypassable[index])
+        if preview and level == "NONE" and not superuser:
+            passes = False
+        area["allowed"] += 1 if passes else 0
         if rules[index][1] not in area["rules"]:
             area["rules"].append(rules[index][1])
         area["per_person"] = area["per_person"] or rules[index][3]
     for area in areas.values():
         area["rank"] = (2 if area["allowed"] == area["total"]
                         else 1 if area["allowed"] else 0)
+        # En el menú pero sin poder entrar: hay que arreglarlo antes de
+        # encender la puerta.
+        area["menu_mismatch"] = area["in_menu"] and not area["allowed"]
     return areas
 
 
@@ -423,7 +462,9 @@ def menu_areas(company_user):
             "company_user": company_user,
             "request": SimpleNamespace(user=company_user.user, path="/"),
             "documentation_hub_href": reverse("panel:documentation_hub"),
+            "panel_gate_on": ENFORCE or bool(_PREVIEW),
         })
+        html = filter_menu_html(html, company_user)
     except Exception:  # noqa: BLE001
         return set()
     keys = set()
@@ -438,3 +479,127 @@ def menu_areas(company_user):
         if area is not None:
             keys.add(area[0])
     return keys
+
+
+def panel_area_list():
+    """
+    [(slug, label)] of every area of the panel, by label.
+
+    ---
+
+    Las áreas del panel actual, ordenadas por nombre: son las claves
+    «panel.<área>» de Permisos.
+    """
+    _rules, screens = panel_screens()
+    areas = {}
+    for key, label, _tab, _index, _route in screens:
+        areas.setdefault(key, label)
+    return sorted(areas.items(), key=lambda item: item[1])
+
+
+def area_levels(company_user):
+    """
+    {area slug: level} of this user (with section inheritance).
+
+    ---
+
+    Nivel de este usuario en cada área del panel: el que tiene en
+    «panel.<área>» de Permisos (propio, de sus grupos o de su rol, o
+    heredado de «Panel actual»). Se guarda en el propio objeto para no
+    repetir la consulta en la misma petición.
+    """
+    cached = getattr(company_user, "_panel_area_levels", None)
+    if cached is not None:
+        return cached
+    from new_ui.catalog import PANEL_KEY
+    from new_ui.permissions import effective_levels
+
+    keys = ["%s.%s" % (PANEL_KEY, slug) for slug, _l in panel_area_list()]
+    levels = {key.split(".", 1)[1]: level
+              for key, (level, _origin) in effective_levels(
+                  company_user, keys).items()}
+    company_user._panel_area_levels = levels
+    return levels
+
+
+def area_level_of_route(company_user, route):
+    """
+    (area slug, level) of a panel route, or (None, None) for plumbing.
+
+    ---
+
+    Área y nivel de este usuario para una ruta del panel.
+    """
+    if not route.startswith("panel/") or route.startswith(
+            "panel/nueva-interfaz/"):
+        return None, None
+    area = _area_of(route)
+    if area is None:
+        return None, None
+    return area[0], area_levels(company_user).get(area[0], "NONE")
+
+
+def area_full(company_user, slug):
+    """
+    True if the gate is on and this user has "edit" on the area.
+
+    ---
+
+    True si la puerta está encendida y el usuario tiene «Ver y
+    modificar» en el área: entonces pasa también las reglas de rol de
+    sus pantallas.
+    """
+    return ((ENFORCE or bool(_PREVIEW))
+            and area_levels(company_user).get(slug) == "EDIT")
+
+
+_MENU_ITEM = None
+
+
+def filter_menu_html(html, company_user):
+    """
+    The sidebar HTML without links to areas this user may not enter.
+
+    ---
+
+    Quita del menú los enlaces sencillos (`<li class="nav-item">` con
+    un enlace) a áreas sin permiso. Solo con la puerta encendida (o en
+    la vista previa del árbol); el superusuario lo ve todo.
+    """
+    import re
+
+    from django.urls import Resolver404, resolve
+
+    global _MENU_ITEM
+    if not (ENFORCE or _PREVIEW) or company_user.user.is_superuser:
+        return html
+    if _MENU_ITEM is None:
+        _MENU_ITEM = re.compile(
+            r'<li class="nav-item">\s*<a [^>]*?href="(/[^"#?]*)[^"]*"'
+            r'[\s\S]*?</li>')
+    levels = area_levels(company_user)
+
+    def keep(match):
+        try:
+            route = resolve(match.group(1)).route
+        except Resolver404:
+            return match.group(0)
+        area = _area_of(route) if route.startswith("panel/") else None
+        if area is None or route.startswith("panel/nueva-interfaz/"):
+            return match.group(0)
+        if levels.get(area[0], "NONE") == "NONE":
+            return ""
+        return match.group(0)
+
+    return _MENU_ITEM.sub(keep, html)
+
+
+def panel_gate_context(request):
+    """
+    Template flag: is the area gate on?
+
+    ---
+
+    Para las plantillas: si la puerta por áreas está encendida.
+    """
+    return {"panel_gate_on": ENFORCE}

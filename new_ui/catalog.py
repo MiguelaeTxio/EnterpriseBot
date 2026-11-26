@@ -345,6 +345,9 @@ def section_key(view_key):
     return view_key.split(".", 1)[0]
 
 
+PANEL_KEY = "panel"
+
+
 def all_view_keys():
     """
     [(key, label, depth)] of every grantable view, in display order.
@@ -362,6 +365,14 @@ def all_view_keys():
         rows.append((key, label, 0))
         for tab_key, tab_label in tabs:
             rows.append(("%s.%s" % (key, tab_key), tab_label, 1))
+    # S163 (26/11): las áreas del panel actual, como una sección más
+    # («Panel actual»): sin acceso, no se entra; «Ver», se entra con las
+    # reglas de cada pantalla; «Ver y modificar», se entra a todo.
+    from panel.access_rules import panel_area_list
+
+    rows.append((PANEL_KEY, "Panel actual", 0))
+    for slug, label in panel_area_list():
+        rows.append(("%s.%s" % (PANEL_KEY, slug), label, 1))
     return rows
 
 
@@ -374,6 +385,13 @@ def label_of(view_key):
     Rótulo legible de una clave.
     """
     section = section_key(view_key)
+    if section == PANEL_KEY:
+        from panel.access_rules import panel_area_list
+
+        if view_key == PANEL_KEY:
+            return "Panel actual"
+        area = dict(panel_area_list()).get(view_key.split(".", 1)[1])
+        return "Panel actual › %s" % (area or view_key)
     if section not in SECTIONS:
         return view_key
     label, _icon, tabs = SECTIONS[section]

@@ -171,6 +171,15 @@
                             </a>
                         </li>
                     {% endif %}
+                    {# S163 (26/11): Subir albarán también para quien no ve Taller Mecánico. #}
+                    {% if panel_gate_on %}{% if company_user.role == 'DRIVER' or company_user.role == 'CRANE_OPERATOR' or company_user.role == 'OFFICE' or company_user.role == 'NIGHTGUARD' %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'spare_parts_upload' %}active{% endif %}"
+                           href="{% url 'spare_parts:delivery_note_upload' %}">
+                            <i class="bi bi-box-seam"></i>Subir albarán
+                        </a>
+                    </li>
+                    {% endif %}{% endif %}
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'own_profile' %}active{% endif %}"
                            href="{% url 'panel:own_profile' %}">
@@ -278,7 +287,8 @@
     {# PDFs moved here from the old Taller subgroup (removed) 2026-07-10   #}
     {# at Miguel Ángel's request.                                          #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+    {# S163 (26/11): también Oficina (DOCS_SUPERVISOR); lo que no le toca lo quita la puerta por áreas (panel_nav). #}
+    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'DOCS_SUPERVISOR' and panel_gate_on %}
         <li class="nav-item sidebar-accordion-section">
             <button class="nav-link sidebar-accordion-toggle w-100 text-start"
                     type="button"
@@ -306,7 +316,7 @@
                     {# perderían toda vía de acceso si se retirase para    #}
                     {# ellos también. Para WORKSHOP/DRIVER sigue viviendo  #}
                     {# en Mi perfil (mismo enlace, mismo active_nav).      #}
-                    {% if company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                    {% if company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'DOCS_SUPERVISOR' and panel_gate_on %}
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'vacation_calendar' %}active{% endif %}"
                            href="{% url 'hr_calendar:calendar' %}">
@@ -371,7 +381,7 @@
                     </li>
                     {# Solicitudes del personal -- H24 (S147). Solo Supervisor y Jefe #}
                     {# de taller: los demás las gestionan en la pestaña del hub.     #}
-                    {% if company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                    {% if company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'DOCS_SUPERVISOR' and panel_gate_on %}
                     <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'worker_requests' %}active{% endif %}"
                            href="{% url 'panel:worker_requests_page' %}">
@@ -535,7 +545,7 @@
                             <small class="sidebar-subgroup-label">Centro de gasto</small>
                         </li>
                         {# S117: puerta "taller"; DOCS_SUPERVISOR entra por Documentación #}
-                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'DOCS_SUPERVISOR' and panel_gate_on %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'fleet' %}active{% endif %}"
                                    href="{% url 'panel:fleet_list' %}">
@@ -650,7 +660,7 @@
                     {# replaces the old Partes Digitales, Mis partes and operator          #}
                     {# Historial views, removed 2026-07-10 at Miguel Ángel's explicit      #}
                     {# request (no leftovers: view + template + URL + nav entry gone).     #}
-                    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
+                    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' or company_user.role == 'DOCS_SUPERVISOR' and panel_gate_on %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
                                href="{% url 'panel:work_order_admin_history' %}">
@@ -660,7 +670,7 @@
                     {% endif %}
                     {# Subir albarán de proveedor — WORKSHOP y ADMIN (Hito 10, S003).      #}
                     {# Upload supplier delivery note — WORKSHOP and ADMIN (Hito 10, S003). #}
-                    {% if company_user.role == 'WORKSHOP' or company_user.is_admin_level %}
+                    {% if company_user.role == 'WORKSHOP' or company_user.is_admin_level or panel_gate_on %}{# S163 (26/11): Subir albarán, para todos con la puerta por áreas (Miguel Ángel). #}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'spare_parts_upload' %}active{% endif %}"
                                href="{% url 'spare_parts:delivery_note_upload' %}">

@@ -160,7 +160,10 @@ def permission_tree(company):
     from new_ui.catalog import all_view_keys
     from new_ui.models import UiUserGroup
 
-    keys = [(k, label, depth) for k, label, depth in all_view_keys()]
+    from new_ui.catalog import PANEL_KEY
+
+    keys = [(k, label, depth) for k, label, depth in all_view_keys()
+            if section_key(k) != PANEL_KEY]
     plain = [k for k, _l, _d in keys]
     grants = list(UiViewGrant.objects.filter(company=company))
 
@@ -218,7 +221,28 @@ def permission_tree(company):
                               if RANK[effective[k][0]] and "." in k),
                 "diffs": diffs,
             })
+        from panel import access_profiles
+        from panel.access_rules import ENFORCE
+
+        moving_in = [
+            name for (pk, name), new_role in
+            access_profiles.ROLE_CHANGES.items()
+            if new_role == code and not any(
+                m.pk == pk and m.role == code for m in users)]
+        moving_out = [
+            name for (pk, name), new_role in
+            access_profiles.ROLE_CHANGES.items()
+            if new_role != code and any(
+                m.pk == pk and m.role == code for m in users)]
         roles.append({
+            "enforce": ENFORCE,
+            "moving_in": moving_in,
+            "moving_out": moving_out,
+            "preview": legacy["preview"][code],
+            "preview_access": sum(1 for a in legacy["preview"][code]
+                                  if a["allowed"]),
+            "preview_mismatch": [a["label"] for a in legacy["preview"][code]
+                                 if a["menu_mismatch"]],
             "panel": legacy["roles"][code],
             "panel_access": sum(1 for a in legacy["roles"][code]
                                 if a["allowed"]),
@@ -268,6 +292,9 @@ def legacy_panel(company, users):
 
     roles = {code: panel_areas(role_stand_in(company, code))
              for code, _label in CompanyUser.ROLE_CHOICES}
+    preview = {code: ordered(panel_areas(role_stand_in(company, code),
+                                         preview=True))
+               for code, _label in CompanyUser.ROLE_CHOICES}
     user_diffs, user_count = {}, {}
     for cu in users:
         mine = panel_areas(cu)
@@ -283,6 +310,7 @@ def legacy_panel(company, users):
                 other["allowed"] if other else 0)))
         user_diffs[cu.pk] = diffs
     result = {
+        "preview": preview,
         "roles": {code: ordered(areas) for code, areas in roles.items()},
         "user_diffs": user_diffs,
         "user_count": user_count,
