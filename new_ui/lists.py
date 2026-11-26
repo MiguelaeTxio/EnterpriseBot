@@ -27,7 +27,7 @@ from types import SimpleNamespace
 
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import F, OuterRef, Q, Subquery
+from django.db.models import Count, F, OuterRef, Q, Subquery
 from django.urls import reverse
 from django.utils import timezone
 
@@ -2029,6 +2029,104 @@ def _per_lists():
 
 
 # ---------------------------------------------------------- documentos
+_NOTICE_KINDS = (("MISSING", "Falta"), ("EXPIRED", "Caducado"),
+                 ("UPCOMING", "Caduca pronto"))
+
+
+def _notice_parts(row):
+    """dominio, sujeto, tipo, documento, clase, caducidad de la clave."""
+    parts = (row.notice_key.split("|") + [""] * 6)[:6]
+    return parts
+
+
+def _prepare_notices(rows):
+    """El nombre de la persona o del centro de gasto de cada aviso."""
+    from document_explorer.document_notice_service import DOMAIN_PERSONAL
+
+    people, machines = set(), set()
+    for row in rows:
+        domain, subject = _notice_parts(row)[:2]
+        if subject.isdigit():
+            (people if domain == DOMAIN_PERSONAL else machines).add(
+                int(subject))
+    names = {}
+    for p in apps.get_model("document_explorer.PersonIdentity").objects \
+            .filter(pk__in=people):
+        names[(DOMAIN_PERSONAL, p.pk)] = person_name(p)
+    for m in apps.get_model("fleet.MachineAsset").objects.filter(
+            pk__in=machines):
+        names[("m", m.pk)] = machine_label(m)
+    for row in rows:
+        domain, subject = _notice_parts(row)[:2]
+        key = (DOMAIN_PERSONAL if domain == DOMAIN_PERSONAL else "m",
+               int(subject) if subject.isdigit() else 0)
+        row.nui_subject = names.get(key, "")
+
+
+def _notice_deliveries_def():
+    """
+    Empresa › Documentación › Avisos enviados (S163, 26/11): qué aviso
+    de documentación se mandó, a quién, cuándo y cuántas veces.
+    """
+    from document_explorer.document_notice_service import (
+        DOMAIN_MACHINE, DOMAIN_PERSONAL,
+    )
+
+    kinds = dict(_NOTICE_KINDS)
+
+    def expiry(row):
+        value = _notice_parts(row)[5]
+        try:
+            return fmt_date(datetime.date.fromisoformat(value))
+        except ValueError:
+            return ""
+
+    return ListDef(
+        "Avisos enviados",
+        lambda company: apps.get_model("document_explorer.NoticeDelivery")
+        .objects.filter(company_user__company=company)
+        .select_related("company_user__user"),
+        [
+            Col("ultimo", "Último envío", lambda r: fmt_datetime(
+                r.last_sent_at), "last_sent_at", "text-nowrap"),
+            Col("sujeto", "Persona o centro de gasto",
+                lambda r: r.nui_subject),
+            Col("documento", "Documento", lambda r: _notice_parts(r)[3]),
+            Col("clase", "Aviso", lambda r: kinds.get(r.kind, r.kind),
+                "kind"),
+            Col("caducidad", "Caducidad", expiry),
+            Col("a_quien", "Avisado a", lambda r: r.company_user.user
+                .get_full_name() or r.company_user.user.username,
+                "company_user__user__first_name"),
+            Col("envios", "Veces", lambda r: r.send_count, "send_count",
+                "text-end"),
+            Col("primero", "Primer envío", lambda r: fmt_datetime(
+                r.first_sent_at), "first_sent_at", "text-nowrap"),
+        ],
+        search=("notice_key", "company_user__user__first_name",
+                "company_user__user__last_name"),
+        date_field="last_sent_at", date_is_datetime=True,
+        default_order=("-last_sent_at",), prepare=_prepare_notices,
+        extras=[
+            Extra("clase", "Aviso", lambda company: list(_NOTICE_KINDS),
+                  lambda qs, v: qs.filter(kind=v)),
+            Extra("de", "De", lambda company: [
+                ("per", "Personal"), ("maq", "Centros de gasto")],
+                lambda qs, v: qs.filter(notice_key__startswith=(
+                    DOMAIN_PERSONAL if v == "per" else DOMAIN_MACHINE)
+                    + "|")),
+            Extra("a_quien", "Avisado a", lambda company: [
+                (str(pk), name or user) for pk, name, user in
+                apps.get_model("ivr_config.CompanyUser").objects.filter(
+                    notice_deliveries__isnull=False).distinct()
+                .values_list("pk", "user__first_name", "user__username")],
+                lambda qs, v: qs.filter(company_user_id=v)
+                if v.isdigit() else qs),
+        ],
+        note="Los avisos de documentación mandados por WhatsApp a cada "
+             "supervisor. Periodo: último envío.")
+
+
 def _doc_lists():
     from django.apps import apps
 
@@ -2143,18 +2241,22 @@ def _doc_lists():
                     .get_full_name() if r.created_by_id else ""),
                 Col("fecha", "Fecha", lambda r: fmt_datetime(r.created_at),
                     "created_at", "text-nowrap"),
-            ], "created_at", search=("name",), default_order=("name",),
+            ], "", search=("name",), default_order=("name",),
             company_field="company", person=False,
             # S163 (24/11): pulsar una plantilla la abre en su ventana.
+            # (26/11) Sin periodo: es un catálogo, no un registro.
             actions=lambda r: [],
-            note="Pulsa una plantilla para ver y marcar lo que lleva. "
-                 "Periodo: fecha de creación."),
+            note="Pulsa una plantilla para ver y marcar lo que lleva."),
         # S163: el catálogo de requisitos (de personas y de máquinas).
         "lista_requisitos": ListDef(
             "Requisitos",
+            # S163 (26/11): cuántos lo tienen, para ordenar y filtrar.
             lambda company: model("document_explorer.JobPosition")
             .objects.prefetch_related("required_document_types",
-                                      "required_driving_categories"),
+                                      "required_driving_categories")
+            .annotate(nui_per=Count("people", distinct=True),
+                      nui_maq=Count("machines", distinct=True),
+                      nui_emp=Count("companies", distinct=True)),
             [
                 Col("nombre", "Requisito", lambda r: r.name, "name"),
                 Col("activo", "Activo", lambda r: "Sí" if r.is_active
@@ -2164,18 +2266,37 @@ def _doc_lists():
                               r.required_document_types.all()), 120)),
                 Col("permiso", "Clases de permiso", lambda r: ", ".join(
                     c.code for c in r.required_driving_categories.all())),
-                Col("personas", "Personas", lambda r: r.people.count(),
-                    "", "text-end"),
-                Col("maquinas", "Máquinas", lambda r: r.machines.count(),
-                    "", "text-end"),
+                Col("personas", "Personas", lambda r: r.nui_per or "",
+                    "nui_per", "text-end"),
+                Col("maquinas", "Centros de gasto", lambda r: r.nui_maq or "",
+                    "nui_maq", "text-end"),
+                Col("empresas", "Empresas", lambda r: r.nui_emp or "",
+                    "nui_emp", "text-end"),
                 Col("editado", "Editado", lambda r: fmt_datetime(
                     r.updated_at), "updated_at", "text-nowrap"),
             ],
             search=("name",), default_order=("name",),
             actions=lambda r: [],
-            extras=[Extra("activo", "Activo", lambda company: [
-                ("si", "Activos"), ("no", "Desactivados (no avisan)")],
-                lambda qs, v: qs.filter(is_active=v == "si"))],
+            extras=[
+                Extra("activo", "Activo", lambda company: [
+                    ("si", "Activos"), ("no", "Desactivados (no avisan)")],
+                    lambda qs, v: qs.filter(is_active=v == "si")),
+                # Para qué se usa: a quién está asignado.
+                Extra("aplica", "Asignado a", lambda company: [
+                    ("per", "Personas"), ("maq", "Centros de gasto"),
+                    ("emp", "Empresas"), ("nadie", "Sin asignar")],
+                    lambda qs, v: qs.filter(
+                        nui_per=0, nui_maq=0, nui_emp=0) if v == "nadie"
+                    else qs.filter(**{"nui_%s__gt" % v: 0})),
+                # Qué requisitos piden un documento concreto.
+                Extra("pide", "Pide el documento", lambda company: [
+                    (str(pk), label) for pk, label in model(
+                        "document_explorer.DocumentTypeCatalog").objects
+                    .filter(job_positions__isnull=False).distinct()
+                    .order_by("label").values_list("pk", "label")],
+                    lambda qs, v: qs.filter(required_document_types=v)
+                    if v.isdigit() else qs),
+            ],
             # S163 (24/11): pulsar un requisito lo abre para editarlo,
             # como en la antigua.
             row_url=lambda r: reverse("new_ui:requirement_sheet",
@@ -2183,22 +2304,10 @@ def _doc_lists():
             row_title="Requisito",
             note="Pulsa un requisito para ver y marcar sus documentos "
                  "obligatorios. El periodo no se aplica a este listado."),
-        "avisos": fk(
-            "Avisos", "document_management.DocumentAlert", (), [
-                Col("documento", "Documento", lambda r: r.document_label,
-                    "document_label"),
-                Col("sujeto", "Persona / máquina", lambda r: r.subject_label,
-                    "subject_label"),
-                Col("caducidad", "Caducidad", lambda r: fmt_date(
-                    r.expiry_date), "expiry_date", "text-nowrap"),
-                Col("estado", "Estado", lambda r: disp(r, "status"),
-                    "status"),
-                Col("enviado", "Avisado", lambda r: fmt_datetime(r.sent_at),
-                    "sent_at", "text-nowrap"),
-            ], "expiry_date", date_is_datetime=False,
-            search=("document_label", "subject_label"),
-            default_order=("expiry_date",), company_field="company",
-            person=False, note="Periodo: fecha de caducidad."),
+        # S163 (26/11): «Avisos enviados» es el registro real de envíos
+        # (NoticeDelivery, desde S122); DocumentAlert ya no se crea ni se
+        # envía (histórico, en el admin).
+        "avisos": _notice_deliveries_def(),
         "pedir": fk(
             "Pedir documentos", "document_explorer.WorkerDocumentRequest",
             ("person", "document_type"), [
@@ -2516,7 +2625,7 @@ MACHINE_THEME_COLUMNS = {
 }
 
 
-def _safety_records_def(order=("-delivery_date",)):
+def _safety_records_def(order=("-delivery_date",), period=True):
     """
     En la ficha de un centro de gasto, Seguridad: sus extintores y
     botiquines (S163, 23/11).
@@ -2560,18 +2669,43 @@ def _safety_records_def(order=("-delivery_date",)):
     base = definition.queryset
     definition.queryset = lambda company: base(company).filter(safety_q())
     definition.actions = _epi_delivery_actions
+    if not period:
+        # Empresa › Extintores y botiquines: lo que importa es cuándo
+        # vencen (filtro «Vence»), no cuándo se entregaron.
+        definition.date_field = ""
+        definition.note = ("Primero los que antes vencen. Los retirados "
+                           "siguen en la lista (Situación) y no avisan.")
 
     def soon(qs, value):
-        limit = timezone.localdate() + datetime.timedelta(days=WARN_DAYS)
-        near = (Q(expiry_date__lte=limit) | Q(review_date__lte=limit)
-                | Q(retimbrado_date__lte=limit))
+        # S163 (26/11): por la fecha más cercana de las tres.
+        today = timezone.localdate()
+        limit = today + datetime.timedelta(days=WARN_DAYS)
+        fields = ("expiry_date", "review_date", "retimbrado_date")
         qs = qs.filter(retired_at__isnull=True)
-        return qs.filter(near) if value == "si" else qs.exclude(near)
+        if value == "sin":
+            return qs.filter(**{f + "__isnull": True for f in fields})
+        past = Q()
+        near = Q()
+        for f in fields:
+            past |= Q(**{f + "__lt": today})
+            near |= Q(**{f + "__lte": limit})
+        if value == "vencido":
+            return qs.filter(past)
+        if value == "si":
+            return qs.filter(near).exclude(past)
+        return qs.exclude(near).exclude(
+            **{f + "__isnull": True for f in fields})
 
     definition.extras.append(Extra(
         "vence", "Vence", lambda company: [
-            ("si", "En 30 días o ya vencido"), ("no", "Más adelante")],
+            ("vencido", "Ya vencido"), ("si", "En 30 días"),
+            ("no", "Más adelante"), ("sin", "Sin fechas")],
         apply=soon))
+    # «Qué»: solo extintores y botiquines (no todo el catálogo de EPIs).
+    definition.extras.append(Extra(
+        "tipo", "Qué", lambda company: [
+            ("extint", "Extintores"), ("botiqu", "Botiquines")],
+        apply=lambda qs, v: qs.filter(epi__label__icontains=v)))
     definition.extras.append(Extra(
         "situacion", "Situación", lambda company: [
             ("uso", "En uso"), ("retirado", "Retirados")],
@@ -3484,7 +3618,9 @@ def list_def(section, tab):
         # Empresa › Documentación › Avisos de seguridad: los de todos los
         # centros de gasto, primero los que antes vencen.
         _CACHE["doc"]["avisos_seguridad"] = _safety_records_def(
-            order=("expiry_date", "review_date", "retimbrado_date"))
+            order=tuple(F(f).asc(nulls_last=True) for f in (
+                "expiry_date", "review_date", "retimbrado_date")),
+            period=False)
         # S163 (23/11): pulsar una tarea del taller abre su parte.
         _CACHE["cdg"]["taller"].row_url = lambda r: reverse(
             "new_ui:parte_sheet", args=[r.entry.work_order_id])
