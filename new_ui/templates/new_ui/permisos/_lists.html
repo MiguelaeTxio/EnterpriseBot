@@ -122,9 +122,10 @@ new_ui/views.py.
         <details class="mb-1" data-nui-tree-node data-search="{{ group.name|lower }} {% for p in group.people %}{{ p.name|lower }} {{ p.username|lower }} {% endfor %}">
             <summary><span class="fw-semibold">{{ group.name }}</span> <span class="text-muted">· {{ group.people|length }} persona{{ group.people|length|pluralize }}{% if group.default_roles %} · por defecto para: {{ group.default_roles|join:", " }}{% endif %}</span> <a href="#" class="ms-1" data-nui-edit="group:{{ group.pk }}" title="Ver y cambiar sus permisos"><i class="bi bi-pencil-square"></i></a></summary>
             <div class="ms-3">
-                <div class="my-1"><span class="text-muted">Panel actual:</span>
+                <div class="my-1"><span class="text-muted" title="Azul («Ver»): entra y hace lo que su puesto le deja en esas pantallas (un mecánico, sus partes). Verde («Ver y modificar»): entra a todo lo del área, sea cual sea su puesto.">Panel actual <i class="bi bi-info-circle"></i>:</span>
                     {% for a in group.panel_grants %}<span class="badge {% if a.rank == 2 %}text-bg-success{% elif a.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal me-1" title="{% if a.rank == 2 %}Ver y modificar: entra a todo{% elif a.rank == 1 %}Ver: entra, con las reglas de su puesto{% else %}Sin acceso{% endif %}">{{ a.label }}</span>{% empty %}<span class="text-muted">nada</span>{% endfor %}
                 </div>
+                <div class="text-muted small ms-1 mb-1">En el panel actual, azul = entra y hace lo que su puesto le deja (un mecánico crea y edita sus partes); verde = entra a todo lo del área, sea cual sea su puesto.</div>
                 <div class="my-1"><span class="text-muted">Nueva interfaz:</span>
                     {% for section in group.views %}{% if section.rank or section.open %}<span class="badge {% if section.rank == 2 %}text-bg-success{% elif section.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal me-1">{{ section.label }}{% if not section.rank %} ({{ section.open }} vistas){% endif %}</span>{% endif %}{% empty %}{% endfor %}{% if not group.access %}<span class="text-muted">nada</span>{% endif %}
                 </div>
