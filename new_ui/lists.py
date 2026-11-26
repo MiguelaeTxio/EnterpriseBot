@@ -3518,6 +3518,33 @@ def list_def(section, tab):
 _NAME_PARTS = ("given_name", "first_surname", "second_surname")
 
 
+# Lo que se mira además del nombre cuando se busca a una persona.
+_PERSON_EXTRA = ("dni", "nickname", "email")
+
+
+def _person_prefixes(fields):
+    """Paths to a person among the search fields ("", "person__"...)."""
+    out = []
+    for field in fields:
+        for part in _NAME_PARTS:
+            if field == part or field.endswith("__" + part):
+                prefix = field[:-len(part)]
+                if prefix not in out:
+                    out.append(prefix)
+    return out
+
+
+def _digits_expr(field):
+    """The field without spaces, dots, dashes, brackets or slashes."""
+    from django.db.models import F, Value
+    from django.db.models.functions import Replace
+
+    expr = F(field)
+    for char in (" ", ".", "-", "(", ")", "/", "+"):
+        expr = Replace(expr, Value(char), Value(""))
+    return expr
+
+
 def _search_fields(fields):
     """
     The search fields, with every name part of each person path.
@@ -3526,14 +3553,15 @@ def _search_fields(fields):
 
     Los campos de búsqueda; si uno es parte del nombre de una persona
     (nombre o un apellido), se añaden las otras dos partes de esa misma
-    persona.
+    persona, su DNI, su apodo y su correo (los teléfonos, por cifras,
+    en filtered).
     """
     out = list(fields)
     for field in fields:
         for part in _NAME_PARTS:
             if field == part or field.endswith("__" + part):
                 prefix = field[:-len(part)]
-                for other in _NAME_PARTS:
+                for other in _NAME_PARTS + _PERSON_EXTRA:
                     if prefix + other not in out:
                         out.append(prefix + other)
     return out
@@ -3575,10 +3603,25 @@ def filtered(definition, company, params, scope_pk=None):
         # de los campos, y con el nombre de una persona siempre los dos
         # apellidos.
         fields = _search_fields(definition.search)
+        # Como en Personal de la antigua: los teléfonos se comparan solo
+        # por sus cifras («600 12 34 56» = «600123456»).
+        phones = []
+        wants_digits = any(
+            sum(ch.isdigit() for ch in word) >= 3 for word in search.split())
+        for number, prefix in enumerate(
+                _person_prefixes(fields) if wants_digits else []):
+            for kind in ("phone", "phone_secondary"):
+                alias = "nui_tel_%d_%s" % (number, kind)
+                qs = qs.annotate(**{alias: _digits_expr(prefix + kind)})
+                phones.append(alias)
         for word in search.split():
             query = Q()
             for field in fields:
                 query |= Q(**{field + "__icontains": word})
+            digits = "".join(ch for ch in word if ch.isdigit())
+            if len(digits) >= 3:
+                for alias in phones:
+                    query |= Q(**{alias + "__contains": digits})
             qs = qs.filter(query)
     if definition.date_field:
         start, end = period_range(params)
