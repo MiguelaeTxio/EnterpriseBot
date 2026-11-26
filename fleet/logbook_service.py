@@ -451,6 +451,37 @@ def _fill_identification(machine, data) -> list:
     return filled
 
 
+def _fault_labels():
+    """Labels of the fault systems (lower case). --- Sistemas de avería."""
+    from work_order_processor.models import FaultCategory
+
+    return {str(label).strip().lower() for _c, label in FaultCategory.choices}
+
+
+def fix_swapped_repair(section, values, labels=None):
+    """
+    Puts the system in "type" and the text in "concept" for repairs.
+
+    ---
+
+    S163 (26/11): al leer un libro ya generado por la plataforma, la
+    lectura a veces cambia de sitio «Tipo» (el sistema: «Sistema
+    hidráulico»...) y «Concepto» (la avería y lo hecho). Si en una
+    reparación el concepto es justo un sistema y el tipo no, se
+    intercambian. Devuelve True si los cambió.
+    """
+    if section != MachineLogbookEntry.SECTION_REPAIR:
+        return False
+    labels = labels if labels is not None else _fault_labels()
+    concept = (values.get("concept") or "").strip()
+    kind = (values.get("entry_type") or "").strip()
+    if concept.lower() in labels and kind.lower() not in labels:
+        values["entry_type"] = concept[:120]
+        values["concept"] = kind
+        return True
+    return False
+
+
 def store_scan(entry, machine, parsed=None, error="") -> dict:
     """
     Saves the rows read from one scan (replacing earlier ones).
@@ -478,6 +509,7 @@ def store_scan(entry, machine, parsed=None, error="") -> dict:
         }
         if not any(values.values()):
             continue
+        fix_swapped_repair(section, values)
         rows.append((section, values))
     with transaction.atomic():
         source, _created = MachineLogbookSource.objects.update_or_create(

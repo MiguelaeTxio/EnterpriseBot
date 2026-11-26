@@ -1504,7 +1504,8 @@ def _cdg_lists():
             "machine", [
                 Col("fecha", "Fecha", lambda r: fmt_date(r.entry_date),
                     "entry_date", "text-nowrap"),
-                Col("seccion", "Apartado", lambda r: r.section, "section"),
+                Col("seccion", "Apartado",
+                    lambda r: r.get_section_display(), "section"),
                 Col("tipo", "Tipo", lambda r: r.entry_type, "entry_type"),
                 Col("concepto", "Concepto", lambda r: short(r.concept),
                     "concept"),
