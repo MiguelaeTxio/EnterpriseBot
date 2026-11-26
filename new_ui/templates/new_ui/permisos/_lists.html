@@ -46,13 +46,14 @@ new_ui/views.py.
 </div>
 <div data-nui-pane="grupos" class="d-none">
     <table class="table table-sm table-hover align-middle small mb-0">
-        <thead><tr><th>Grupo de usuarios</th><th>Usuarios</th><th>Vistas con permiso propio</th><th class="text-end">Acciones</th></tr></thead>
+        <thead><tr><th>Perfil</th><th class="text-end">Personas</th><th>Por defecto para (puesto)</th><th class="text-end">Permisos dados</th><th class="text-end">Acciones</th></tr></thead>
         <tbody>
             {% for group in groups %}
             <tr>
                 <td class="fw-semibold">{{ group.name }}</td>
-                <td>{{ group.members.all|length }}</td>
-                <td>{{ group.grants.all|length }}</td>
+                <td class="text-end" title="{{ group.by_hand }} a mano y {{ group.by_role }} por su puesto">{{ group.people_count }}{% if group.by_role %} <span class="text-muted small">({{ group.by_hand }} a mano, {{ group.by_role }} por su puesto)</span>{% endif %}</td>
+                <td>{{ group.defaults_label|default:"—" }}</td>
+                <td class="text-end">{{ group.grants.all|length }}</td>
                 <td class="text-end">
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones de {{ group.name }}"><i class="bi bi-three-dots-vertical"></i></button>
@@ -66,7 +67,7 @@ new_ui/views.py.
                 </td>
             </tr>
             {% empty %}
-            <tr class="eb-empty-row"><td colspan="4" class="text-center text-muted py-4">Todavía no hay grupos de usuarios: marca usuarios y créalo en Grupos de selección › Gestionar.</td></tr>
+            <tr class="eb-empty-row"><td colspan="5" class="text-center text-muted py-4">Todavía no hay perfiles de permisos: marca usuarios y créalo en Grupos de selección › Gestionar.</td></tr>
             {% endfor %}
         </tbody>
     </table>

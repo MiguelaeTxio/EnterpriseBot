@@ -87,8 +87,8 @@ PENDING = {
 USER_COLUMNS = (
     ("usuario", "Usuario", "username"),
     ("nombre", "Nombre", "name"),
-    ("rol", "Rol", "role"),
-    ("grupos", "Grupos de usuarios", ""),
+    ("rol", "Puesto", "role"),
+    ("grupos", "Perfil de permisos", ""),
     ("estado", "Estado", "active"),
     ("acceso", "Último acceso", "last_login"),
     ("vistas", "Vistas con acceso", "views"),
@@ -172,10 +172,19 @@ def _filter_users(request):
     if company.isdigit():
         users = users.filter(company_id=int(company))
     group = params.get("grupo", "")
+    # S163 (26/11): el perfil cuenta también si viene por el puesto.
+    profiles = list(UiUserGroup.objects.filter(
+        company_id=company_user_company(request)))
     if group == "none":
-        users = users.filter(new_ui_user_groups__isnull=True)
+        defaults = {r for g in profiles for r in (g.default_roles or [])}
+        users = users.filter(new_ui_user_groups__isnull=True).exclude(
+            role__in=defaults)
     elif group.isdigit():
-        users = users.filter(new_ui_user_groups__pk=int(group))
+        chosen = next((g for g in profiles if g.pk == int(group)), None)
+        users = users.filter(
+            Q(new_ui_user_groups__pk=int(group))
+            | Q(new_ui_user_groups__isnull=True,
+                role__in=(chosen.default_roles or []) if chosen else []))
     role = params.get("seccion", "")
     if role:
         users = users.filter(role=role)
@@ -187,22 +196,53 @@ def _filter_users(request):
     return list(users.distinct())
 
 
+def company_user_company(request):
+    """Company id of the request's panel user."""
+    return _company_user(request).company_id
+
+
 def _annotate_users(users):
     keys = [k for k, _l, _d in all_view_keys()]
+    profiles = list(UiUserGroup.objects.filter(
+        company_id=users[0].company_id)) if users else []
     for user in users:
         levels = effective_levels(user, keys)
         user.views_count = sum(
             1 for key in keys if RANK[levels[key][0]] >= 1)
-        user.group_names = ", ".join(
-            g.name for g in user.new_ui_user_groups.all())
+        own = [g.name for g in user.new_ui_user_groups.all()]
+        user.group_names = ", ".join(own) or ", ".join(
+            "%s (por su puesto)" % g.name for g in profiles
+            if user.role in (g.default_roles or []))
         user.display_name = (user.user.get_full_name()
                              or user.user.username)
     return users
 
 
 def _groups(company):
-    return list(UiUserGroup.objects.filter(company=company)
-                .prefetch_related("members", "grants"))
+    """
+    Permission profiles with their people (by hand and by puesto).
+
+    ---
+
+    Los perfiles de permisos con sus personas: las metidas a mano y las
+    que lo toman por su puesto (sin perfil a mano), activas.
+    """
+    groups = list(UiUserGroup.objects.filter(company=company)
+                  .prefetch_related("members", "grants"))
+    labels = dict(CompanyUser.ROLE_CHOICES)
+    explicit = set()
+    for group in groups:
+        explicit.update(m.pk for m in group.members.all())
+    people = list(CompanyUser.objects.filter(
+        company=company, is_active=True).exclude(pk__in=explicit)
+        .values_list("role", flat=True))
+    for group in groups:
+        defaults = group.default_roles or []
+        group.by_hand = sum(1 for m in group.members.all() if m.is_active)
+        group.by_role = sum(1 for role in people if role in defaults)
+        group.people_count = group.by_hand + group.by_role
+        group.defaults_label = ", ".join(labels.get(r, r) for r in defaults)
+    return groups
 
 
 def _list_context(request):
@@ -523,7 +563,7 @@ class NewUiView(SuperuserRequiredMixin, View):
             context["opts"] = {
                 "companies": [(str(c.pk), c.name)
                               for c in context["companies"]],
-                "groups": [("none", "Sin grupo", True)] + [
+                "groups": [("none", "Sin perfil", True)] + [
                     (str(g.pk), g.name, True)
                     for g in context["user_groups"]],
                 "families": list(CompanyUser.ACTIVE_ROLE_CHOICES),
