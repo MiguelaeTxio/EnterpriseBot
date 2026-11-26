@@ -292,7 +292,10 @@ class ListDef:
         self.date_is_datetime = date_is_datetime
         self.default_order = default_order
         self.actions = actions or (lambda row: [])
-        self.note = note
+        # S163 (26/11): sin fecha, el filtro de periodo ya no se ve; la
+        # nota no necesita decirlo.
+        self.note = " ".join(note.replace(
+            "El periodo no se aplica a este listado.", "").split())
 
 
 # ------------------------------------------------- personas y máquinas
@@ -579,7 +582,7 @@ def _absence_types_def():
                                   args=[r.pk]),
         row_title="Tipo de ausencia",
         note="Pulsa un tipo para modificarlo. No se borran: se "
-             "desactivan. El periodo no se aplica a este listado.")
+             "desactivan.")
 
 
 def _payslips_def():
@@ -1896,7 +1899,9 @@ def _per_lists():
             "Lista de horarios",
             lambda company: apps.get_model(
                 "ivr_config.WorkdaySchedule").objects.filter(
-                company=company).prefetch_related("days"),
+                company=company).prefetch_related("days").annotate(
+                nui_trab=Count("worker_settings", distinct=True)
+                + Count("assigned_users", distinct=True)),
             [
                 Col("nombre", "Horario", lambda r: r.label, "label"),
                 Col("temporada", "Temporada", lambda r: disp(r, "season"),
@@ -1908,13 +1913,17 @@ def _per_lists():
                     lambda r: r.tolerance_minutes, "tolerance_minutes",
                     "text-end"),
                 Col("trabajadores", "Trabajadores",
-                    lambda r: r.worker_settings.count()
-                    + r.assigned_users.count(), "", "text-end"),
+                    lambda r: r.nui_trab or "", "nui_trab", "text-end"),
             ],
             search=("label",), default_order=("label",),
             actions=lambda r: [("Modificar", "bi-pencil-square",
                                 "#nui-edit:nui-schedule-form:%d" % r.pk)],
-            note="El periodo no se aplica a este listado."),
+            # S163 (26/11): los que no tiene nadie, para limpiar.
+            extras=[Extra("uso", "En uso", lambda company: [
+                ("si", "Con trabajadores"), ("no", "Sin trabajadores")],
+                lambda qs, v: qs.filter(nui_trab__gt=0) if v == "si"
+                else qs.filter(nui_trab=0))],
+            note=""),
         "tipos_fichaje": ListDef(
             "Tipos de fichaje",
             lambda company: apps.get_model(
@@ -1934,7 +1943,10 @@ def _per_lists():
             search=("name",), default_order=("order", "name"),
             actions=lambda r: [("Modificar", "bi-pencil-square",
                                 "#nui-edit:nui-clocktype-form:%d" % r.pk)],
-            note="El periodo no se aplica a este listado."),
+            extras=[Extra("activo", "Activo", lambda company: [
+                ("si", "Activos"), ("no", "Desactivados")],
+                lambda qs, v: qs.filter(is_active=v == "si"))],
+            note=""),
         "nominas": _person_fk_def(
             "Nóminas", "hr_calendar.PayslipItem", ("batch",), [
                 Col("periodo", "Periodo", lambda r: r.period_label,
@@ -1985,7 +1997,7 @@ def _per_lists():
             "Catálogo de EPIs",
             lambda company: apps.get_model(
                 "document_explorer.EpiItemCatalog").objects.filter(
-                is_active=True),
+                is_active=True).annotate(nui_ent=Count("deliveries")),
             [
                 Col("epi", "EPI", lambda r: r.label, "label"),
                 Col("familia", "Familia", lambda r: r.family, "family"),
@@ -1994,19 +2006,29 @@ def _per_lists():
                     "requires_periodic_review"),
                 Col("fichas", "Fichas técnicas",
                     lambda r: len(_epi_sheets(r)), "", "text-end"),
-                Col("entregas", "Entregas", lambda r: r.deliveries.count()
-                    if hasattr(r, "deliveries") else "", "", "text-end"),
+                Col("entregas", "Entregas", lambda r: r.nui_ent or "",
+                    "nui_ent", "text-end"),
             ],
             search=("label", "family"),
             default_order=("family", "label"),
             actions=lambda r: [],
-            extras=[_epi_family_extra("family")],
+            extras=[
+                _epi_family_extra("family"),
+                Extra("revision", "Revisión periódica", lambda company: [
+                    ("si", "Con revisión"), ("no", "Sin revisión")],
+                    lambda qs, v: qs.filter(
+                        requires_periodic_review=v == "si")),
+                Extra("entregado", "Entregado", lambda company: [
+                    ("si", "Entregado alguna vez"),
+                    ("no", "Nunca entregado")],
+                    lambda qs, v: qs.filter(nui_ent__gt=0) if v == "si"
+                    else qs.filter(nui_ent=0)),
+            ],
             # S163 (24/11): pulsar un EPI abre su ventana (fichas técnicas).
             row_url=lambda r: reverse("new_ui:epi_item_sheet",
                                       args=[r.pk]),
             row_title="EPI",
-            note="Pulsa un EPI para ver sus fichas técnicas y subir otra. "
-                 "El periodo no se aplica a este listado."),
+            note="Pulsa un EPI para ver sus fichas técnicas y subir otra. "),
         "requisitos": ListDef(
             "Requisitos",
             lambda company: persons_base().prefetch_related(
@@ -2348,7 +2370,7 @@ def _doc_lists():
                                       args=[r.pk]),
             row_title="Requisito",
             note="Pulsa un requisito para ver y marcar sus documentos "
-                 "obligatorios. El periodo no se aplica a este listado."),
+                 "obligatorios."),
         # S163 (26/11): «Avisos enviados» es el registro real de envíos
         # (NoticeDelivery, desde S122); DocumentAlert ya no se crea ni se
         # envía (histórico, en el admin).
