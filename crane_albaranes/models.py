@@ -48,6 +48,18 @@ class PlanningImport(models.Model):
         default=0, verbose_name="Albaranes creados")
     problems = models.JSONField(default=list, blank=True,
                                 verbose_name="Filas con problemas")
+    # S165: el planning real (una hoja por día) se carga por rango de
+    # días y se actualiza sin duplicar.
+    date_from = models.DateField(null=True, blank=True,
+                                 verbose_name="Desde")
+    date_to = models.DateField(null=True, blank=True,
+                               verbose_name="Hasta")
+    days_loaded = models.PositiveIntegerField(
+        default=0, verbose_name="Días cargados")
+    rows_updated = models.PositiveIntegerField(
+        default=0, verbose_name="Servicios cambiados")
+    rows_removed = models.PositiveIntegerField(
+        default=0, verbose_name="Servicios quitados")
 
     class Meta:
         ordering = ["-created_at"]
@@ -291,3 +303,245 @@ class CraneAlbaran(models.Model):
         """
         return (not self.is_signed
                 and self.status != self.Status.CANCELLED)
+
+
+class PlanningName(models.Model):
+    """
+    How a worker is written in the planning (S165).
+
+    ---
+
+    Cómo viene escrito un trabajador en el planning o en el cuadrante de
+    vacaciones («FCO GOMEZ RIVERO», «PETRUS», «DOCA»...) y quién es.
+    Se asigna una vez en Tráfico › Nombres y vale para siempre; también
+    se puede marcar que no es un trabajador («NUEVOS SERVICIOS»,
+    «CUSTODIA», «ALQUILER»...).
+    """
+
+    company = models.ForeignKey(
+        "ivr_config.Company", on_delete=models.CASCADE,
+        related_name="planning_names", verbose_name="Empresa",
+    )
+    key = models.CharField(max_length=120, verbose_name="Clave",
+                           help_text="El texto sin tildes, mayúsculas ni "
+                                     "signos.")
+    text = models.CharField(max_length=120, verbose_name="Como viene")
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="planning_names",
+        verbose_name="Trabajador",
+    )
+    not_a_worker = models.BooleanField(
+        default=False, verbose_name="No es un trabajador")
+    updated_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Asignado por",
+    )
+    updated_at = models.DateTimeField(auto_now=True,
+                                      verbose_name="Asignado")
+
+    class Meta:
+        ordering = ["text"]
+        verbose_name = "Nombre del planning"
+        verbose_name_plural = "Nombres del planning"
+        constraints = [
+            models.UniqueConstraint(fields=["company", "key"],
+                                    name="planningname_unique_key"),
+        ]
+
+    def __str__(self):
+        return self.text
+
+
+class PlanningService(models.Model):
+    """
+    One row of the planning: a service of a day (S165).
+
+    ---
+
+    Una fila del planning de grúas (Excel de Carlos Núñez, una hoja por
+    día): quién, con qué vehículo, para qué empresa, dónde, a qué hora y
+    lo demás de la fila tal cual. Las filas que solo traen una nota
+    (BAJA, vacaciones...) quedan como anotación y no se avisan. Al
+    volver a cargar el planning, cada día se actualiza sin duplicar; si
+    algo ya avisado cambia de hora o de lugar, queda marcado para
+    reenviarlo.
+    """
+
+    KIND_SERVICE = "SERVICE"
+    KIND_NOTE = "NOTE"
+    KIND_CHOICES = [
+        (KIND_SERVICE, "Servicio"),
+        (KIND_NOTE, "Anotación"),
+    ]
+
+    class Notice(models.TextChoices):
+        PENDING = "PENDING", "Sin enviar"
+        SENT = "SENT", "Enviado"
+        FAILED = "FAILED", "Envío fallido"
+
+    company = models.ForeignKey(
+        "ivr_config.Company", on_delete=models.CASCADE,
+        related_name="planning_services", verbose_name="Empresa",
+    )
+    planning = models.ForeignKey(
+        PlanningImport, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="services", verbose_name="Carga del planning",
+    )
+    day = models.DateField(verbose_name="Fecha")
+    position = models.PositiveSmallIntegerField(
+        default=0, verbose_name="Fila")
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES,
+                            default=KIND_SERVICE, verbose_name="Tipo")
+    raw_person = models.CharField(max_length=120, blank=True, default="",
+                                  verbose_name="Personal (planning)")
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="planning_services",
+        verbose_name="Gruista",
+    )
+    raw_vehicle = models.CharField(max_length=60, blank=True, default="",
+                                   verbose_name="Vehículo (planning)")
+    machine = models.ForeignKey(
+        "fleet.MachineAsset", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="planning_services",
+        verbose_name="Vehículo",
+    )
+    tonnage = models.CharField(max_length=40, blank=True, default="",
+                               verbose_name="Toneladas")
+    raw_client = models.CharField(max_length=200, blank=True, default="",
+                                  verbose_name="Empresa (planning)")
+    client = models.ForeignKey(
+        "worksites.Client", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="planning_services",
+        verbose_name="Cliente",
+    )
+    raw_place = models.CharField(max_length=300, blank=True, default="",
+                                 verbose_name="Lugar de trabajo")
+    worksite = models.ForeignKey(
+        "worksites.Worksite", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="planning_services",
+        verbose_name="Obra",
+    )
+    raw_time = models.CharField(max_length=60, blank=True, default="",
+                                verbose_name="Hora (planning)")
+    planned_time = models.TimeField(null=True, blank=True,
+                                    verbose_name="Hora")
+    observations = models.TextField(blank=True, default="",
+                                    verbose_name="Observaciones")
+    price = models.CharField(max_length=200, blank=True, default="",
+                             verbose_name="Precio")
+    contracted_by = models.CharField(max_length=60, blank=True, default="",
+                                     verbose_name="Contratado")
+    offer_ref = models.CharField(max_length=60, blank=True, default="",
+                                 verbose_name="Oferta económica")
+    contact = models.CharField(max_length=200, blank=True, default="",
+                               verbose_name="Contacto")
+    albaran = models.ForeignKey(
+        CraneAlbaran, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="planning_services", verbose_name="Albarán",
+    )
+    notice_status = models.CharField(
+        max_length=8, choices=Notice.choices, default=Notice.PENDING,
+        verbose_name="Aviso al gruista")
+    notified_at = models.DateTimeField(null=True, blank=True,
+                                       verbose_name="Avisado")
+    notice_error = models.CharField(max_length=255, blank=True, default="",
+                                    verbose_name="Fallo del aviso")
+    changed_after_notice = models.BooleanField(
+        default=False, verbose_name="Cambiado después del aviso")
+    removed_from_planning = models.BooleanField(
+        default=False, verbose_name="Quitado del planning")
+    created_at = models.DateTimeField(auto_now_add=True,
+                                      verbose_name="Creado")
+    updated_at = models.DateTimeField(auto_now=True,
+                                      verbose_name="Modificado")
+
+    class Meta:
+        ordering = ["-day", "position"]
+        verbose_name = "Servicio del planning"
+        verbose_name_plural = "Servicios del planning"
+        indexes = [
+            models.Index(fields=["company", "day"],
+                         name="planningservice_day"),
+            models.Index(fields=["person", "day"],
+                         name="planningservice_person_day"),
+        ]
+
+    def __str__(self):
+        return "%s %s %s" % (self.day, self.raw_person, self.raw_place)
+
+
+class PlanningNotice(models.Model):
+    """
+    One WhatsApp sent to a worker about a planned service (S165).
+
+    ---
+
+    Un WhatsApp enviado a un gruista por un servicio del planning: a
+    quién, a qué móvil, qué se le dijo, si Twilio lo aceptó y, después,
+    si le llegó y lo leyó (informe de entrega de Twilio).
+    """
+
+    STATUS_LABELS = {
+        "": "", "accepted": "Aceptado", "queued": "En cola",
+        "sending": "Enviándose", "sent": "Enviado",
+        "delivered": "Entregado", "read": "Leído",
+        "undelivered": "No entregado", "failed": "Fallido",
+    }
+
+    company = models.ForeignKey(
+        "ivr_config.Company", on_delete=models.CASCADE,
+        related_name="planning_notices", verbose_name="Empresa",
+    )
+    service = models.ForeignKey(
+        PlanningService, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="notices", verbose_name="Servicio",
+    )
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="planning_notices",
+        verbose_name="Gruista",
+    )
+    day = models.DateField(verbose_name="Día del servicio")
+    phone = models.CharField(max_length=40, blank=True, default="",
+                             verbose_name="Móvil")
+    text = models.TextField(blank=True, default="", verbose_name="Mensaje")
+    ok = models.BooleanField(default=False, verbose_name="Aceptado")
+    error = models.CharField(max_length=255, blank=True, default="",
+                             verbose_name="Fallo")
+    message_sid = models.CharField(max_length=64, blank=True, default="",
+                                   verbose_name="Mensaje de Twilio")
+    sent_as_text = models.BooleanField(
+        default=False, verbose_name="Como texto libre")
+    whatsapp_status = models.CharField(
+        max_length=12, blank=True, default="",
+        verbose_name="Estado del WhatsApp")
+    whatsapp_status_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Estado a las")
+    sent_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Enviado por",
+    )
+    sent_at = models.DateTimeField(auto_now_add=True,
+                                   verbose_name="Enviado")
+
+    class Meta:
+        ordering = ["-sent_at"]
+        verbose_name = "Envío a un gruista"
+        verbose_name_plural = "Envíos a los gruistas"
+
+    def __str__(self):
+        return "%s %s" % (self.phone, self.sent_at)
+
+    @property
+    def status_label(self):
+        """
+        Twilio status in Spanish.
+        ---
+        Estado de Twilio en castellano.
+        """
+        return self.STATUS_LABELS.get(self.whatsapp_status,
+                                      self.whatsapp_status)

@@ -12,6 +12,7 @@ confianza o con la llave del propio albarán (enlace del WhatsApp).
 from django.urls import path
 
 from crane_albaranes import views_panel as panel
+from crane_albaranes import views_status as status
 from crane_albaranes import views_worker as worker
 
 app_name = "crane_albaranes"
@@ -57,6 +58,10 @@ urlpatterns = [
     path("panel/gruas/clientes/exportar/", panel.ClientExportView.as_view(),
          name="client_export"),
     # El gruista, dentro del fichaje.
+    # S165: estado de entrega de Twilio de los avisos del planning.
+    path("api/gruas/aviso-estado/<str:token>/",
+         status.PlanningNoticeStatusView.as_view(),
+         name="planning_notice_status"),
     path("fichaje/albaranes/", worker.worker_list, name="worker_list"),
     path("fichaje/albaranes/nuevo/", worker.worker_new, name="worker_new"),
     path("fichaje/albaranes/<str:token>/", worker.worker_albaran,
