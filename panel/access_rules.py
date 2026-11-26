@@ -629,7 +629,24 @@ def panel_gate_context(request):
 
     Para las plantillas: si la puerta por áreas está encendida.
     """
-    return {"panel_gate_on": ENFORCE}
+    from new_ui.mixins import can_enter
+
+    user = getattr(request, "user", None)
+    company_user = (getattr(user, "company_user", None)
+                    if user is not None and user.is_authenticated else None)
+    new_ui_open = False
+    if company_user is not None:
+        from django.core.cache import cache
+
+        key = "nui_can_enter_%s" % company_user.pk
+        new_ui_open = cache.get(key)
+        if new_ui_open is None:
+            try:
+                new_ui_open = can_enter(company_user)
+            except Exception:  # noqa: BLE001
+                new_ui_open = False
+            cache.set(key, new_ui_open, 300)
+    return {"panel_gate_on": ENFORCE, "new_ui_open": new_ui_open}
 
 
 def _payslips_ok(company_user, can_send_payslips):

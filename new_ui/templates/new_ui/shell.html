@@ -34,7 +34,7 @@ new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
         <button type="button" class="btn btn-sm btn-link p-0 text-danger text-decoration-none" id="nui-scope-clear" title="Volver al listado completo"><i class="bi bi-x-lg me-1"></i>volver a todos</button>
     </div>
     {% endif %}
-    <span class="small text-muted fw-normal">Nueva interfaz · solo tú</span>
+    <span class="small text-muted fw-normal">Nueva interfaz</span>
 </span>
 {% include "new_ui/_view_picker.html" %}
 </span>
@@ -221,9 +221,15 @@ body.nui-dragging { user-select: none; }
                         <h6 class="nui-sec-title fw-semibold border-bottom pb-1 mb-2">Nuevo y ajustes</h6>
                         <div data-nui-sec-body></div>
                     </section>
+                    {% if can_edit_section %}
                     <div class="d-none" data-nui-actions-stage>
                         {% with "new_ui/actions/"|add:section|add:".html" as actions_template %}{% include actions_template %}{% endwith %}
                     </div>
+                    {% else %}
+                    {# S163 (26/11): con «Ver» solo se consulta y se exporta. #}
+                    <div class="d-none" data-nui-actions-stage></div>
+                    <p class="small text-muted mb-0"><i class="bi bi-eye me-1"></i>Solo consulta: con tu permiso puedes ver y exportar, pero no cambiar nada aquí.</p>
+                    {% endif %}
                 </div>
                 <div data-nui-pane="exportar" class="d-none">
                     <div class="small text-muted mb-1">Exportar la lista de abajo (los seleccionados o, si no hay ninguno, todo lo que sale con los filtros):</div>

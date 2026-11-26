@@ -478,21 +478,30 @@ class NewUiView(SuperuserRequiredMixin, View):
         tabs = get_saved_state_key(company_user, SCREEN_KEY, "tabs", {})
         selection = get_saved_state_key(
             company_user, SCREEN_KEY, "selection_" + section, [])
+        # S163 (26/11): solo las vistas que puede ver; sin «Ver y
+        # modificar» en la sección, el panel de acciones no se pinta.
+        tab_levels = effective_levels(company_user, [section] + [
+            "%s.%s" % (section, key) for key, _l in SECTIONS[section][2]])
+        visible_tabs = [
+            (key, label) for key, label in SECTIONS[section][2]
+            if RANK[tab_levels["%s.%s" % (section, key)][0]] >= 1]
+        can_edit_section = RANK[tab_levels[section][0]] >= 2
         context = {
             "active_nav": "new_ui",
+            "can_edit_section": can_edit_section,
             "sections": sections,
             "section": section,
             "section_label": SECTIONS[section][0],
-            "list_tabs": SECTIONS[section][2],
+            "list_tabs": visible_tabs,
             # S163 (23/11): un nivel más en «Qué ver» (Fichaje › ...).
             # S163 (23/11): de la lista de todos o de la ficha de uno.
             "view_groups": [
                 (label, [(key, tab_label, view_mode(section, key))
                          for key, tab_label in members])
-                for label, members in view_groups(
-                    section, SECTIONS[section][2])],
+                for label, members in view_groups(section, visible_tabs)
+                if members],
             "list_tab_rows": [(key, label, view_mode(section, key))
-                              for key, label in SECTIONS[section][2]],
+                              for key, label in visible_tabs],
             "pending": PENDING.get(section, ""),
             "layout": layout if isinstance(layout, dict) else {},
             "tabs": tabs if isinstance(tabs, dict) else {},

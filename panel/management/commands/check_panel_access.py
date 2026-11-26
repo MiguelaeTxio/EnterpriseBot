@@ -28,6 +28,10 @@ PAGES = [
     "analytics:analytics_lab", "panel:user_list", "panel:section_list",
     "budgets:wizard", "crane_albaranes:hub", "panel:payslip_page",
     "document_explorer:explorer", "panel:breakdown_ticket_list",
+    "new_ui:home", "new_ui:home?s=per", "new_ui:home?s=doc",
+    "new_ui:home?s=cdg", "new_ui:home?s=permisos",
+    "new_ui:list?s=doc&t=nominas", "new_ui:list?s=doc&t=seguros",
+    "new_ui:list?s=per&t=fichajes",
 ]
 USERS = [
     "alejandro_sergio", "jeronimo", "yolanda.bandera", "Carolina",
@@ -73,8 +77,9 @@ class Command(BaseCommand):
             self._log("== %s (%s)" % (
                 user.username, cu.get_role_display() if cu else "-"))
             for name in PAGES:
+                name, _sep, query = name.partition("?")
                 try:
-                    page = reverse(name)
+                    page = reverse(name) + ("?" + query if query else "")
                 except NoReverseMatch:
                     self._log("  %-45s (no existe)" % name)
                     continue

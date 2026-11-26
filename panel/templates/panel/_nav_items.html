@@ -838,9 +838,8 @@
     {# Django admin link and Draft Work Orders — superuser only            #}
     {# (Django is_superuser, not a CompanyUser role).                      #}
     {# ------------------------------------------------------------------ #}
-    {% if request.user.is_superuser %}
-        {# S163 (invasora UX): nueva interfaz en construcción, solo superusuario. #}
-        {# App aparte (new_ui): si se borra, la entrada desaparece sola.        #}
+    {# S163 (26/11): nueva interfaz para quien tenga alguna sección. #}
+    {% if new_ui_open %}
         {% url 'new_ui:home' as new_ui_url %}
         {% if new_ui_url %}
         <li class="nav-item mt-2">
@@ -850,12 +849,15 @@
             </a>
         </li>
         {% endif %}
+    {% endif %}
+    {% if request.user.is_superuser %}
         <li class="nav-item mt-2">
             <a class="nav-link {% if active_nav == 'work_order_drafts' %}active{% endif %}"
                href="{% url 'panel:work_order_drafts' %}">
                 <i class="bi bi-file-earmark-lock2"></i>Borradores de Partes
             </a>
         </li>
+        {% if request.user.is_staff %}
         <li class="nav-item mt-2">
             <a class="nav-link"
                href="{% url 'admin:index' %}"
@@ -864,6 +866,7 @@
                 <i class="bi bi-shield-lock"></i>Django Admin
             </a>
         </li>
+        {% endif %}
     {% endif %}
 </ul>
 

@@ -84,10 +84,12 @@ PAYSLIP_KEYS = ("doc.nominas", "doc.entregas_nominas")
 SIGNATURE_KEYS = ("doc.firmas", "doc.firmas_guardadas",
                   "doc.certificados", "doc.agentes_firma")
 INSURANCE_KEYS = ("doc.seguros",)
+# Nóminas: entra, pero solo ve las entregas que le comparta Jerónimo
+# (la lista y cada acción van por hr_calendar.payslip_access).
 OFFICE_NEW_UI = dict(
     {"doc": EDIT, "per": EDIT, "cdg": EDIT},
-    **{key: NONE for key in PAYSLIP_KEYS + SIGNATURE_KEYS
-       + INSURANCE_KEYS})
+    **{key: NONE for key in SIGNATURE_KEYS + INSURANCE_KEYS},
+    **{key: EDIT for key in PAYSLIP_KEYS})
 
 # Perfiles de permisos (grupos de usuarios de Permisos). Cada uno:
 # áreas del panel («*» = todo el panel con sus reglas), claves de la
