@@ -297,6 +297,11 @@ class ListDef:
         self.note = " ".join(note.replace(
             "El periodo no se aplica a este listado.", "").split())
 
+    @property
+    def uses_period(self):
+        """True if the period filter does something in this list."""
+        return bool(self.date_field or self.period_annotate)
+
 
 # ------------------------------------------------- personas y máquinas
 def _company_filter_choices():
@@ -1565,8 +1570,88 @@ def _person_general():
                 "phone", "email", "nickname"),
         default_order=("first_surname", "second_surname", "given_name"),
         actions=_person_actions,
+        # S163 (26/11): por puesto (categoría) y si tiene móvil (los
+        # avisos y circulares van por WhatsApp).
+        extras=[
+            Extra("categoria", "Categoría", lambda company: [
+                (v, v) for v in apps.get_model(
+                    "document_explorer.PersonIdentity").objects.exclude(
+                    professional_category="").values_list(
+                    "professional_category", flat=True).distinct()
+                .order_by("professional_category")],
+                lambda qs, v: qs.filter(professional_category=v)),
+            Extra("movil", "Teléfono", lambda company: [
+                ("si", "Con teléfono"), ("no", "Sin teléfono")],
+                lambda qs, v: qs.exclude(phone="") if v == "si"
+                else qs.filter(phone="")),
+        ],
         note="Periodo: fecha de alta.", date_field="hire_date",
     )
+
+
+def _requirement_extras(model_path, entity_path=""):
+    """
+    Filtros «Requisito» y «Situación del requisito» de las listas de
+    personas o centros de gasto (S163, 26/11; como el filtro S153 de
+    Personal en la antigua): a quién le falta o tiene caducado algo de
+    un requisito, entre quienes lo tienen asignado.
+    """
+    from document_explorer.required_documentation_service import (
+        STATUS_EXPIRED, STATUS_MISSING, STATUS_OK, requirement_item_statuses,
+    )
+
+    position = apps.get_model("document_explorer.JobPosition")
+    rel = entity_path + "document_requirements"
+    pk_path = entity_path + "pk" if not entity_path else entity_path + "id"
+
+    def req_options(company):
+        return [("sin", "Sin ningún requisito")] + [
+            (str(pk), name) for pk, name in
+            position.objects.order_by("name").values_list("pk", "name")]
+
+    def by_requirement(qs, value):
+        if value == "sin":
+            return qs.filter(**{rel + "__isnull": True})
+        return qs.filter(**{rel: value}) if value.isdigit() else qs
+
+    states = (("falta", "le falta algo"), ("caducado", "algo caducado"),
+              ("alguno", "le falta o caducado"), ("ok", "todo en regla"))
+
+    def state_options(company):
+        return [("%d:%s" % (pk, key), "%s: %s" % (name, text))
+                for pk, name in position.objects.order_by("name")
+                .values_list("pk", "name") for key, text in states]
+
+    def by_state(qs, value):
+        req_pk, _, key = value.partition(":")
+        requirement = position.objects.filter(pk=req_pk).prefetch_related(
+            "required_document_types", "required_driving_categories").first() \
+            if req_pk.isdigit() else None
+        if requirement is None:
+            return qs
+        qs = qs.filter(**{rel: requirement})
+        ids = list(qs.values_list(pk_path, flat=True))
+        statuses = requirement_item_statuses(
+            requirement, ids, ContentType.objects.get_for_model(
+                apps.get_model(model_path)))
+        keep = []
+        for pk, items in statuses.items():
+            found = [state for state, _text in items.values()]
+            if key == "falta":
+                ok = STATUS_MISSING in found
+            elif key == "caducado":
+                ok = STATUS_EXPIRED in found
+            elif key == "alguno":
+                ok = any(state != STATUS_OK for state in found)
+            else:
+                ok = all(state == STATUS_OK for state in found)
+            if ok:
+                keep.append(pk)
+        return qs.filter(**{pk_path + "__in": keep})
+
+    return [Extra("requisito", "Requisito", req_options, by_requirement),
+            Extra("situacion_req", "Situación del requisito",
+                  state_options, by_state)]
 
 
 def _clock_event_actions(event):
@@ -2046,7 +2131,9 @@ def _per_lists():
             entity="person", search=("given_name", "first_surname", "dni"),
             default_order=("first_surname", "given_name"),
             actions=_person_actions,
-            note="El periodo no se aplica a este listado."),
+            extras=_requirement_extras("document_explorer.PersonIdentity"),
+            note="Situación del requisito: entre quienes lo tienen "
+                 "asignado, a quién le falta o tiene caducado algo."),
     }
 
 
@@ -2519,6 +2606,45 @@ def _yes(value):
     return "Sí" if value else ""
 
 
+def _has(key, label, field, yes, no):
+    """
+    Filtro «con / sin» sobre un dato anotado por periodo (S163, 26/11):
+    p. ej. quién no ha mandado partes este mes.
+    """
+    return Extra(key, label, lambda company: [("si", yes), ("no", no)],
+                 lambda qs, v: qs.filter(**{field + "__gt": 0})
+                 if v == "si" else qs.filter(**{field: 0}))
+
+
+# Tema de Personal -> sus filtros propios.
+THEME_EXTRAS = {
+    "comunicaciones": lambda: [
+        _has("pedidos", "Documentos pedidos", "nui_ped",
+             "Con pedidos sin recibir", "Sin pedidos pendientes"),
+        _has("circulares", "Circulares en el periodo", "nui_circ",
+             "Ha recibido", "No ha recibido ninguna")],
+    "bajas": lambda: [
+        Extra("de_baja", "De baja ahora", lambda company: [
+            ("si", "De baja"), ("no", "Trabajando")],
+            lambda qs, v: qs.filter(nui_baja=v == "si")),
+        _has("bajas", "Bajas en el periodo", "nui_bajas", "Con bajas",
+             "Sin bajas"),
+        _has("ausencias", "Ausencias en el periodo", "nui_aus",
+             "Con ausencias", "Sin ausencias")],
+    "partes_trab": lambda: [
+        _has("partes", "Partes en el periodo", "nui_par",
+             "Ha mandado partes", "No ha mandado ninguno")],
+    "repostajes_trab": lambda: [
+        _has("repostajes", "Repostajes en el periodo", "nui_rep",
+             "Ha repostado", "No ha repostado")],
+    "epis_trab": lambda: [
+        _has("entregas", "EPIs entregados", "nui_epi_all",
+             "Alguna vez", "Nunca"),
+        _has("entregas_periodo", "Entregas en el periodo", "nui_epi",
+             "Con entregas", "Sin entregas")],
+}
+
+
 # Tema -> (anotar, [columnas del tema], nota). S163 (23/11).
 THEME_COLUMNS = {
     "comunicaciones": (_annotate_comunicaciones, [
@@ -2818,6 +2944,8 @@ def _theme_person_list(key):
     definition.default_cols = ["nombre", "seccion", "estado"] + [
         c.key for c in columns]
     definition.note = note
+    if key in THEME_EXTRAS:
+        definition.extras = list(definition.extras) + THEME_EXTRAS[key]()
     return definition
 
 

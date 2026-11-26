@@ -1434,7 +1434,10 @@
         // marca data-nui-filters; sin marca, `fallback`).
         function showCommonFilters(box, fallback) {
             const marker = box && box.querySelector("[data-nui-filters]");
-            const wanted = marker ? marker.dataset.nuiFilters.split(/\s+/) : fallback;
+            let wanted = marker ? marker.dataset.nuiFilters.split(/\s+/) : fallback;
+            // S163 (26/11): con un trabajador o centro de gasto abierto,
+            // Estado, Empresa, Grupo y Sección no filtran nada: fuera.
+            if (scope && scope.pk) wanted = wanted.filter(w => w !== "entity");
             root.querySelectorAll("[data-nui-common]").forEach(function (el) {
                 el.classList.toggle("d-none", wanted.indexOf(el.dataset.nuiCommon) === -1);
             });
