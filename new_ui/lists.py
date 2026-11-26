@@ -3401,16 +3401,19 @@ def list_def(section, tab):
         # S163 (25/11): pulsar una fila de estas vistas la abre en la
         # ventana genérica (todos sus datos y las acciones de la vista
         # aplicadas solo a ella).
-        for sec, tab in (("per", "pedidos"), ("per", "solicitudes"),
+        for sec, view in (("per", "pedidos"), ("per", "solicitudes"),
                          ("per", "salud"), ("per", "ausencias"),
                          ("per", "fichajes"), ("per", "repostajes"),
                          ("cdg", "repostajes"), ("cdg", "revisiones"),
                          ("cdg", "lecturas"), ("cdg", "seguridad_reg"),
                          ("cdg", "equipos"), ("cdg", "accesorios"),
                          ("cdg", "averias"), ("cdg", "libro")):
-            definition = _CACHE[sec].get(tab)
+            # S163 (26/11): «view», no «tab»: el bucle pisaba el «tab» de
+            # la llamada y la primera petición de cada proceso devolvía
+            # el Libro historial (Centros de gasto › General con 4665).
+            definition = _CACHE[sec].get(view)
             if definition is not None and definition.row_url is None:
-                definition.row_url = _row_sheet_url(sec, tab)
+                definition.row_url = _row_sheet_url(sec, view)
                 definition.row_title = {
                     "pedidos": "Documento pedido", "solicitudes": "Solicitud",
                     "salud": "Baja médica", "ausencias": "Ausencia",
@@ -3419,7 +3422,7 @@ def list_def(section, tab):
                     "seguridad_reg": "Extintor o botiquín",
                     "equipos": "Equipo", "accesorios": "Accesorio",
                     "averias": "Avería", "libro": "Revisión del libro",
-                }[tab]
+                }[view]
         # S163 (24/11): Empresa › EPIs › Lotes; «Familia» en las entregas.
         _CACHE["doc"]["lotes_epis"] = _epi_batches_def()
         _CACHE["doc"]["catalogo_epis"].row_tint = _epi_row_tint(
