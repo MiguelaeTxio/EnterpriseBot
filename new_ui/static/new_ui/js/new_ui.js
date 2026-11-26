@@ -2651,7 +2651,32 @@
                 .then(function () { loadEditor(subject); submitFilters(); })
                 .catch(() => {});
         });
+        // S163 (26/11): Permisos › Árbol: buscar, «Solo con acceso» y
+        // desplegar o plegar todo.
+        function paintTree() {
+            const tree = document.querySelector("[data-nui-perm-tree]");
+            if (!tree) return;
+            const only = tree.querySelector("[data-nui-tree-only]");
+            const text = ((tree.querySelector("[data-nui-tree-search]") || {}).value || "").trim().toLowerCase();
+            tree.querySelectorAll("[data-nui-tree-none], [data-nui-tree-empty]").forEach(el => el.classList.toggle("d-none", !!(only && only.checked)));
+            tree.querySelectorAll("[data-nui-tree-node]").forEach(function (node) {
+                const hit = !text || (node.dataset.search || "").indexOf(text) !== -1;
+                node.classList.toggle("d-none", !hit);
+                if (text && hit) node.open = true;
+                node.querySelectorAll("[data-nui-tree-person]").forEach(p => p.classList.toggle("bg-warning-subtle", !!text && (p.dataset.search || "").indexOf(text) !== -1));
+            });
+        }
+        root.addEventListener("input", function (ev) { if (ev.target.closest("[data-nui-tree-search]")) paintTree(); });
+        root.addEventListener("change", function (ev) { if (ev.target.closest("[data-nui-tree-only]")) paintTree(); });
+        document.body.addEventListener("htmx:afterSettle", paintTree);
+        paintTree();
         root.addEventListener("click", function (ev) {
+            const expand = ev.target.closest("[data-nui-tree-expand]");
+            if (expand) {
+                const open = expand.dataset.nuiTreeExpand === "1";
+                document.querySelectorAll("[data-nui-perm-tree] details").forEach(d => { d.open = open; });
+                return;
+            }
             const edit = ev.target.closest("[data-nui-edit]");
             if (edit) { ev.preventDefault(); openEditor(edit.dataset.nuiEdit); return; }
             const pick = ev.target.closest("[data-nui-select-group]");

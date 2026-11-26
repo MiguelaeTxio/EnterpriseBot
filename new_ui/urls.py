@@ -561,6 +561,8 @@ urlpatterns = [
          name="perm_editor"),
     path("permisos/acciones/", views.PermBulkView.as_view(),
          name="perm_bulk"),
+    path("permisos/arbol.xlsx", views.PermTreeExportView.as_view(),
+         name="perm_tree_export"),
     path("permisos/grupos/usuarios/", views.PermGroupMembersView.as_view(),
          name="perm_members"),
 ]

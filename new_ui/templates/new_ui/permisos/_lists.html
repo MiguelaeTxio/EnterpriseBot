@@ -86,3 +86,82 @@ new_ui/views.py.
         </tbody>
     </table>
 </div>
+<div data-nui-pane="roles" class="d-none">
+    {# S163 (26/11): los roles, con sus usuarios y a cuántas vistas dan acceso; pulsar uno abre «Ver y cambiar». #}
+    <table class="table table-sm table-hover align-middle small mb-0">
+        <thead><tr><th>Rol</th><th class="text-end">Usuarios</th><th class="text-end">Vistas con acceso</th><th>Secciones</th><th class="text-end">Acciones</th></tr></thead>
+        <tbody>
+            {% for role in tree.roles %}
+            <tr role="button" data-nui-edit="role:{{ role.code }}" title="Ver y cambiar sus permisos">
+                <td class="fw-semibold">{{ role.label }}</td>
+                <td class="text-end">{{ role.members|length }}</td>
+                <td class="text-end">{{ role.access }}</td>
+                <td>{% for section in role.views %}{% if section.open %}<span class="badge text-bg-light border fw-normal me-1">{{ section.label }}: {{ section.open }}</span>{% endif %}{% empty %}—{% endfor %}</td>
+                <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary border-0" data-nui-edit="role:{{ role.code }}"><i class="bi bi-shield-lock me-1"></i>Ver y cambiar</button></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p class="small text-muted mt-2 mb-0">Lo que pongas a un rol lo hereda todo el que lo tenga, salvo lo puesto al propio usuario o lo que le dé un grupo (el mayor).</p>
+</div>
+<div data-nui-pane="arbol" class="d-none" data-nui-perm-tree>
+    {# S163 (26/11): el árbol de permisos (roles › secciones › vistas, y sus usuarios con lo que les queda; después los grupos). #}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2 small">
+        <input type="search" class="form-control form-control-sm" style="max-width: 16rem;" placeholder="Buscar persona o rol…" data-nui-tree-search aria-label="Buscar en el árbol">
+        <label class="form-check mb-0"><input class="form-check-input" type="checkbox" checked data-nui-tree-only> Solo con acceso</label>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-nui-tree-expand="1">Desplegar todo</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-nui-tree-expand="0">Plegar todo</button>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'new_ui:perm_tree_export' %}"><i class="bi bi-file-earmark-excel me-1"></i>Descargar en Excel</a>
+        <span class="text-muted"><span class="badge text-bg-secondary">Sin acceso</span> <span class="badge text-bg-primary">Ver</span> <span class="badge text-bg-success">Ver y modificar</span></span>
+    </div>
+    <div class="small nui-perm-tree">
+        {% for role in tree.roles %}
+        <details class="mb-1" data-nui-tree-node data-search="{{ role.label|lower }} {% for m in role.members %}{{ m.name|lower }} {{ m.username|lower }} {% endfor %}">
+            <summary><span class="fw-semibold">{{ role.label }}</span> <span class="text-muted">· {{ role.members|length }} usuario{{ role.members|length|pluralize }} · {{ role.access }} vista{{ role.access|pluralize }} con acceso</span> <a href="#" class="ms-1" data-nui-edit="role:{{ role.code }}" title="Ver y cambiar"><i class="bi bi-pencil-square"></i></a></summary>
+            <div class="ms-3">
+                {% for section in role.views %}
+                <details data-nui-tree-section{% if not section.rank and not section.open %} data-nui-tree-empty{% endif %}>
+                    <summary><span class="badge {% if section.rank == 2 %}text-bg-success{% elif section.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal">{{ section.label }}</span> <span class="text-muted">{{ section.level_label }}{% if section.open %} · {{ section.open }} con acceso{% endif %}</span></summary>
+                    <div class="ms-3 d-flex flex-wrap gap-1 my-1">
+                        {% for view in section.views %}<span class="badge {% if view.rank == 2 %}text-bg-success{% elif view.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal"{% if not view.rank %} data-nui-tree-none{% endif %} title="{{ view.level_label }}{% if view.inherited %} (de la sección){% endif %}">{{ view.label }}</span>{% endfor %}
+                    </div>
+                </details>
+                {% endfor %}
+                {% if role.members %}
+                <details open>
+                    <summary class="text-muted">Sus usuarios</summary>
+                    <ul class="list-unstyled ms-3 mb-1">
+                        {% for m in role.members %}
+                        <li class="my-1" data-nui-tree-person data-search="{{ m.name|lower }} {{ m.username|lower }}">
+                            <a href="#" data-nui-edit="user:{{ m.pk }}" class="{% if not m.active %}text-muted{% endif %}"><i class="bi bi-person me-1"></i>{{ m.name }}</a>
+                            <span class="text-muted">({{ m.username }}{% if not m.active %}, inactivo{% endif %}) · {{ m.access }} vista{{ m.access|pluralize }}</span>
+                            {% if m.superuser %}<span class="badge text-bg-dark fw-normal">Superusuario: todo</span>
+                            {% elif m.diffs %}
+                            <div class="ms-3">{% for d in m.diffs %}<span class="badge {% if d.rank == 2 %}text-bg-success{% elif d.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal me-1 mb-1" title="{{ d.origin }}">{{ d.label }}: {{ d.level_label }} · {{ d.origin }}</span>{% endfor %}</div>
+                            {% else %}<span class="text-muted">· igual que su rol</span>{% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </details>
+                {% endif %}
+            </div>
+        </details>
+        {% endfor %}
+        {% if tree.groups %}
+        <div class="fw-semibold mt-3 mb-1">Grupos de usuarios</div>
+        {% for group in tree.groups %}
+        <details class="mb-1" data-nui-tree-node data-search="{{ group.name|lower }} {% for m in group.members %}{{ m|lower }} {% endfor %}">
+            <summary><span class="fw-semibold">{{ group.name }}</span> <span class="text-muted">· {{ group.members|length }} miembro{{ group.members|length|pluralize }} · {{ group.access }} vista{{ group.access|pluralize }} con acceso</span> <a href="#" class="ms-1" data-nui-edit="group:{{ group.pk }}" title="Ver y cambiar"><i class="bi bi-pencil-square"></i></a></summary>
+            <div class="ms-3">
+                {% for section in group.views %}
+                <div data-nui-tree-section{% if not section.rank and not section.open %} data-nui-tree-empty{% endif %}><span class="badge {% if section.rank == 2 %}text-bg-success{% elif section.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal">{{ section.label }}</span>
+                    {% for view in section.views %}<span class="badge {% if view.rank == 2 %}text-bg-success{% elif view.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal"{% if not view.rank %} data-nui-tree-none{% endif %}>{{ view.label }}</span>{% endfor %}
+                </div>
+                {% endfor %}
+                <div class="text-muted">Miembros: {{ group.members|join:", "|default:"ninguno" }}</div>
+            </div>
+        </details>
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>

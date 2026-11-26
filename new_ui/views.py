@@ -239,7 +239,11 @@ def _list_context(request):
                 "%s (%s)" % (g.company_user.user.username, LABELS[g.level])
                 for g in own if g.company_user_id),
         })
+    from new_ui.permissions import permission_tree
+
+    tree = permission_tree(company)
     return {
+        "tree": tree,
         "users": users,
         "user_headers": headers,
         "sort_active": bool(current),
@@ -684,6 +688,88 @@ class PermBulkView(SuperuserRequiredMixin, View):
         else:
             return HttpResponseBadRequest("Acción no válida.")
         return JsonResponse({"ok": True, "message": text})
+
+
+class PermTreeExportView(SuperuserRequiredMixin, View):
+    """
+    GET: the permissions tree as an Excel file.
+
+    ---
+
+    S163 (26/11): el árbol de permisos en Excel: una hoja «Roles» (rol,
+    sección, vista, nivel), otra «Usuarios» (usuario, rol, vista, nivel,
+    origen; solo lo que le queda con acceso) y otra «Grupos».
+    """
+
+    def get(self, request):
+        import io
+
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        from new_ui.catalog import all_view_keys
+        from django.utils import timezone
+
+        from new_ui.permissions import effective_levels, permission_tree
+
+        company = _company_user(request).company
+        tree = permission_tree(company)
+        book = Workbook()
+        sheet = book.active
+        sheet.title = "Roles"
+        sheet.append(["Rol", "Sección", "Vista", "Nivel", "Usuarios"])
+        for role in tree["roles"]:
+            for section in role["views"]:
+                for view in section["views"]:
+                    if view["rank"]:
+                        sheet.append([role["label"], section["label"],
+                                      view["label"], view["level_label"],
+                                      len(role["members"])])
+        users_sheet = book.create_sheet("Usuarios")
+        users_sheet.append(["Usuario", "Nombre", "Rol", "Sección", "Vista",
+                            "Nivel", "De dónde sale"])
+        keys = all_view_keys()
+        sections = {k: label for k, label, d in keys if d == 0}
+        for cu in CompanyUser.objects.filter(company=company).select_related(
+                "user").order_by("user__username"):
+            levels = effective_levels(cu, [k for k, _l, _d in keys])
+            for key, label, depth in keys:
+                level, origin = levels[key]
+                if depth and RANK[level]:
+                    users_sheet.append([
+                        cu.user.username,
+                        cu.user.get_full_name(), cu.get_role_display(),
+                        sections.get(key.split(".")[0], ""), label,
+                        LABELS[level], origin])
+        groups_sheet = book.create_sheet("Grupos")
+        groups_sheet.append(["Grupo", "Sección", "Vista", "Nivel",
+                             "Miembros"])
+        for group in tree["groups"]:
+            for section in group["views"]:
+                for view in section["views"]:
+                    if view["rank"]:
+                        groups_sheet.append([
+                            group["name"], section["label"], view["label"],
+                            view["level_label"],
+                            ", ".join(group["members"])])
+        for ws in book.worksheets:
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+            for column in ws.columns:
+                width = max(len(str(c.value or "")) for c in column)
+                ws.column_dimensions[column[0].column_letter].width = min(
+                    max(10, width + 2), 60)
+            ws.freeze_panes = "A2"
+        out = io.BytesIO()
+        book.save(out)
+        response = HttpResponse(
+            out.getvalue(), content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"))
+        response["Content-Disposition"] = (
+            'attachment; filename="Permisos_%s.xlsx"'
+            % timezone.localdate().strftime("%Y%m%d"))
+        return response
 
 
 class PermGroupMembersView(SuperuserRequiredMixin, View):

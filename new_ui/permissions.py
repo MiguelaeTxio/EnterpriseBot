@@ -132,3 +132,103 @@ def set_grant(company, view_key, level, updated_by, role="",
     grant.save()
     existing.exclude(pk=grant.pk).delete()
     return grant
+
+
+def subject_levels(grants, key, section):
+    """Nivel propio de un sujeto (sus grants) en una vista, con herencia."""
+    own = {g.view_key: g.level for g in grants}
+    if key in own:
+        return own[key], False
+    if key != section and section in own:
+        return own[section], True
+    return UiViewGrant.LEVEL_NONE, False
+
+
+def permission_tree(company):
+    """
+    The permissions tree: roles (their views and their users) and user
+    groups, with the effective level of every view.
+
+    ---
+
+    S163 (26/11, Miguel Ángel: «una gráfica en árbol de los permisos de
+    cada operario y rol»): por cada rol, sus vistas (sección › listado)
+    con su nivel, y sus usuarios con lo que les queda de verdad; lo que
+    no coincide con el rol lleva su origen. Después, los grupos.
+    """
+    from ivr_config.models import CompanyUser
+    from new_ui.catalog import all_view_keys
+    from new_ui.models import UiUserGroup
+
+    keys = [(k, label, depth) for k, label, depth in all_view_keys()]
+    plain = [k for k, _l, _d in keys]
+    grants = list(UiViewGrant.objects.filter(company=company))
+
+    def views_of(subject_grants):
+        sections, current = [], None
+        for key, label, depth in keys:
+            level, inherited = subject_levels(subject_grants, key,
+                                              section_key(key))
+            node = {"key": key, "label": label, "level": level,
+                    "rank": RANK[level], "level_label": LABELS[level],
+                    "inherited": inherited}
+            if depth == 0:
+                current = dict(node, views=[])
+                sections.append(current)
+            elif current is not None:
+                current["views"].append(node)
+        for section in sections:
+            section["open"] = sum(1 for v in section["views"] if v["rank"])
+        return sections
+
+    users = list(CompanyUser.objects.filter(company=company).select_related(
+        "user").order_by("user__first_name", "user__last_name",
+                         "user__username"))
+    roles = []
+    for code, label in CompanyUser.ROLE_CHOICES:
+        role_grants = [g for g in grants if g.role == code
+                       and not g.user_group_id and not g.company_user_id]
+        role_views = views_of(role_grants)
+        role_rank = {v["key"]: v["rank"] for s in role_views
+                     for v in [s] + s["views"]}
+        members = []
+        for cu in users:
+            if cu.role != code:
+                continue
+            effective = effective_levels(cu, plain)
+            diffs = []
+            for key, view_label, depth in keys:
+                level, origin = effective[key]
+                if RANK[level] != role_rank.get(key, 0):
+                    diffs.append({
+                        "label": ("%s (toda la sección)" % view_label
+                                  if depth == 0 else view_label),
+                        "level_label": LABELS[level], "rank": RANK[level],
+                        "origin": origin})
+            members.append({
+                "pk": cu.pk,
+                "name": cu.user.get_full_name() or cu.user.username,
+                "username": cu.user.username,
+                "active": cu.is_active,
+                "superuser": cu.user.is_superuser,
+                "access": sum(1 for k in plain
+                              if RANK[effective[k][0]] and "." in k),
+                "diffs": diffs,
+            })
+        roles.append({
+            "code": code, "label": label, "views": role_views,
+            "access": sum(s["open"] for s in role_views),
+            "members": members,
+        })
+    groups = []
+    for group in UiUserGroup.objects.filter(company=company).prefetch_related(
+            "members__user"):
+        group_grants = [g for g in grants if g.user_group_id == group.pk]
+        group_views = views_of(group_grants)
+        groups.append({
+            "pk": group.pk, "name": group.name, "views": group_views,
+            "access": sum(s["open"] for s in group_views),
+            "members": [m.user.get_full_name() or m.user.username
+                        for m in group.members.all()],
+        })
+    return {"roles": roles, "groups": groups}

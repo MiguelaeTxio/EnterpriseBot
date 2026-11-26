@@ -328,6 +328,8 @@ SECTIONS = OrderedDict([
         ("usuarios", "Usuarios"),
         ("grupos", "Grupos de usuarios"),
         ("vistas", "Por vista"),
+        ("roles", "Roles"),
+        ("arbol", "Árbol"),
     ])),
 ])
 
