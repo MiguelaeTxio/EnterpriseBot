@@ -764,7 +764,7 @@ class PermTreeExportView(SuperuserRequiredMixin, View):
                         role["label"], area["label"], area["allowed"],
                         area["total"], "Sí" if area["in_menu"] else "No",
                         ", ".join(area["rules"])])
-        own_sheet = book.create_sheet("Panel actual: lo propio")
+        own_sheet = book.create_sheet("Panel actual, lo propio")
         own_sheet.append(["Usuario", "Nombre", "Rol", "Área",
                           "Pantallas a las que entra", "Con su rol",
                           "Pantallas del área", "En su menú", "Puertas"])
