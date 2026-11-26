@@ -140,6 +140,12 @@ PROFILES = {
 USER_GRANTS = {
     # José Luis (Pepe): Asistencia como hasta ahora (era Administrador).
     (23, "Pepe.Alvarez"): {"panel.asistencia": EDIT},
+    # Alberto: gerente que lleva el taller (Miguel Ángel, 26/11): como
+    # José Luis sin Asistencia, más lo del taller que Oficina no trae
+    # (chat de averías y albaranes de repuestos; Repuestos, Partes y
+    # Repostajes ya van en Oficina y su puesto pasa sus reglas).
+    (20, "Alberto Álvarez"): {"panel.chat-y-averias": VIEW,
+                              "panel.albaranes": VIEW},
     # Yolanda: sus llaves de Firmas y Seguros.
     (40, "yolanda.bandera"): {
         key: EDIT for key in SIGNATURE_KEYS + INSURANCE_KEYS},

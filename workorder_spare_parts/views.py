@@ -66,6 +66,18 @@ from .forms import (
 logger = logging.getLogger(__name__)
 
 
+def _sees_purchase_data(company_user):
+    """
+    True unless the user is a workshop mechanic.
+
+    ---
+
+    S163 (26/11): el catálogo se abre a los mecánicos sin proveedor ni
+    precio de compra (Miguel Ángel); el resto lo ve como siempre.
+    """
+    return company_user.role != CompanyUser.ROLE_WORKSHOP
+
+
 class CatalogReadAccessMixin(CompanyUserRequiredMixin):
     """
     Read access to the spare part catalog for ADMIN, SUPERVISOR,
@@ -113,7 +125,7 @@ class CatalogReadAccessMixin(CompanyUserRequiredMixin):
         return super().dispatch(request, *args, **kwargs)
 
 
-class SparePartEntryListView(SupervisorAccessMixin, ListView):
+class SparePartEntryListView(CatalogReadAccessMixin, ListView):
     """
     Catálogo de repuestos, para Administración -- AGRUPADO por
     artículo real (internal_reference), no una fila por cada entrada
@@ -286,10 +298,9 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
             MachineAsset.objects.filter(company=company, is_active=True)
             .order_by('code')
         )
-        # SupervisorAccessMixin ya garantiza ADMIN/SUPERVISOR -- can_edit
-        # siempre True aquí, se mantiene la variable en la plantilla por
-        # si en el futuro se abre a otro rol de solo lectura.
-        ctx['can_edit'] = True
+        # S163 (26/11, Miguel Ángel): los mecánicos ven el catálogo,
+        # pero sin proveedor ni precio de compra y sin altas ni bajas.
+        ctx['can_edit'] = _sees_purchase_data(company_user)
 
         # S116-H10: enlaces/flecha/prioridad de cabecera, mismo patrón
         # que Albaranes/Almacén -- resuelto aquí (plantillas tontas),
@@ -360,7 +371,7 @@ class SparePartEntryListView(SupervisorAccessMixin, ListView):
         return ctx
 
 
-class SparePartArticleDetailView(SupervisorAccessMixin, View):
+class SparePartArticleDetailView(CatalogReadAccessMixin, View):
     """
     Ficha de artículo (S116-H10) -- petición explícita de Miguel
     Ángel: "pensar en la organización del almacén [...] de dónde
@@ -428,6 +439,9 @@ class SparePartArticleDetailView(SupervisorAccessMixin, View):
             'total_stock': total_stock,
             'minimum_stock': minimum_stock,
             'below_minimum': below_minimum,
+            # S163 (26/11): sin proveedor, precio ni acciones para los
+            # mecánicos.
+            'can_edit': _sees_purchase_data(request.user.company_user),
         })
 
 

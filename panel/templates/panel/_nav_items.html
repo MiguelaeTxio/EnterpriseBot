@@ -602,7 +602,7 @@
                                 </a>
                             </li>
                         {% endif %}
-                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' %}
+                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' %}{# S163 (26/11): mecánicos, sin proveedor ni precio. #}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
                                    href="{% url 'workorder_spare_parts:catalog_list' %}">
