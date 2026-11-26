@@ -185,6 +185,15 @@ class WorkshopRequiredMixin(CompanyUserRequiredMixin):
     Hito 7.
     """
 
+    # S163 (26/11): roles a nivel de clase, para que Permisos › Árbol
+    # lea la misma lista que decide aquí quién entra.
+    allowed_roles = {
+        CompanyUser.ROLE_WORKSHOP,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
+    }
+
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds the WORKSHOP or ADMIN
@@ -205,13 +214,7 @@ class WorkshopRequiredMixin(CompanyUserRequiredMixin):
         # Grant access only to WORKSHOP and ADMIN roles.
         # Conceder acceso a WORKSHOP, WORKSHOPBOSS y ADMIN.
         # Grant access to WORKSHOP, WORKSHOPBOSS and ADMIN roles.
-        allowed_roles = {
-            CompanyUser.ROLE_WORKSHOP,
-            CompanyUser.ROLE_WORKSHOPBOSS,
-            CompanyUser.ROLE_ADMIN,
-            CompanyUser.ROLE_ADMIN_SUPERVISOR,
-        }
-        if company_user.role not in allowed_roles:
+        if company_user.role not in self.allowed_roles:
             return HttpResponseForbidden(
                 "Acceso denegado. Esta sección requiere el rol de Operario o "
                 "Jefe de taller."
@@ -228,6 +231,9 @@ class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
     Mixin que requiere que el CompanyUser autenticado tenga el rol ADMIN.
     Devuelve HTTP 403 Forbidden si el usuario tiene el rol OPERATOR.
     """
+
+    # S163 (26/11): leído también por Permisos › Árbol.
+    allowed_roles = set(CompanyUser.ADMIN_ROLES)
 
     def dispatch(self, request, *args, **kwargs):
         """
@@ -248,7 +254,7 @@ class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
         # Block access if the user does not hold the ADMIN role.
         # Bloquear el acceso si el usuario no posee el rol ADMIN.
         # S141: también el supervisor de administración.
-        if company_user.role not in CompanyUser.ADMIN_ROLES:
+        if company_user.role not in self.allowed_roles:
             return HttpResponseForbidden(
                 "Acceso denegado. Esta sección requiere el rol de "
                 "Administrador."
@@ -269,6 +275,14 @@ class AssistanceRequiredMixin(CompanyUserRequiredMixin):
     error.
     """
 
+    # S163 (26/11): roles a nivel de clase, para que Permisos › Árbol
+    # lea la misma lista que decide aquí quién entra.
+    allowed_roles = {
+        CompanyUser.ROLE_ASSISTANCE,
+        CompanyUser.ROLE_ASSIST_SUPERVISOR,
+        CompanyUser.ROLE_ADMIN,
+    }
+
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds the ASSISTANCE
@@ -283,12 +297,7 @@ class AssistanceRequiredMixin(CompanyUserRequiredMixin):
         if company_user is None:
             return super().dispatch(request, *args, **kwargs)
 
-        allowed_roles = {
-            CompanyUser.ROLE_ASSISTANCE,
-            CompanyUser.ROLE_ASSIST_SUPERVISOR,
-            CompanyUser.ROLE_ADMIN,
-        }
-        if company_user.role not in allowed_roles:
+        if company_user.role not in self.allowed_roles:
             messages.error(
                 request,
                 "Acceso denegado. Esta sección requiere el rol de "
@@ -313,6 +322,14 @@ class AssistanceWorkOrderAccessMixin(CompanyUserRequiredMixin):
     comprobado antes de ejecutar la vista (S117).
     """
 
+    # S163 (26/11): roles a nivel de clase, para que Permisos › Árbol
+    # lea la misma lista que decide aquí quién entra.
+    allowed_roles = {
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ASSISTANCE,
+        CompanyUser.ROLE_ASSIST_SUPERVISOR,
+    }
+
     def dispatch(self, request, *args, **kwargs):
         """
         Check the role, then run the view.
@@ -325,12 +342,7 @@ class AssistanceWorkOrderAccessMixin(CompanyUserRequiredMixin):
         if company_user is None:
             return super().dispatch(request, *args, **kwargs)
 
-        allowed_roles = {
-            CompanyUser.ROLE_ADMIN,
-            CompanyUser.ROLE_ASSISTANCE,
-            CompanyUser.ROLE_ASSIST_SUPERVISOR,
-        }
-        if company_user.role not in allowed_roles:
+        if company_user.role not in self.allowed_roles:
             messages.error(
                 request,
                 "Acceso denegado. Esta sección requiere el rol de "
@@ -356,6 +368,14 @@ class AssistanceAlbaranAccessMixin(CompanyUserRequiredMixin):
     vista (S117).
     """
 
+    # S163 (26/11): roles a nivel de clase, para que Permisos › Árbol
+    # lea la misma lista que decide aquí quién entra.
+    allowed_roles = {
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ASSISTANCE,
+        CompanyUser.ROLE_ASSIST_SUPERVISOR,
+    }
+
     def dispatch(self, request, *args, **kwargs):
         """
         Check the role or the unit driver, then run the view.
@@ -371,18 +391,14 @@ class AssistanceAlbaranAccessMixin(CompanyUserRequiredMixin):
         if company_user is None:
             return super().dispatch(request, *args, **kwargs)
 
-        allowed_roles = {
-            CompanyUser.ROLE_ADMIN,
-            CompanyUser.ROLE_ASSISTANCE,
-            CompanyUser.ROLE_ASSIST_SUPERVISOR,
-        }
         is_unit_driver = WorkOrderAssistanceUnit.objects.filter(
             pk=kwargs.get("pk"),
             work_order__company=company_user.company,
         ).filter(
             Q(operator=company_user) | Q(operator_2=company_user),
         ).exists()
-        if company_user.role not in allowed_roles and not is_unit_driver:
+        if (company_user.role not in self.allowed_roles
+                and not is_unit_driver):
             messages.error(
                 request,
                 "Acceso denegado. Este albarán es de otro conductor.",
@@ -411,6 +427,13 @@ class AssistanceSupervisorAccessMixin(CompanyUserRequiredMixin):
     Rol comprobado antes de ejecutar la vista (S117).
     """
 
+    # S163 (26/11): roles a nivel de clase, para que Permisos › Árbol
+    # lea la misma lista que decide aquí quién entra.
+    allowed_roles = {
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ASSIST_SUPERVISOR,
+    }
+
     def dispatch(self, request, *args, **kwargs):
         """
         Check the role, then run the view.
@@ -423,11 +446,7 @@ class AssistanceSupervisorAccessMixin(CompanyUserRequiredMixin):
         if company_user is None:
             return super().dispatch(request, *args, **kwargs)
 
-        allowed_roles = {
-            CompanyUser.ROLE_ADMIN,
-            CompanyUser.ROLE_ASSIST_SUPERVISOR,
-        }
-        if company_user.role not in allowed_roles:
+        if company_user.role not in self.allowed_roles:
             messages.error(
                 request,
                 "Acceso denegado. Esta sección requiere el rol de "
@@ -569,6 +588,15 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
                            de error.
     """
 
+    # S163 (26/11): roles a nivel de clase, para que Permisos › Árbol
+    # lea la misma lista que decide aquí quién entra.
+    allowed_roles = {
+        CompanyUser.ROLE_SUPERVISOR,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
+    }
+
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds the SUPERVISOR or ADMIN
@@ -597,13 +625,7 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
         # Grant access only to SUPERVISOR and ADMIN roles.
         # Conceder acceso a SUPERVISOR, WORKSHOPBOSS y ADMIN.
         # Grant access to SUPERVISOR, WORKSHOPBOSS and ADMIN roles.
-        allowed_roles = {
-            CompanyUser.ROLE_SUPERVISOR,
-            CompanyUser.ROLE_WORKSHOPBOSS,
-            CompanyUser.ROLE_ADMIN,
-            CompanyUser.ROLE_ADMIN_SUPERVISOR,
-        }
-        if company_user.role not in allowed_roles:
+        if company_user.role not in self.allowed_roles:
             messages.error(
                 request,
                 "Acceso denegado. Esta sección requiere el rol de Supervisor, "
@@ -718,6 +740,14 @@ class DocsUploadAccessMixin(CompanyUserRequiredMixin):
     restringida.
     """
 
+    # S163 (26/11): roles a nivel de clase, para que Permisos › Árbol
+    # lea la misma lista que decide aquí quién entra.
+    allowed_roles = {
+        CompanyUser.ROLE_DOCS_SUPERVISOR,
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
+    }
+
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds the
@@ -730,12 +760,7 @@ class DocsUploadAccessMixin(CompanyUserRequiredMixin):
         if company_user is None:
             return super().dispatch(request, *args, **kwargs)
 
-        allowed_roles = {
-            CompanyUser.ROLE_DOCS_SUPERVISOR,
-            CompanyUser.ROLE_ADMIN,
-            CompanyUser.ROLE_ADMIN_SUPERVISOR,
-        }
-        if company_user.role not in allowed_roles:
+        if company_user.role not in self.allowed_roles:
             messages.error(
                 request,
                 "Acceso denegado. Esta sección requiere el rol de "
@@ -793,6 +818,16 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
       Cualquier otro rol — redireccion al dashboard con mensaje de error.
     """
 
+    # S163 (26/11): roles a nivel de clase, para que Permisos › Árbol
+    # lea la misma lista que decide aquí quién entra.
+    allowed_roles = {
+        CompanyUser.ROLE_WORKSHOP,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+        CompanyUser.ROLE_SUPERVISOR,
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
+    }
+
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated CompanyUser holds one of the allowed
@@ -807,14 +842,7 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
         if company_user is None:
             return super().dispatch(request, *args, **kwargs)
 
-        allowed_roles = {
-            CompanyUser.ROLE_WORKSHOP,
-            CompanyUser.ROLE_WORKSHOPBOSS,
-            CompanyUser.ROLE_SUPERVISOR,
-            CompanyUser.ROLE_ADMIN,
-            CompanyUser.ROLE_ADMIN_SUPERVISOR,
-        }
-        if company_user.role not in allowed_roles:
+        if company_user.role not in self.allowed_roles:
             messages.error(
                 request,
                 "Acceso denegado. Esta sección requiere el rol de "

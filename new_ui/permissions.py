@@ -184,6 +184,7 @@ def permission_tree(company):
     users = list(CompanyUser.objects.filter(company=company).select_related(
         "user").order_by("user__first_name", "user__last_name",
                          "user__username"))
+    legacy = legacy_panel(company, users)
     roles = []
     for code, label in CompanyUser.ROLE_CHOICES:
         role_grants = [g for g in grants if g.role == code
@@ -206,6 +207,8 @@ def permission_tree(company):
                         "level_label": LABELS[level], "rank": RANK[level],
                         "origin": origin})
             members.append({
+                "panel_diffs": legacy["user_diffs"].get(cu.pk, []),
+                "panel_access": legacy["user_count"].get(cu.pk, 0),
                 "pk": cu.pk,
                 "name": cu.user.get_full_name() or cu.user.username,
                 "username": cu.user.username,
@@ -216,6 +219,9 @@ def permission_tree(company):
                 "diffs": diffs,
             })
         roles.append({
+            "panel": legacy["roles"][code],
+            "panel_access": sum(1 for a in legacy["roles"][code]
+                                if a["allowed"]),
             "code": code, "label": label, "views": role_views,
             "access": sum(s["open"] for s in role_views),
             "members": members,
@@ -232,3 +238,54 @@ def permission_tree(company):
                         for m in group.members.all()],
         })
     return {"roles": roles, "groups": groups}
+
+
+def legacy_panel(company, users):
+    """
+    What each role and each user can enter in the current panel.
+
+    ---
+
+    S163 (26/11): lo que deja entrar el panel actual a cada rol (por sí
+    mismo) y a cada usuario (con sus accesos propios: firmas, seguros,
+    nóminas compartidas, carpetas del Explorador...), por área, leído
+    de las reglas del propio panel (panel/access_rules.py). Se guarda
+    dos minutos en caché: pinta el menú y pregunta a cada regla por
+    cada usuario.
+    """
+    from django.core.cache import cache
+
+    from ivr_config.models import CompanyUser
+    from panel.access_rules import panel_areas, role_stand_in
+
+    key = "nui_legacy_panel_%s" % company.pk
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    def ordered(areas):
+        return sorted(areas.values(), key=lambda a: a["label"])
+
+    roles = {code: panel_areas(role_stand_in(company, code))
+             for code, _label in CompanyUser.ROLE_CHOICES}
+    user_diffs, user_count = {}, {}
+    for cu in users:
+        mine = panel_areas(cu)
+        base = roles.get(cu.role, {})
+        user_count[cu.pk] = sum(1 for a in mine.values() if a["allowed"])
+        diffs = []
+        for area in ordered(mine):
+            other = base.get(area["key"])
+            if other and (other["allowed"], other["in_menu"]) == (
+                    area["allowed"], area["in_menu"]):
+                continue
+            diffs.append(dict(area, role_allowed=(
+                other["allowed"] if other else 0)))
+        user_diffs[cu.pk] = diffs
+    result = {
+        "roles": {code: ordered(areas) for code, areas in roles.items()},
+        "user_diffs": user_diffs,
+        "user_count": user_count,
+    }
+    cache.set(key, result, 120)
+    return result

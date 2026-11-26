@@ -752,6 +752,31 @@ class PermTreeExportView(SuperuserRequiredMixin, View):
                             group["name"], section["label"], view["label"],
                             view["level_label"],
                             ", ".join(group["members"])])
+        # S163 (26/11): el panel actual, por rol y lo propio de cada uno.
+        legacy_sheet = book.create_sheet("Panel actual por rol")
+        legacy_sheet.append(["Rol", "Área", "Pantallas a las que entra",
+                             "Pantallas del área", "En su menú",
+                             "Puertas"])
+        for role in tree["roles"]:
+            for area in role["panel"]:
+                if area["allowed"]:
+                    legacy_sheet.append([
+                        role["label"], area["label"], area["allowed"],
+                        area["total"], "Sí" if area["in_menu"] else "No",
+                        ", ".join(area["rules"])])
+        own_sheet = book.create_sheet("Panel actual: lo propio")
+        own_sheet.append(["Usuario", "Nombre", "Rol", "Área",
+                          "Pantallas a las que entra", "Con su rol",
+                          "Pantallas del área", "En su menú", "Puertas"])
+        for role in tree["roles"]:
+            for member in role["members"]:
+                for area in member["panel_diffs"]:
+                    own_sheet.append([
+                        member["username"], member["name"], role["label"],
+                        area["label"], area["allowed"],
+                        area["role_allowed"], area["total"],
+                        "Sí" if area["in_menu"] else "No",
+                        ", ".join(area["rules"])])
         for ws in book.worksheets:
             for cell in ws[1]:
                 cell.font = Font(bold=True)

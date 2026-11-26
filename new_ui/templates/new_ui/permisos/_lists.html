@@ -119,6 +119,15 @@ new_ui/views.py.
         <details class="mb-1" data-nui-tree-node data-search="{{ role.label|lower }} {% for m in role.members %}{{ m.name|lower }} {{ m.username|lower }} {% endfor %}">
             <summary><span class="fw-semibold">{{ role.label }}</span> <span class="text-muted">· {{ role.members|length }} usuario{{ role.members|length|pluralize }} · {{ role.access }} vista{{ role.access|pluralize }} con acceso</span> <a href="#" class="ms-1" data-nui-edit="role:{{ role.code }}" title="Ver y cambiar"><i class="bi bi-pencil-square"></i></a></summary>
             <div class="ms-3">
+                <details data-nui-tree-part>
+                    <summary class="text-muted">Panel actual · {{ role.panel_access }} área{{ role.panel_access|pluralize }} con acceso</summary>
+                    <div class="ms-3 d-flex flex-wrap gap-1 my-1">
+                        {% for area in role.panel %}<span class="badge {% if area.rank == 2 %}text-bg-success{% elif area.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal{% if area.allowed and not area.in_menu %} opacity-75{% endif %}"{% if not area.allowed %} data-nui-tree-none{% endif %} title="Entra a {{ area.allowed }} de {{ area.total }} pantallas · {% if area.in_menu %}en su menú{% else %}sin enlace en su menú{% endif %}{% if area.hidden_tab %} · pestaña oculta{% endif %} · Puertas: {{ area.rules|join:", " }}{% if area.per_person %} · parte depende de la persona{% endif %}">{% if area.in_menu %}<i class="bi bi-list me-1"></i>{% endif %}{{ area.label }}{% if area.rank == 1 %} · {{ area.allowed }}/{{ area.total }}{% endif %}{% if area.per_person %} *{% endif %}</span>{% endfor %}
+                    </div>
+                    <div class="ms-3 text-muted">Verde: entra a todas sus pantallas; azul: a una parte (cuántas de cuántas); <i class="bi bi-list"></i>: lo tiene en el menú; *: parte depende de la persona.</div>
+                </details>
+                <details data-nui-tree-part>
+                    <summary class="text-muted">Nueva interfaz · {{ role.access }} vista{{ role.access|pluralize }} con acceso</summary>
                 {% for section in role.views %}
                 <details data-nui-tree-section{% if not section.rank and not section.open %} data-nui-tree-empty{% endif %}>
                     <summary><span class="badge {% if section.rank == 2 %}text-bg-success{% elif section.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal">{{ section.label }}</span> <span class="text-muted">{{ section.level_label }}{% if section.open %} · {{ section.open }} con acceso{% endif %}</span></summary>
@@ -127,6 +136,7 @@ new_ui/views.py.
                     </div>
                 </details>
                 {% endfor %}
+                </details>
                 {% if role.members %}
                 <details open>
                     <summary class="text-muted">Sus usuarios</summary>
@@ -135,10 +145,15 @@ new_ui/views.py.
                         <li class="my-1" data-nui-tree-person data-search="{{ m.name|lower }} {{ m.username|lower }}">
                             <a href="#" data-nui-edit="user:{{ m.pk }}" class="{% if not m.active %}text-muted{% endif %}"><i class="bi bi-person me-1"></i>{{ m.name }}</a>
                             <span class="text-muted">({{ m.username }}{% if not m.active %}, inactivo{% endif %}) · {{ m.access }} vista{{ m.access|pluralize }}</span>
+                            <div class="ms-3"><span class="text-muted">Panel actual: {{ m.panel_access }} área{{ m.panel_access|pluralize }}</span>
+                            {% for a in m.panel_diffs %}<span class="badge {% if a.rank == 2 %}text-bg-success{% elif a.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal me-1" title="Puertas: {{ a.rules|join:", " }}">{{ a.label }}: {{ a.allowed }}/{{ a.total }} (su rol: {{ a.role_allowed }}){% if a.in_menu %} · en su menú{% endif %}</span>{% empty %}<span class="text-muted">· igual que su rol</span>{% endfor %}
+                            </div>
+                            <div class="ms-3"><span class="text-muted">Nueva interfaz:</span>
                             {% if m.superuser %}<span class="badge text-bg-dark fw-normal">Superusuario: todo</span>
                             {% elif m.diffs %}
-                            <div class="ms-3">{% for d in m.diffs %}<span class="badge {% if d.rank == 2 %}text-bg-success{% elif d.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal me-1 mb-1" title="{{ d.origin }}">{{ d.label }}: {{ d.level_label }} · {{ d.origin }}</span>{% endfor %}</div>
-                            {% else %}<span class="text-muted">· igual que su rol</span>{% endif %}
+                            <span>{% for d in m.diffs %}<span class="badge {% if d.rank == 2 %}text-bg-success{% elif d.rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %} fw-normal me-1 mb-1" title="{{ d.origin }}">{{ d.label }}: {{ d.level_label }} · {{ d.origin }}</span>{% endfor %}</span>
+                            {% else %}<span class="text-muted">igual que su rol</span>{% endif %}
+                            </div>
                         </li>
                         {% endfor %}
                     </ul>

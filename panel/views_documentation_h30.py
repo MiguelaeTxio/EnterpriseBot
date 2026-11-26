@@ -614,67 +614,11 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             if nav_state and isinstance(nav_state.state, dict)
             else {}
         )
-        valid_tabs = (
-            "maquinaria", "personal", "equipos", "epis", "accesorios",
-            "vacaciones",
-            "fichajes", "horarios", "calendario", "requisitos", "avisos",
-            "circulares",
-            "plantillas", "bandeja", "revisiones", "repostajes",
-            "especificaciones",
-            "solicitudes", "nominas", "pedir", "firmas", "seguros",
-            "cae",
-        )
-        # H30 (S126): "Bandeja de entrada" solo para quien puede subir
-        # documentación (mismos roles que DocsUploadAccessMixin).
-        can_use_inbox = request.user.company_user.role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
-            CompanyUser.ROLE_DOCS_SUPERVISOR,
-        )
-        if not can_use_inbox:
-            valid_tabs = tuple(t for t in valid_tabs if t != "bandeja")
-        # S148: "Pedir documentos", mismos roles que pedir desde Avisos.
-        from panel.views_document_alerts import DOC_REQUEST_ROLES
+        # S163 (26/11): qué pestañas ve cada uno, en un solo sitio
+        # (panel/access_rules.py), que lee también Permisos › Árbol.
+        from panel.access_rules import documentation_tabs
 
-        can_request_docs = (
-            request.user.company_user.role in DOC_REQUEST_ROLES)
-        if not can_request_docs:
-            valid_tabs = tuple(t for t in valid_tabs if t != "pedir")
-        # H24 (S129): "Fichajes" lleva posiciones GPS -- solo los roles
-        # de SupervisorAccessMixin.
-        from panel.views_payslips import can_send_payslips
-
-        can_view_clock_events = request.user.company_user.role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
-            CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
-        )
-        if not can_view_clock_events:
-            valid_tabs = tuple(
-                t for t in valid_tabs
-                if t not in ("fichajes", "horarios", "solicitudes")
-            )
-        # S149: pestaña "Nóminas" (entrega de nóminas).
-        if not can_send_payslips(request.user.company_user):
-            valid_tabs = tuple(t for t in valid_tabs if t != "nominas")
-        # S153: pestaña "Firmas", solo con acceso a las firmas (Yolanda).
-        from panel.views_signatures import can_use_signatures
-
-        can_sign = can_use_signatures(request.user.company_user)
-        if not can_sign:
-            valid_tabs = tuple(t for t in valid_tabs if t != "firmas")
-        # S152: pestaña "Seguros", solo con acceso a los informes de
-        # seguros (Yolanda, Alejandro y Miguel Ángel).
-        from panel.views_insurance import can_use_insurance
-
-        can_insure = can_use_insurance(request.user.company_user)
-        if not can_insure:
-            valid_tabs = tuple(t for t in valid_tabs if t != "seguros")
-        # S156: pestaña "Correos CAE" (avisos de las plataformas de
-        # coordinación), para administración y supervisión.
-        from cae_mail.views import can_use_cae
-
-        can_cae = can_use_cae(request.user.company_user)
-        if not can_cae:
-            valid_tabs = tuple(t for t in valid_tabs if t != "cae")
+        valid_tabs = documentation_tabs(request.user.company_user)
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a
         # pestañas propias del hub -- Miguel Ángel: "las gestiones
@@ -717,14 +661,14 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "persisted_active_tab": active_tab,
             "persisted_filters": filters,
             "personal_tab_qs": _build_personal_tab_querystring(filters),
-            "can_use_inbox": can_use_inbox,
-            "can_view_clock_events": can_view_clock_events,
-            "can_request_docs": can_request_docs,
+            "can_use_inbox": "bandeja" in valid_tabs,
+            "can_view_clock_events": "fichajes" in valid_tabs,
+            "can_request_docs": "pedir" in valid_tabs,
             # S149: enlace a la entrega de nóminas (Yolanda y Jerónimo).
-            "can_send_payslips": can_send_payslips(request.user.company_user),
-            "can_use_signatures": can_sign,
-            "can_use_insurance": can_insure,
-            "can_use_cae": can_cae,
+            "can_send_payslips": "nominas" in valid_tabs,
+            "can_use_signatures": "firmas" in valid_tabs,
+            "can_use_insurance": "seguros" in valid_tabs,
+            "can_use_cae": "cae" in valid_tabs,
         })
 
 
