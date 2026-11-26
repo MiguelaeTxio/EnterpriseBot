@@ -25,6 +25,29 @@ RANK = {
     UiViewGrant.LEVEL_EDIT: 2,
 }
 LABELS = dict(UiViewGrant.LEVEL_CHOICES)
+# Modo «muchos usuarios a la vez» (árbol de Permisos): perfiles y
+# permisos leídos una sola vez.
+_BULK = {}
+
+
+def start_bulk(company):
+    """Load profiles and grants once (see access_rules.bulk_mode)."""
+    from new_ui.models import UiUserGroup
+
+    groups = list(UiUserGroup.objects.filter(company=company)
+                  .prefetch_related("members"))
+    _BULK["groups"] = groups
+    _BULK["members"] = {}
+    for group in groups:
+        for member in group.members.all():
+            _BULK["members"].setdefault(member.pk, []).append(group.pk)
+    _BULK["grants"] = list(UiViewGrant.objects.filter(
+        company=company).select_related("user_group"))
+
+
+def stop_bulk():
+    """Back to one query per user. --- Vuelve a consultar por usuario."""
+    _BULK.clear()
 
 
 def profile_ids(company_user):
@@ -39,19 +62,31 @@ def profile_ids(company_user):
     """
     from new_ui.models import UiUserGroup
 
-    ids = list(company_user.new_ui_user_groups.values_list("pk", flat=True))
+    if _BULK:
+        ids = _BULK["members"].get(company_user.pk, [])
+        groups = _BULK["groups"]
+    else:
+        ids = list(company_user.new_ui_user_groups.values_list(
+            "pk", flat=True))
+        groups = None
     if ids:
         return ids
-    return [group.pk for group in UiUserGroup.objects.filter(
-        company_id=company_user.company_id)
-        if company_user.role in (group.default_roles or [])]
+    if groups is None:
+        groups = UiUserGroup.objects.filter(
+            company_id=company_user.company_id)
+    return [group.pk for group in groups
+            if company_user.role in (group.default_roles or [])]
 
 
 def _grants_for(company_user, keys):
     group_ids = profile_ids(company_user)
-    grants = UiViewGrant.objects.filter(
-        company=company_user.company, view_key__in=keys,
-    ).select_related("user_group")
+    if _BULK:
+        keys = set(keys)
+        grants = [g for g in _BULK["grants"] if g.view_key in keys]
+    else:
+        grants = UiViewGrant.objects.filter(
+            company_id=company_user.company_id, view_key__in=keys,
+        ).select_related("user_group")
     out = []
     for grant in grants:
         if grant.company_user_id == company_user.pk:
@@ -175,6 +210,14 @@ def permission_tree(company):
     con su nivel, y sus usuarios con lo que les queda de verdad; lo que
     no coincide con el rol lleva su origen. Después, los grupos.
     """
+    from panel.access_rules import bulk_mode
+
+    with bulk_mode(company):
+        return _permission_tree(company)
+
+
+def _permission_tree(company):
+    """The work of permission_tree. --- El cálculo del árbol."""
     from ivr_config.models import CompanyUser
     from new_ui.catalog import all_view_keys
     from new_ui.models import UiUserGroup
@@ -336,13 +379,22 @@ def legacy_panel(company, users):
     """
     from django.core.cache import cache
 
-    from ivr_config.models import CompanyUser
-    from panel.access_rules import panel_areas, role_stand_in
-
     key = "nui_legacy_panel_v2_%s" % company.pk
     cached = cache.get(key)
     if cached is not None:
         return cached
+    from panel.access_rules import bulk_mode
+
+    with bulk_mode(company):
+        result = _legacy_panel(company, users)
+    cache.set(key, result, 120)
+    return result
+
+
+def _legacy_panel(company, users):
+    """The work of legacy_panel. --- El cálculo de legacy_panel."""
+    from ivr_config.models import CompanyUser
+    from panel.access_rules import panel_areas, role_stand_in
 
     def ordered(areas):
         return sorted(areas.values(), key=lambda a: a["label"])
@@ -384,5 +436,4 @@ def legacy_panel(company, users):
         "user_diffs": user_diffs,
         "user_count": user_count,
     }
-    cache.set(key, result, 120)
     return result

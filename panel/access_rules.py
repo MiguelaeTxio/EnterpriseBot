@@ -23,6 +23,9 @@ from ivr_config.models import CompanyUser
 ENFORCE = False
 # Vista previa (solo para pintar el árbol): como si estuviera encendida.
 _PREVIEW = []
+# Modo «muchos usuarios a la vez» (el árbol de Permisos): datos leídos de
+# una vez para no hacer las mismas consultas por cada persona.
+_BULK = {}
 
 
 def documentation_tabs(company_user):
@@ -74,7 +77,7 @@ def documentation_tabs(company_user):
             if t not in ("fichajes", "horarios", "solicitudes")
         )
     # S149: pestaña "Nóminas" (entrega de nóminas).
-    if not can_send_payslips(company_user):
+    if not _payslips_ok(company_user, can_send_payslips):
         valid_tabs = tuple(t for t in valid_tabs if t != "nominas")
     # S153: pestaña "Firmas", solo con acceso a las firmas (Yolanda).
     from panel.views_signatures import can_use_signatures
@@ -289,9 +292,9 @@ def _rules():
         (InsuranceAccessMixin, "Seguros (acceso propio)",
          can_use_insurance, True),
         (PayslipAccessMixin, "Nóminas (quien sube o se le comparten)",
-         can_send_payslips, True),
+         lambda cu: _payslips_ok(cu, can_send_payslips), True),
         (ExplorerAccessMixin, "Explorador (según sus carpetas)",
-         lambda cu: bool(readable_buckets(cu)), True),
+         lambda cu: _explorer_ok(cu, readable_buckets), True),
         (m.CompanyUserRequiredMixin, "Cualquier usuario del panel",
          lambda cu: True, False),
     ]
@@ -618,3 +621,66 @@ def panel_gate_context(request):
     Para las plantillas: si la puerta por áreas está encendida.
     """
     return {"panel_gate_on": ENFORCE}
+
+
+def _payslips_ok(company_user, can_send_payslips):
+    """can_send_payslips, from the bulk data when the tree is drawn."""
+    shares = _BULK.get("payslip_share_ids")
+    if shares is None:
+        return can_send_payslips(company_user)
+    return bool(getattr(company_user, "payslip_uploader", False)
+                or getattr(company_user, "payslip_full_access", False)
+                or company_user.pk in shares)
+
+
+def _explorer_ok(company_user, readable_buckets):
+    """readable_buckets(...) != [], from the bulk data when possible."""
+    granted = _BULK.get("explorer_user_ids")
+    if granted is None:
+        return bool(readable_buckets(company_user))
+    return (company_user.role in CompanyUser.ADMIN_ROLES
+            or company_user.pk in granted)
+
+
+class bulk_mode:
+    """
+    Read once what the rules ask about every user (tree drawing).
+
+    ---
+
+    Lee de una vez lo que las reglas preguntan por cada persona
+    (entregas de nóminas compartidas, carpetas del Explorador, perfiles
+    y permisos), mientras se pinta el árbol de Permisos.
+    """
+
+    def __init__(self, company):
+        self.company = company
+
+    depth = 0
+
+    def __enter__(self):
+        bulk_mode.depth += 1
+        if bulk_mode.depth > 1:
+            return self
+        from document_explorer.models import DocumentFolderGrant
+        from hr_calendar.models import PayslipBatchShare
+        from new_ui import permissions
+
+        _BULK["payslip_share_ids"] = set(
+            PayslipBatchShare.objects.values_list(
+                "company_user_id", flat=True))
+        _BULK["explorer_user_ids"] = set(
+            DocumentFolderGrant.objects.filter(can_read=True)
+            .values_list("user_id", flat=True))
+        permissions.start_bulk(self.company)
+        return self
+
+    def __exit__(self, *exc):
+        from new_ui import permissions
+
+        bulk_mode.depth -= 1
+        if bulk_mode.depth:
+            return False
+        _BULK.clear()
+        permissions.stop_bulk()
+        return False
