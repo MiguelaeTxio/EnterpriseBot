@@ -2029,6 +2029,34 @@ def _per_lists():
 
 
 # ---------------------------------------------------------- documentos
+_WA_STATES = {"sent": "Enviado", "delivered": "Entregado", "read": "Visto",
+              "failed": "Falló", "undelivered": "No entregado"}
+
+
+def _circular_extras():
+    """Filtros de las circulares enviadas (S163, 26/11)."""
+    def model(path):
+        return apps.get_model(path)
+
+    return [
+        # Solo las circulares que se han enviado alguna vez.
+        Extra("circular", "Circular", lambda company: [
+            (str(pk), label) for pk, label in model(
+                "document_explorer.DocumentTypeCatalog").objects.filter(
+                acknowledgments__isnull=False).distinct()
+            .order_by("label").values_list("pk", "label")],
+            lambda qs, v: qs.filter(document_type_id=v)
+            if v.isdigit() else qs),
+        Extra("whatsapp", "WhatsApp", lambda company: [
+            ("sin", "Sin enviar por WhatsApp")] + list(_WA_STATES.items()),
+            lambda qs, v: qs.exclude(channel="WHATSAPP") if v == "sin"
+            else qs.filter(whatsapp_status=v)),
+        Extra("leida", "Lectura confirmada", lambda company: [
+            ("si", "Confirmada"), ("no", "Sin confirmar")],
+            lambda qs, v: qs.filter(whatsapp_read_at__isnull=v == "no")),
+    ]
+
+
 _NOTICE_KINDS = (("MISSING", "Falta"), ("EXPIRED", "Caducado"),
                  ("UPCOMING", "Caduca pronto"))
 
@@ -2184,16 +2212,20 @@ def _doc_lists():
             note="Periodo: fecha de llegada."),
         "circulares": fk(
             "Circulares", "document_explorer.DocumentAcknowledgment",
-            ("person", "document_type"), [
+            ("person", "document_type", "worksite"), [
                 Col("circular", "Circular", lambda r: r.document_type.label
                     if r.document_type_id else "", "document_type__label"),
                 Col("entrega", "Entrega", lambda r: fmt_date(r.delivery_date),
                     "delivery_date", "text-nowrap"),
-                Col("canal", "Canal", lambda r: r.channel, "channel"),
-                Col("whatsapp", "WhatsApp", lambda r: r.whatsapp_status,
-                    "whatsapp_status"),
-                Col("leida", "Leída", lambda r: fmt_datetime(
+                Col("canal", "Canal", lambda r: disp(r, "channel"),
+                    "channel"),
+                # S163 (26/11): el estado de Twilio, en castellano.
+                Col("whatsapp", "WhatsApp", lambda r: _WA_STATES.get(
+                    r.whatsapp_status, r.whatsapp_status), "whatsapp_status"),
+                Col("leida", "Lectura confirmada", lambda r: fmt_datetime(
                     r.whatsapp_read_at), "whatsapp_read_at", "text-nowrap"),
+                Col("obra", "Obra", lambda r: str(r.worksite)
+                    if r.worksite_id else "", "worksite__name"),
             ], "delivery_date", date_is_datetime=False,
             search=("document_type__label",),
             default_order=("-delivery_date",),
@@ -2228,7 +2260,20 @@ def _doc_lists():
                 ("Descargar Word", "bi-filetype-docx",
                  reverse("new_ui:circulars_export_word", args=[r.pk])),
             ],
-            note="El periodo no se aplica a este listado."),
+            # S163 (26/11): qué plantillas llevan firma o están vacías.
+            extras=[
+                Extra("firma", "Firma certificada", lambda company: [
+                    ("si", "Con firma"), ("no", "Sin firma")],
+                    lambda qs, v: qs.filter(requires_signature=v == "si")),
+                Extra("contenido", "Con contenido", lambda company: [
+                    ("si", "Con contenido"), ("no", "Vacías")],
+                    lambda qs, v: qs.exclude(content_html__regex=r"^\s*$")
+                    .exclude(content_html__isnull=True) if v == "si"
+                    else qs.filter(Q(content_html__isnull=True)
+                                   | Q(content_html__regex=r"^\s*$"))),
+            ],
+            note="Pulsa una plantilla para ver su contenido, editarla, "
+                 "generarla para una persona o descargarla."),
         "dosieres": fk(
             "Dosieres", "document_explorer.PersonalDossierTemplate",
             ("created_by__user",), [
@@ -3110,6 +3155,22 @@ def _cae_mails_def():
                   _cae_state_filter),
             Extra("plataforma", "Plataforma", _cae_platforms,
                   lambda qs, v: qs.filter(platform=v) if v else qs),
+            # S163 (26/11): los que piden documentos y los informativos
+            # (boletines...), y de qué cliente o empresa.
+            Extra("pide", "Pide documentos", lambda company: [
+                ("si", "Sí"), ("no", "No (informativos)")],
+                lambda qs, v: qs.filter(demand_count__gt=0) if v == "si"
+                else qs.filter(demand_count=0)),
+            Extra("cliente", "Cliente", lambda company: [
+                (v, v) for v in CaeMail.objects.exclude(client="")
+                .values_list("client", flat=True).distinct()
+                .order_by("client")],
+                lambda qs, v: qs.filter(client=v)),
+            Extra("empresa", "Empresa", lambda company: [
+                (v, v) for v in CaeMail.objects.exclude(our_company="")
+                .values_list("our_company", flat=True).distinct()
+                .order_by("our_company")],
+                lambda qs, v: qs.filter(our_company=v)),
         ],
         row_url=lambda r: reverse("new_ui:cae_sheet", args=[r.pk]),
         row_title="Correo CAE",
@@ -3150,7 +3211,6 @@ def _signatures_def():
                 r.created_at), "created_at", "text-nowrap"),
         ],
         search=("label", "company__legal_name", "certificate_cif"),
-        date_field="created_at", date_is_datetime=True,
         default_order=("company__legal_name", "label"),
         actions=lambda r: [],
         extras=[Extra("empresa", "Empresa", _fiscal_options,
@@ -3198,10 +3258,10 @@ def _agents_def():
                 or "no encontrado", "autofirma_version"),
             Col("certificados", "Certificados", certs),
         ],
-        search=("name", "host"), date_field="last_seen_at",
+        search=("name", "host"),
         date_is_datetime=True, default_order=("name",),
         actions=lambda r: [],
-        note="Periodo: último contacto.")
+        note="Los ordenadores que firman con su certificado digital.")
 
 
 def _pay_periods_def():
@@ -3636,6 +3696,7 @@ def list_def(section, tab):
         _CACHE["doc"]["circulares"].row_url = lambda r: reverse(
             "new_ui:circulars_sent_sheet", args=[r.pk])
         _CACHE["doc"]["circulares"].row_title = "Circular enviada"
+        _CACHE["doc"]["circulares"].extras = _circular_extras()
         _CACHE["doc"]["dosieres"].row_url = lambda r: reverse(
             "new_ui:dossier_sheet", args=[r.pk])
         _CACHE["doc"]["dosieres"].row_title = "Plantilla de dosier"
