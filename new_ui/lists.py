@@ -300,6 +300,8 @@ class ListDef:
     @property
     def uses_period(self):
         """True if the period filter does something in this list."""
+        if getattr(self, "period_hidden", False):
+            return False
         return bool(self.date_field or self.period_annotate)
 
 
@@ -1253,7 +1255,19 @@ def _machine_general():
         search=("code", "brand_model", "plate", "type_name",
                 "chassis_number"),
         default_order=("code",), actions=_machine_actions,
-        note="El periodo no se aplica a este listado.",
+        # S163 (26/11): por tipo y si tiene matrícula (las familias, en
+        # el filtro común).
+        extras=[
+            Extra("tipo", "Tipo", lambda company: [
+                (v, v) for v in machines_base(company).exclude(
+                    type_name="").values_list("type_name", flat=True)
+                .distinct().order_by("type_name")],
+                lambda qs, v: qs.filter(type_name=v)),
+            Extra("matricula", "Matrícula", lambda company: [
+                ("si", "Con matrícula"), ("no", "Sin matrícula")],
+                lambda qs, v: qs.exclude(plate="") if v == "si"
+                else qs.filter(plate="")),
+        ],
     )
 
 
@@ -1261,6 +1275,18 @@ def _dims(m):
     parts = [fmt_num(v / 1000) for v in (m.length_mm, m.width_mm,
                                          m.height_mm) if v]
     return " × ".join(parts)
+
+
+def _capacity_filter(qs, value):
+    if value == "sin":
+        return qs.filter(capacity_tonnes__isnull=True)
+    low, _, high = value.partition("-")
+    if low.isdigit():
+        qs = qs.filter(capacity_tonnes__gt=int(low)) if int(low) \
+            else qs.filter(capacity_tonnes__isnull=False)
+    if high.isdigit():
+        qs = qs.filter(capacity_tonnes__lte=int(high))
+    return qs
 
 
 def _machine_specs():
@@ -1297,7 +1323,11 @@ def _machine_specs():
         entity="machine", search=("code", "brand_model", "plate"),
         default_order=(F("capacity_tonnes").desc(nulls_last=True), "code"),
         actions=_machine_actions,
-        note="El periodo no se aplica a este listado.",
+        # S163 (26/11): para elegir grúa por lo que levanta.
+        extras=[Extra("capacidad", "Capacidad", lambda company: [
+            ("0-30", "Hasta 30 t"), ("30-60", "De 30 a 60 t"),
+            ("60-100", "De 60 a 100 t"), ("100-", "Más de 100 t"),
+            ("sin", "Sin capacidad")], _capacity_filter)],
     )
 
 
@@ -3119,6 +3149,61 @@ def _maintenance_def():
     return definition
 
 
+def _machine_theme_extras(key, definition):
+    """Filtros propios de cada tema de Centros de gasto (S163, 26/11)."""
+    if key == "documentacion":
+        definition.queryset = (lambda base: lambda company: base(company)
+                               .prefetch_related("document_requirements")
+                               )(definition.queryset)
+        definition.columns = list(definition.columns) + [Col(
+            "requisitos", "Requisitos de documentación",
+            lambda m: ", ".join(r.name for r in m.document_requirements.all())
+            or "Sin requisito")]
+        definition.default_cols = list(definition.default_cols) + [
+            "requisitos"]
+        definition.note = ("Situación del requisito: entre los que lo "
+                           "tienen asignado, a cuáles les falta o tienen "
+                           "caducado algo (p. ej. la ITV).")
+        return _requirement_extras("fleet.MachineAsset")
+    if key == "taller_maq":
+        return [
+            _has("abiertas", "Averías abiertas", "nui_ave_open",
+                 "Con averías abiertas", "Sin averías abiertas"),
+            _has("partes", "Partes en el periodo", "nui_par",
+                 "Con partes", "Sin partes")]
+    if key == "repostajes_maq":
+        return [_has("repostajes", "Repostajes en el periodo", "nui_rep",
+                     "Ha repostado", "No ha repostado")]
+    if key == "seguridad":
+        # Lo que tiene ahora, no depende del periodo.
+        definition.period_hidden = True
+        definition.note = ("Extintores y botiquines en uso de cada centro "
+                           "de gasto; la próxima fecha es la más cercana "
+                           "(caducidad, revisión o retimbrado).")
+        limit = timezone.localdate() + datetime.timedelta(days=30)
+
+        def soon(qs, value):
+            near = (Q(nui_cad__lte=limit) | Q(nui_revi__lte=limit)
+                    | Q(nui_ret__lte=limit))
+            dated = (Q(nui_cad__isnull=False) | Q(nui_revi__isnull=False)
+                     | Q(nui_ret__isnull=False))
+            if value == "si":
+                return qs.filter(near)
+            if value == "sin":
+                return qs.exclude(dated)
+            return qs.filter(dated).exclude(near)
+
+        return [
+            _has("extintor", "Extintor", "nui_ext", "Con extintor",
+                 "Sin extintor"),
+            _has("botiquin", "Botiquín", "nui_bot", "Con botiquín",
+                 "Sin botiquín"),
+            Extra("vence", "Vence", lambda company: [
+                ("si", "En 30 días o ya vencido"), ("no", "Más adelante"),
+                ("sin", "Sin fechas")], soon)]
+    return []
+
+
 def _theme_machine_list(key):
     """
     The machines list of a Centros de gasto theme (S163, 23/11).
@@ -3136,6 +3221,8 @@ def _theme_machine_list(key):
     definition.date_field = ""
     if note:
         definition.note = note
+    definition.extras = list(definition.extras) + _machine_theme_extras(
+        key, definition)
     return definition
 
 
