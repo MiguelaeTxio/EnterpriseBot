@@ -58,8 +58,18 @@ def _date(raw, label):
 
 
 def _machine(request):
+    """
+    The open machine or, in Mantenimiento (S163, 26/11), the only one
+    marked.
+    """
+    pk = request.POST.get("machine_pk") or ""
+    if not pk:
+        marked = [v for v in request.POST.getlist("selected") if v.isdigit()]
+        if len(marked) != 1:
+            return None
+        pk = marked[0]
     return MachineAsset.objects.filter(
-        pk=request.POST.get("machine_pk") or 0).first()
+        pk=pk, company=request.user.company_user.company).first()
 
 
 def service_statuses(machine):
@@ -125,7 +135,7 @@ class ServiceRecordAddView(SuperuserRequiredMixin, View):
     def post(self, request):
         machine = _machine(request)
         if machine is None:
-            return _error("Abre primero el centro de gasto.")
+            return _error("Abre o marca un solo centro de gasto.")
         try:
             service_date = _date(request.POST.get("service_date"),
                                  "fecha de la revisión")
@@ -156,7 +166,7 @@ class ReadingAddView(SuperuserRequiredMixin, View):
     def post(self, request):
         machine = _machine(request)
         if machine is None:
-            return _error("Abre primero el centro de gasto.")
+            return _error("Abre o marca un solo centro de gasto.")
         try:
             reading_date = _date(request.POST.get("reading_date"),
                                  "fecha de la lectura")
@@ -173,6 +183,66 @@ class ReadingAddView(SuperuserRequiredMixin, View):
             crane_hours=crane_hours, km=km,
             created_by=request.user.company_user)
         return _ok("Lectura de %s anotada." % machine.code)
+
+
+class ServicePlanBulkView(SuperuserRequiredMixin, View):
+    """
+    POST `selected`, `hours`, `crane`, `km`: service plan of the marked.
+
+    ---
+
+    POST: pone a la vez a los centros de gasto marcados el plan de
+    revisiones (S163, 26/11; como «Plan en masa» de la antigua): por
+    horas (800 o 1200), de la grúa (solo a los que tienen horómetro de
+    grúa) y por km. Cada campo: vacío no cambia, «quitar» lo borra.
+    """
+
+    def post(self, request):
+        ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
+        if not ids:
+            return _error("Marca primero los centros de gasto.")
+        allowed = {str(value) for value, _label in
+                   MachineAsset.SERVICE_HOURS_CHOICES}
+        fields, crane = {}, None
+        for name, field in (("hours", "service_hours_interval"),
+                            ("crane", "service_crane_hours_interval"),
+                            ("km", "service_every_km")):
+            raw = (request.POST.get(name) or "").strip()
+            if not raw:
+                continue
+            if raw == "quitar":
+                value = None
+            elif name == "km":
+                try:
+                    value = _count(raw, "Los kilómetros")
+                except ValueError as exc:
+                    return _error(str(exc))
+                if not value:
+                    return _error("Indica cada cuántos km.")
+            elif raw in allowed:
+                value = int(raw)
+            else:
+                return _error("Elige cada 800 o cada 1200 horas.")
+            if name == "crane":
+                crane = (value,)
+            else:
+                fields[field] = value
+        if not fields and crane is None:
+            return _error("Elige qué revisión poner o quitar.")
+        machines = MachineAsset.objects.filter(
+            pk__in=ids, company=request.user.company_user.company)
+        done = machines.update(**fields) if fields else 0
+        skipped = 0
+        if crane is not None:
+            with_crane = machines.filter(has_crane_hours=True)
+            done = max(done, with_crane.update(
+                service_crane_hours_interval=crane[0]))
+            skipped = machines.exclude(has_crane_hours=True).count()
+        message = "Plan puesto a %d centro(s) de gasto." % done
+        if skipped:
+            message += (" La de la grúa no se puso a %d sin horómetro de "
+                        "grúa." % skipped)
+        return _ok(message)
 
 
 class ServiceRowsDeleteView(SuperuserRequiredMixin, View):

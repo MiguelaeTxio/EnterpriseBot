@@ -2906,6 +2906,219 @@ def _safety_records_def(order=("-delivery_date",), period=True):
     return definition
 
 
+# ------------------------------------------------- mantenimiento (S163)
+_SERVICE_STATES = (
+    ("OVERDUE", "Vencida"), ("UPCOMING", "Próxima"),
+    ("NO_READING", "Sin lectura después de la revisión"),
+    ("NO_RECORD", "Sin revisión anotada"), ("OK", "Al día"),
+    ("NO_PLAN", "Sin plan de revisiones"),
+)
+_SERVICE_RANK = {key: rank for rank, (key, _t) in enumerate(_SERVICE_STATES)}
+
+
+def _service_cell(status):
+    """Lo que falta de una revisión, en pocas palabras."""
+    from fleet.service_plan_service import (
+        STATE_NO_READING, STATE_NO_RECORD, STATE_OVERDUE, format_number,
+    )
+
+    if status is None:
+        return ""
+    unit = status.schedule.unit
+    if status.state == STATE_NO_RECORD:
+        return "Sin revisión anotada"
+    due = "%s %s" % (format_number(status.due_value), unit)
+    if status.state == STATE_NO_READING:
+        return "Toca a %s · sin lectura posterior" % due
+    if status.state == STATE_OVERDUE:
+        return "Pasada %s %s (tocaba a %s)" % (
+            format_number(-status.remaining), unit, due)
+    return "Faltan %s %s (toca a %s)" % (
+        format_number(status.remaining), unit, due)
+
+
+def _prepare_maintenance(machines):
+    """
+    Estado de cada revisión del plan y huecos del libro historial de
+    cada centro de gasto (pocas consultas para todos).
+    """
+    from fleet import service_plan_service as plan
+    from fleet.logbook_service import review_gaps
+    from fleet.models import (
+        MachineLogbookEntry, MachineMeterReading, MachineServiceRecord,
+    )
+
+    ids = [m.pk for m in machines]
+    records, readings, reviews = {}, {}, {}
+    for row in MachineServiceRecord.objects.filter(machine_id__in=ids):
+        records.setdefault(row.machine_id, []).append(row)
+    for row in MachineMeterReading.objects.filter(machine_id__in=ids):
+        readings.setdefault(row.machine_id, []).append(row)
+    for machine_id, day in MachineLogbookEntry.objects.filter(
+            machine_id__in=ids, entry_date__isnull=False,
+            section=MachineLogbookEntry.SECTION_PERIODIC_REVIEW).filter(
+            Q(source__isnull=False) | Q(is_reconstructed=True)).values_list(
+            "machine_id", "entry_date"):
+        reviews.setdefault(machine_id, set()).add(day)
+    advance = plan.advance_by_company()
+    for m in machines:
+        statuses = plan.schedule_statuses(
+            m, records.get(m.pk, []), readings.get(m.pk, []),
+            advance.get(m.company_id))
+        m.nui_sched = {st.schedule.key: st for st in statuses}
+        states = [st.state for st in statuses] or ["NO_PLAN"]
+        m.nui_state = min(states, key=lambda s: _SERVICE_RANK[s])
+        m.nui_current = m.nui_state in ("OVERDUE", "UPCOMING")
+        m.nui_logbook = m.is_logbook_crane
+        dates = sorted(reviews.get(m.pk, ()))
+        m.nui_book_reviews = len(dates)
+        m.nui_book_last = dates[-1] if dates else None
+        m.nui_book_gaps = review_gaps([SimpleNamespace(entry_date=d)
+                                       for d in dates]) if dates else []
+
+
+def _plan_text(m):
+    from fleet.service_plan_service import format_number
+
+    parts = []
+    if m.service_hours_interval:
+        parts.append("%s h" % format_number(m.service_hours_interval))
+    if m.has_crane_hours and m.service_crane_hours_interval:
+        parts.append("grúa %s h" % format_number(
+            m.service_crane_hours_interval))
+    if m.service_every_km:
+        parts.append("%s km" % format_number(m.service_every_km))
+    return " · ".join(parts) or "Sin plan"
+
+
+def _book_gaps_text(m):
+    if not m.nui_logbook:
+        return ""
+    if not m.nui_book_reviews:
+        return "Sin revisiones en el libro"
+    if not m.nui_book_gaps:
+        return "Sin huecos"
+    return "%d hueco%s (el último desde %s)" % (
+        len(m.nui_book_gaps), "" if len(m.nui_book_gaps) == 1 else "s",
+        fmt_date(m.nui_book_gaps[-1]["start"]))
+
+
+def _maintenance_def():
+    """
+    Centros de gasto › Mantenimiento (S163, 26/11; Miguel Ángel: «¿qué
+    es lo que yo voy a buscar?»): a qué máquinas les toca revisión,
+    cuánto les falta, cuáles no tienen plan ni lecturas y los huecos del
+    libro historial de las grúas; y ponerlas al día desde Acciones.
+    """
+    from django.db.models import Max
+
+    from fleet.service_plan_service import KEY_CRANE, KEY_HOURS, KEY_KM
+
+    definition = _machine_general()
+
+    def queryset(company):
+        return machines_base(company).annotate(
+            nui_rev_last=Max("service_records__service_date"),
+            nui_lec_last=Max("meter_readings__reading_date"))
+
+    definition.queryset = queryset
+    states = dict(_SERVICE_STATES)
+
+    def sched(key):
+        return lambda m: _service_cell(m.nui_sched.get(key))
+
+    definition.columns = list(definition.columns) + [
+        Col("plan", "Plan de revisiones", _plan_text),
+        Col("situacion", "Situación", lambda m: states[m.nui_state]),
+        Col("por_horas", "Por horas", sched(KEY_HOURS)),
+        Col("grua", "Grúa", sched(KEY_CRANE)),
+        Col("por_km", "Por km", sched(KEY_KM)),
+        Col("ultima_revision", "Última revisión",
+            lambda m: fmt_date(m.nui_rev_last), "nui_rev_last",
+            "text-nowrap"),
+        Col("ultima_lectura", "Última lectura",
+            lambda m: fmt_date(m.nui_lec_last), "nui_lec_last",
+            "text-nowrap"),
+        Col("libro_ultima", "Última revisión en el libro",
+            lambda m: fmt_date(m.nui_book_last) if m.nui_logbook else "",
+            "", "text-nowrap"),
+        Col("libro_huecos", "Huecos en el libro", _book_gaps_text),
+    ]
+    definition.default_cols = [
+        "codigo", "familia", "descripcion", "plan", "situacion",
+        "por_horas", "grua", "por_km", "ultima_revision", "ultima_lectura",
+        "libro_huecos"]
+    definition.date_field = ""
+    definition.prepare = _prepare_maintenance
+    today = timezone.localdate()
+
+    def situation(m, value):
+        if value == "atencion":
+            return m.nui_state in ("OVERDUE", "UPCOMING")
+        return m.nui_state == value
+
+    def by_kind(qs, value):
+        if value == "horas":
+            return qs.filter(service_hours_interval__isnull=False)
+        if value == "grua":
+            return qs.filter(has_crane_hours=True,
+                             service_crane_hours_interval__isnull=False)
+        if value == "km":
+            return qs.filter(service_every_km__isnull=False)
+        return qs.filter(service_hours_interval__isnull=True,
+                         service_every_km__isnull=True).exclude(
+            has_crane_hours=True,
+            service_crane_hours_interval__isnull=False)
+
+    def by_last(field):
+        def apply(qs, value):
+            if value == "nunca":
+                return qs.filter(**{field + "__isnull": True})
+            days = {"3m": 92, "6m": 183, "1a": 365}[value] \
+                if value in ("3m", "6m", "1a") else 0
+            return qs.filter(**{field + "__lt": today - datetime.timedelta(
+                days=days)}) if days else qs
+        return apply
+
+    def book(m, value):
+        if not m.nui_logbook:
+            return False
+        if value == "huecos":
+            return bool(m.nui_book_gaps)
+        if value == "vacio":
+            return not m.nui_book_reviews
+        if value == "ok":
+            return m.nui_book_reviews and not m.nui_book_gaps
+        return True
+
+    definition.extras = [
+        Extra("situacion", "Situación", lambda company: [
+            ("atencion", "Vencidas y próximas")] + list(_SERVICE_STATES),
+            keep=situation),
+        Extra("tipo", "Tipo de revisión", lambda company: [
+            ("horas", "Por horas"), ("grua", "Grúa (horas de grúa)"),
+            ("km", "Por kilómetros"), ("sin", "Sin plan")], by_kind),
+        Extra("revisada", "Última revisión", lambda company: [
+            ("nunca", "Nunca anotada"), ("6m", "Hace más de 6 meses"),
+            ("1a", "Hace más de un año")],
+            by_last("nui_rev_last")),
+        Extra("lectura", "Última lectura", lambda company: [
+            ("nunca", "Sin lecturas"), ("3m", "Hace más de 3 meses"),
+            ("6m", "Hace más de 6 meses")],
+            by_last("nui_lec_last")),
+        Extra("libro", "Libro historial (grúas A y H)", lambda company: [
+            ("todos", "Las que lo llevan"), ("huecos", "Con huecos"),
+            ("vacio", "Sin revisiones anotadas"), ("ok", "Sin huecos")],
+            keep=book),
+    ]
+    definition.note = (
+        "Primero las vencidas y las próximas. Pulsa un centro de gasto "
+        "para abrir su ficha; anotar lecturas y revisiones y poner el plan "
+        "a los marcados, en Acciones. Hueco del libro: más de 7 meses sin "
+        "revisión periódica.")
+    return definition
+
+
 def _theme_machine_list(key):
     """
     The machines list of a Centros de gasto theme (S163, 23/11).
@@ -3824,6 +4037,8 @@ def list_def(section, tab):
         # tenía Documentos, ya solo de esa persona).
         for key in MACHINE_THEME_COLUMNS:
             _CACHE["cdg"][key] = _theme_machine_list(key)
+        # S163 (26/11): Mantenimiento, por lo que toca revisar.
+        _CACHE["cdg"]["mantenimiento"] = _maintenance_def()
         _CACHE["cdg"]["seguridad_reg"] = _safety_records_def()
         # Empresa › Documentación › Avisos de seguridad: los de todos los
         # centros de gasto, primero los que antes vencen.

@@ -50,6 +50,8 @@ urlpatterns = [
          name="service_add"),
     path("lecturas/nueva/", views_service.ReadingAddView.as_view(),
          name="reading_add"),
+    path("revisiones/plan/", views_service.ServicePlanBulkView.as_view(),
+         name="service_plan_bulk"),
     path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
          name="service_rows_delete"),
     # Solicitudes de los trabajadores (S163).
