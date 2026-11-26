@@ -68,11 +68,21 @@ PANEL_COLUMNS = [
 _BY_KEY = {c[0]: c for c in COLUMNS}
 
 
+def _plain(text):
+    """Lower case and without accents, to compare searches."""
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFD", text.lower())
+                   if unicodedata.category(c) != "Mn")
+
+
 def _filtered(data, rows):
     """The rows that pass the filters (situation, section, search)."""
-    state = data.get("alta_estado", NOT_CLOCKING)
-    section = data.get("alta_seccion", "")
     text = (data.get("q") or "").strip().lower()
+    # S163 (26/11): buscando a alguien, sin situación elegida, se busca
+    # entre todos (no solo entre los que aún no fichan).
+    state = data.get("alta_estado", "" if text else NOT_CLOCKING)
+    section = data.get("alta_seccion", "")
     result = []
     for row in rows:
         if state == NOT_CLOCKING and not not_clocking(row):
@@ -81,8 +91,10 @@ def _filtered(data, rows):
             continue
         if section and row["section"] != section:
             continue
-        if text and text not in (row["label"] + " " + row["dni"] + " "
-                                 + row["username"]).lower():
+        haystack = _plain(row["label"] + " " + row["dni"] + " "
+                          + row["username"])
+        if text and not all(_plain(word) in haystack
+                            for word in text.split()):
             continue
         result.append(row)
     return result, state, section
