@@ -20,6 +20,20 @@
         </div>
         {% endif %}
         {% if tab.note %}<p class="small text-muted mb-0">{{ tab.note }}</p>{% endif %}
+        {# S163 (27/11): lo que solo se consulta va aquí, no en Acciones. #}
+        {% if tab.consults %}
+        <div class="small fw-semibold mt-2 mb-1">Consultar</div>
+        {% for c in tab.consults %}
+        <div class="mb-1">
+            {% if c.new_tab %}
+            <a href="{{ c.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary"><i class="bi {{ c.icon }} me-1"></i>{{ c.label }}</a>
+            {% else %}
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-nui-viewer-url="{{ c.url }}" data-nui-viewer-title="{{ c.label }}"{% if c.with_scope %} data-nui-with-scope{% endif %}{% if c.with_period %} data-nui-with-period{% endif %}><i class="bi {{ c.icon }} me-1"></i>{{ c.label }}</button>
+            {% endif %}
+            {% if c.help %}<div class="small text-muted">{{ c.help }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
     </div>
     {% endfor %}
     {% for key in entity_tabs %}<p class="small text-muted mt-2 mb-0 d-none" data-nui-note-for="{{ key }}">{% if key == "pagos" or key == "jornadas" %}Aquí cuenta el periodo de arriba; los demás filtros, solo en los listados.{% else %}Los filtros no se aplican aquí; sí a los listados.{% endif %}</p>{% endfor %}

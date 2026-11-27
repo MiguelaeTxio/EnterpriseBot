@@ -354,7 +354,8 @@ def _section_context(company_user, section):
     sola (`scope`) y los grupos de selección de siempre.
     """
     from new_ui.lists import (
-        extra_param, extras_for, filter_options, list_def, visible_columns,
+        consults_for, extra_param, extras_for, filter_options, list_def,
+        visible_columns,
     )
     from new_ui.groups import (
         MACHINE_KIND, PERSON_KIND, collapsed_state, group_tree,
@@ -384,6 +385,7 @@ def _section_context(company_user, section):
             definition, cols.get("%s.%s" % (section, tab_key)))}
         tabs_cols.append({
             "key": tab_key, "label": tab_label, "note": definition.note,
+            "consults": consults_for(section, tab_key),
             "columns": [{"key": c.key, "label": c.label,
                          "on": c.key in visible, "fixed": c.entity}
                         for c in definition.columns],

@@ -381,6 +381,42 @@ class ListDef:
 
 
 # ------------------------------------------------- personas y máquinas
+# S163 (27/11, Miguel Ángel: «cuando vamos a buscar algo, vamos al panel
+# de búsqueda y filtros, no al de acciones; en acciones, lo que vamos a
+# realizar con algo que tengamos señalado»): lo que solo se consulta va
+# en «Buscar y filtrar», bajo los filtros de su vista. (sección, vista)
+# -> [{label, icon, url (nombre de la ruta), with_scope, with_period,
+# new_tab, help}].
+CONSULTS = {
+    ("per", "horarios"): [{
+        "label": "Fichajes desde móviles sin permiso",
+        "icon": "bi-phone-vibrate", "url": "new_ui:untrusted_presses",
+        "help": "Los que no se guardaron porque el móvil no es de "
+                "confianza: cuándo, dónde y de quién."}],
+    ("per", "partes"): [{
+        "label": "Resumen de partes del periodo", "icon": "bi-bar-chart",
+        "url": "new_ui:partes_summary", "with_scope": True,
+        "with_period": True,
+        "help": "Horas del periodo de arriba, por máquina y por día."}],
+    ("cdg", "libro"): [{
+        "label": "Huecos de revisión de todas las grúas",
+        "icon": "bi-journal-x", "url": "new_ui:missing_reviews",
+        "new_tab": True,
+        "help": "Los de esta grúa salen en la lista. En Mantenimiento, "
+                "filtro «Libro historial»."}],
+}
+
+
+def consults_for(section, tab):
+    """Consultas (solo ver) de una vista, con su URL ya resuelta."""
+    out = []
+    for item in CONSULTS.get((section, tab), ()):
+        entry = dict(item)
+        entry["url"] = reverse(item["url"])
+        out.append(entry)
+    return out
+
+
 def _company_filter_choices():
     from new_ui.docs_core import COMPANY_FILTER_CHOICES
 

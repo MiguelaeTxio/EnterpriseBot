@@ -1,6 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_logbook.html -- S163: revisiones del libro historial de esta grúa (escaneo, reconstrucción, firma digital, quitar). Vista: new_ui/views_logbook.py. #}
 <div class="d-none" data-nui-actions-for="libro">
-    <p class="small text-muted mb-2">Solo grúas móviles A y H. Los huecos sin revisión de esta grúa salen en «Del centro de gasto»; <a href="{% url 'new_ui:missing_reviews' %}" target="_blank" rel="noopener">los de todas las grúas</a>.</p>
+    <p class="small text-muted mb-2">Solo grúas móviles A y H. Los huecos de todas las grúas, en «Buscar y filtrar».</p>
     <form data-nui-window="Subir el escaneo de una revisión que faltaba" data-nui-window-icon="bi-box-arrow-up-right" data-nui-action-form action="{% url 'new_ui:review_scan_upload' %}" enctype="multipart/form-data" class="mb-3" data-nui-reset-after>
         {% csrf_token %}
         <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
