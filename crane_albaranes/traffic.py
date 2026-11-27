@@ -52,7 +52,8 @@ logger = logging.getLogger(__name__)
 STATUS_SALT = "crane-planning-notice-status"
 DEFAULT_DAYS_AHEAD = 14
 # Hasta cuántos días atrás cuenta estar hoy en activo para decidir quién
-# es un nombre (más atrás, solo las fechas de alta y baja).
+# es un nombre; todo el año en curso cuenta siempre (S165: solo importa
+# el año en curso). Más atrás, solo las fechas de alta y baja.
 RECENT_DAYS = 60
 # Columnas del planning, en su orden real (por si la cabecera de alguna
 # hoja viene cambiada: en dos hojas LUGAR DE TRABAJO lleva la fecha).
@@ -461,8 +462,9 @@ class NameResolver:
             matches = dated
             when = " (aparece del %s al %s)" % (
                 start.strftime("%d/%m/%Y"), end.strftime("%d/%m/%Y"))
-            if end < timezone.localdate() - datetime.timedelta(
-                    RECENT_DAYS):
+            today = timezone.localdate()
+            if end < today - datetime.timedelta(RECENT_DAYS) and \
+                    end.year < today.year:
                 # Fechas pasadas: hoy en activo o de baja no dice quién
                 # era entonces; solo vale uno solo.
                 if len(matches) == 1:
