@@ -39,6 +39,13 @@ T = datetime.time
 # material: (referencia, máquina, material, unidades)
 ZAFRA, NICOLAS, ROGERIO = 220, 228, 265
 TALLER = "EMPRESA_TALLER_ELEVACION"
+# Miguel Ángel, 27/11: «+2 1c» de Nicolás el 24/11 son 2 horas y una dieta
+# (comió en Marbella).
+DIETS = {(NICOLAS, "2026-11-24")}
+# Zafra Balbuena el 23/11: el parte en papel acaba a las 13:30 pero fichó
+# la tarde (14:58-18:30). No se anulan fichajes por una hoja que puede
+# faltar: ese día no se compara.
+NO_CLOCK = {(ZAFRA, "2026-11-23")}
 PARTES = [
     (ZAFRA, "2026-11-21", [
         (TALLER, "07:00", "12:00", "Revisar grupos electrógenos", "", None),
@@ -312,16 +319,28 @@ class Command(BaseCommand):
             extraction_confidence=WorkOrderEntry.Confidence.HIGH,
             raw_gemini_response=None, lunch_break_start=lunch_start,
             lunch_break_end=lunch_end, no_lunch_break=False,
-            has_diet=False, is_intensive_shift=False,
+            has_diet=(person.pk, day.isoformat()) in DIETS,
+            is_intensive_shift=False,
         )
-        self._log("== %s -> parte nº %d (comida %s-%s)%s" % (
+        self._log("== %s -> parte nº %d (comida %s-%s)%s%s" % (
             label, work_order.pk, lunch_start.strftime("%H:%M"),
-            lunch_end.strftime("%H:%M"), " · " + note if note else ""))
+            lunch_end.strftime("%H:%M"),
+            " · DIETA" if entry.has_diet else "",
+            " · " + note if note else ""))
+        taller = self._asset(company, TALLER)
         lines_by_code = {}
         day_hours = Decimal("0")
         for number, (code, start, end, fault, repair, reading) in enumerate(
                 tasks, 1):
             asset = self._asset(company, code)
+            plate = ""
+            if asset is None:
+                # Matrícula sin centro de gasto: a Taller elevación, con la
+                # matrícula en la resolución (Miguel Ángel, 27/11).
+                plate = code
+                asset = taller
+                repair = ("%s. Matrícula %s" % (repair, code)
+                          if repair else "Matrícula %s" % code)
             hc, hf = _t(start), _t(end)
             gross = _minutes(hf) - _minutes(hc)
             overlap = max(0, min(_minutes(hf), _minutes(lunch_end))
@@ -331,7 +350,7 @@ class Command(BaseCommand):
             day_hours += hours
             line = WorkOrderEntryLine.objects.create(
                 entry=entry, line_number=number, machine_asset=asset,
-                machine_raw=asset.code if asset else code,
+                machine_raw=code,
                 machine_norm=asset.code if asset else code,
                 fault_description=fault, repair_notes=repair,
                 hc=hc, hf=hf, or_val="", delta_hours=hours, flags=[],
@@ -343,7 +362,8 @@ class Command(BaseCommand):
             lines_by_code.setdefault(code, line)
             self._created.append(line.pk)
             self._log("   %d. %s %s-%s = %sh%s | %s%s%s" % (
-                number, asset.code if asset else "%s (SIN FICHA)" % code,
+                number, ("%s (sin ficha: %s)" % (asset.code, plate)) if plate
+                else asset.code if asset else "%s (SIN FICHA)" % code,
                 start, end, hours,
                 " (comida descontada)" if overlap else "", fault,
                 " | " + repair if repair else "",
@@ -352,9 +372,13 @@ class Command(BaseCommand):
                 parts, 1):
             line = lines_by_code.get(code) or next(iter(
                 lines_by_code.values()))
+            vehicle = self._asset(company, code)
+            if vehicle is None:
+                vehicle = self._asset(company, TALLER)
+                material = "%s (matrícula %s)" % (material, code)
             SparePartLine.objects.create(
                 entry_line=line, line_number=number, reference=reference,
-                vehicle=self._asset(company, code), material=material,
+                vehicle=vehicle, material=material,
                 quantity=Decimal(quantity), flags=[],
             )
             self._log("   repuesto: %s %s x%s (%s, tarea %d)" % (
@@ -362,6 +386,7 @@ class Command(BaseCommand):
                 line.line_number))
         self._log("   Horas del día: %s" % day_hours)
         self._days = getattr(self, "_days", [])
+        company_user.person_identity_id_s149 = person.pk
         self._days.append((company_user, day, work_order.pk))
         return day_hours
 
@@ -373,6 +398,11 @@ class Command(BaseCommand):
         for company_user, day, number in getattr(self, "_days", []):
             who = "%s %s" % (company_user.user.username,
                              day.strftime("%d/%m"))
+            if (company_user.person_identity_id_s149, day.isoformat()) in \
+                    NO_CLOCK:
+                self._log("   %s: no se compara (el parte acaba a las 13:30 "
+                          "y fichó la tarde): revisar a mano." % who)
+                continue
             if day_locked(company_user, day):
                 self._log("   %s: visado o corregido a mano: no se toca."
                           % who)
