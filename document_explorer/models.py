@@ -5128,3 +5128,36 @@ class ConfidentialAccessLog(models.Model):
     def __str__(self) -> str:
         return "%s %s %s" % (self.entry_id, self.company_user_id,
                              self.opened_at)
+
+
+class CaeDocumentReading(models.Model):
+    """
+    S156. Gemini's reading of a CAE file the name rules could not type.
+
+    ---
+
+    S156. Lectura con Gemini de un archivo de la documentación CAE que
+    las reglas por el nombre no supieron tipar (meses anteriores:
+    «1641930014.pdf», «GR TGSS 01.pdf»...). Miguel Ángel: leerlos por
+    su contenido. Una por archivo (y contenido): un fallo o un «no es de
+    la CAE» no se vuelve a leer mientras el archivo no cambie.
+    """
+
+    entry = models.OneToOneField(
+        DocumentIndexEntry, on_delete=models.CASCADE,
+        related_name="cae_reading", verbose_name="Documento",
+    )
+    md5_hash = models.CharField(max_length=64, blank=True)
+    code = models.CharField(
+        max_length=80, blank=True, verbose_name="Tipo leído",
+        help_text="Código del catálogo, o vacío si no es de la CAE.",
+    )
+    error = models.TextField(blank=True)
+    read_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Lectura de documento CAE"
+        verbose_name_plural = "Lecturas de documentos CAE"
+
+    def __str__(self):
+        return "%s: %s" % (self.entry_id, self.code or self.error or "-")

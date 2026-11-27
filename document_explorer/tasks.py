@@ -524,6 +524,13 @@ def canonical_names_task(self) -> str:
         link_insurance, read_new_insurance,
     )
 
+    from document_explorer.cae_readings import read_untyped_history
+
+    cae_typed = read_untyped_history()
+    if cae_typed:
+        logger.info(
+            "# [canonical_names_task] %d archivos CAE de meses anteriores "
+            "tipados.", cae_typed)
     read = read_new_insurance()
     if read:
         logger.info(
