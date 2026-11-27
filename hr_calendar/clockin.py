@@ -155,6 +155,24 @@ def trusted_device_user(request):
     return device_owner(request)
 
 
+def _day_end(company_user):
+    """
+    "HH:MM" the worker's schedule ends today, or None.
+    ---
+    Hora ("HH:MM") a la que acaba hoy la jornada de su horario (la
+    última salida), o None sin horario ese día (S149).
+    """
+    from hr_calendar.clock_report import _schedule_entry
+
+    try:
+        times_of = _schedule_entry(company_user, company_user.company)[0]
+        _starts, ends = times_of(timezone.localdate())
+    except Exception:  # sin horario resoluble: no se pregunta
+        logger.exception("# [FICHAJE] Fin de jornada de %s", company_user.pk)
+        return None
+    return max(ends).strftime("%H:%M") if ends else None
+
+
 def _untrusted_response(request):
     """
     401 for a browser that is not a trusted device. When the user has
@@ -778,6 +796,10 @@ def status(request):
         "meal_check": by_types or meal_check(company_user),
         # S149 (Plataformas): comentario al fichar.
         "press_notes": not by_types and press_notes(company_user),
+        # S149 (27/11, Alejandro García): hora de fin de su jornada de
+        # hoy, para preguntar si una entrada al final del día es en
+        # realidad la salida (no fichó la vuelta de comer).
+        "day_end": _day_end(company_user),
         "clock_types": [_type_json(t) for t in types],
         # H11 (S162): albaranes de grúa del trabajador.
         "crane_albaranes": _crane_albaranes_json(company_user),

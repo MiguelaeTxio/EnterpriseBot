@@ -708,6 +708,26 @@ responsable corregirá la salida (clock_report.forgotten_after).
                 "Pulsa un tipo solo cuando cambies de verdad de tarea; no hace falta pulsar más para confirmar.",
                 "Sí, cambiar a " + chosen.name, "No, no fichar");
         }
+        // S149 (27/11, Alejandro García): una entrada al final de la
+        // jornada, después de la salida a comer de hoy, suele ser la
+        // salida de alguien que no fichó la vuelta de comer.
+        const info = load("fichaje-estado");
+        const dayEnd = info && info.day_end;
+        if (kind === "IN" && last.kind === "OUT" && dayEnd && !chosen &&
+                new Date(last.pressed_at).toDateString() === new Date().toDateString()) {
+            const parts = dayEnd.split(":");
+            const end = new Date();
+            end.setHours(+parts[0], +parts[1], 0, 0);
+            if (Date.now() >= end.getTime() - 60 * 60 * 1000) {
+                return askConfirm(
+                    "¿Fichar la entrada?",
+                    "Lo último que fichaste fue la salida de las " + at + " y tu jornada acaba a las " + dayEnd + ". " +
+                    "Si te vas ahora, es que no fichaste la vuelta de comer: pulsa «Me voy» y se ficha la salida.",
+                    "Sí, vuelvo a trabajar: entrada", "Me voy: fichar la salida").then(function (ok) {
+                    return ok ? true : "OUT";
+                });
+            }
+        }
         if (kind === "IN" && last.kind === "OUT" && since <= QUICK_REENTRY_MS) {
             return askConfirm(
                 "¿Empezar otra jornada?",
@@ -721,7 +741,9 @@ responsable corregirá la salida (clock_report.forgotten_after).
         allRecords().then(function (records) {
             const screen = screenText();
             return confirmQuick(records, type && type.id ? type : null).then(function (ok) {
-                if (ok) press(type);
+                // S149: "OUT" = fichar la salida aunque tocara entrada.
+                if (ok === "OUT") press(type, "OUT");
+                else if (ok) press(type);
                 else reportAttempt("CANCELLED", decideKind(records), document.getElementById("out-confirm-q").textContent, screen);
             });
         });
@@ -1069,7 +1091,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
     document.getElementById("no-meal-check").addEventListener("change", function () {
         store("fichaje-sin-comida", this.checked ? true : null);
     });
-    function press(type) {
+    function press(type, forceKind) {
         const pressedAt = new Date();   // la hora se toma AL PULSAR
         const chosen = type && type.id ? type : null;
         const claimNow = chosen ? null : pendingClaim;
@@ -1093,7 +1115,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
                 err.tooSoon = true;
                 throw err;
             }
-            decided = decideKind(records);
+            decided = forceKind || decideKind(records);
             if (chosen && decided === "OUT") decided = "CHG";
             const nothingPending = !records.some(function (r) { return !r.received_at && !r.rejected; });
             return getPosition().then(function (pos) {
@@ -1112,7 +1134,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
                     // S149 (Plataformas): comentario de la entrada o la salida.
                     worker_note: pressNotes() ? document.getElementById("press-note-text").value.trim() : "",
                     // Con cobertura y nada pendiente decide el servidor.
-                    auto: navigator.onLine && nothingPending,
+                    // S149: la salida elegida a mano la decide el móvil.
+                    auto: !forceKind && navigator.onLine && nothingPending,
                     pressed_at: pressedAt.toISOString(),
                     lat: pos.lat != null ? pos.lat : null,
                     lon: pos.lon != null ? pos.lon : null,
