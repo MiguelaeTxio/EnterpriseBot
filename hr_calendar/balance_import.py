@@ -205,7 +205,9 @@ def import_template(uploaded_file, company, created_by):
         report.errors.append(
             "La primera fila no es la de la plantilla: faltan las "
             "columnas DNI, «Disfrutados AAAA» y «Sobrantes AAAA». "
-            "Descarga la plantilla y rellénala sin cambiar la cabecera."
+            "Descarga la plantilla y rellénala sin cambiar la cabecera. "
+            "Si es el cuadrante de vacaciones (una X por día), se carga "
+            "con «Cargar el cuadrante de vacaciones», justo debajo."
         )
         return report
     if carry_year != taken_year - 1:
