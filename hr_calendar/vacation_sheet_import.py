@@ -182,11 +182,19 @@ def import_chart(company, uploaded, created_by=None, dry_run=False):
     marks = {text: {d for d in dates if d.year == today.year}
              for text, dates in marks.items()}
     marks = {text: dates for text, dates in marks.items() if dates}
-    # Y fuera de Nombres lo apuntado solo de otros años que nadie asignó.
+    # Y fuera de Nombres lo apuntado sin asignar que no sale ni en el
+    # cuadrante del año en curso ni en el planning de este año (también
+    # lo apuntado antes de guardar las fechas, S165).
+    from crane_albaranes.models import PlanningService
+    from crane_albaranes.traffic import plain
+
+    keep = {plain(t) for t in marks} | {
+        plain(raw) for raw in PlanningService.objects.filter(
+            company=company, day__year=today.year).exclude(
+            raw_person="").values_list("raw_person", flat=True).distinct()}
     PlanningName.objects.filter(
         company=company, person__isnull=True, not_a_worker=False,
-        updated_by__isnull=True, seen_to__lt=datetime.date(
-            today.year, 1, 1)).delete()
+        updated_by__isnull=True).exclude(key__in=keep).delete()
     if not marks:
         raise ValueError("El Excel no trae ninguna X de vacaciones de %d."
                          % today.year)
