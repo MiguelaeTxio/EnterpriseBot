@@ -2788,7 +2788,12 @@ THEME_EXTRAS = {
              "Con ausencias", "Sin ausencias")],
     "partes_trab": lambda: [
         _has("partes", "Partes en el periodo", "nui_par",
-             "Ha mandado partes", "No ha mandado ninguno")],
+             "Ha mandado partes", "No ha mandado ninguno")]
+    # S154 (27/11), Miguel Ángel: «filtrar los partes que tienen
+    # repuestos [...] voy a partes»: los trabajadores con algún parte
+    # que cumpla (centro de gasto, repuestos, horas, familia).
+    + _parte_line_extras("entry__work_order__uploaded_by__person_identity",
+                         with_mechanic=False),
     "repostajes_trab": lambda: [
         _has("repostajes", "Repostajes en el periodo", "nui_rep",
              "Ha repostado", "No ha repostado")],
@@ -3967,7 +3972,8 @@ def _prepare_pay_partes(rows):
             day_out.rounded_at or day_out.pressed_at) if day_out else None
 
 
-def _parte_line_extras(path_to_order, with_machine=True):
+def _parte_line_extras(path_to_order, with_machine=True,
+                        with_mechanic=True):
     """
     Filters of the partes lists, by what their blocks have.
 
@@ -3985,7 +3991,7 @@ def _parte_line_extras(path_to_order, with_machine=True):
     tenemos repuestos», en Personal y en Centros de gasto: se añaden
     Repuestos (con / sin), Horas de trabajo (con / sin) y Mecánico.
     `with_machine=False` quita «Centro de gasto» (el listado ya es de
-    uno).
+    uno); `with_mechanic=False`, «Mecánico» (el listado es de personas).
     """
     from work_order_processor.models import FaultCategory, WorkOrderEntryLine
     from work_order_processor.models import WorkOrder
@@ -4013,7 +4019,9 @@ def _parte_line_extras(path_to_order, with_machine=True):
                       key=lambda x: x[1].upper())
 
     def with_or_without(lines):
-        ids = lines.values(path_to_order)
+        # Sin nulos: un NOT IN con un NULL dentro no devuelve nada.
+        ids = lines.filter(**{path_to_order + "__isnull": False}).values(
+            path_to_order)
         return lambda qs, v: (qs.filter(pk__in=ids) if v == "si"
                               else qs.exclude(pk__in=ids))
 
@@ -4025,13 +4033,15 @@ def _parte_line_extras(path_to_order, with_machine=True):
                 pk__in=WorkOrderEntryLine.objects.filter(
                     machine_asset_id=v).values(path_to_order))
             if v.isdigit() else qs))
+    if with_mechanic:
+        extras.append(Extra(
+            "mecanico", "Mecánico", mechanics,
+            apply=lambda qs, v: qs.filter(
+                pk__in=WorkOrderEntryLine.objects.filter(
+                    entry__work_order__uploaded_by_id=v).values(
+                    path_to_order))
+            if v.isdigit() else qs))
     return extras + [
-        Extra("mecanico", "Mecánico", mechanics,
-              apply=lambda qs, v: qs.filter(
-                  pk__in=WorkOrderEntryLine.objects.filter(
-                      entry__work_order__uploaded_by_id=v).values(
-                      path_to_order))
-              if v.isdigit() else qs),
         Extra("repuestos", "Repuestos", lambda company: [
             ("si", "Con repuestos"), ("no", "Sin repuestos")],
             apply=with_or_without(WorkOrderEntryLine.objects.filter(
