@@ -2072,6 +2072,86 @@ class ClockAttempt(models.Model):
                              self.reason)
 
 
+class ClockUntrustedPress(models.Model):
+    """
+    A press sent from a phone that is not a trusted device (S149).
+
+    ---
+
+    Fichaje enviado desde un móvil que no es dispositivo de confianza,
+    que el servidor rechaza (H24, S149, Miguel Ángel, 27/11: un móvil
+    lleva desde el 12/11 intentando fichar sin permiso y no se sabe de
+    quién es). Se apunta con su ubicación, la llave caducada o anulada
+    que traía (si traía) y los 4 últimos números del DNI que escribe el
+    trabajador en la página. Una fila por pulsación: el móvil la
+    reintenta y se cuentan los intentos.
+    """
+
+    client_id = models.CharField(
+        max_length=64, unique=True, verbose_name="Id del móvil",
+    )
+    first_seen = models.DateTimeField(
+        auto_now_add=True, verbose_name="Primer envío",
+    )
+    last_seen = models.DateTimeField(
+        auto_now=True, verbose_name="Último envío",
+    )
+    tries = models.PositiveIntegerField(default=1, verbose_name="Envíos")
+    pressed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Pulsado (móvil)",
+    )
+    kind = models.CharField(
+        max_length=4, blank=True, default="", verbose_name="Tipo",
+    )
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Latitud",
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Longitud",
+    )
+    accuracy_m = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Precisión (m)",
+    )
+    ip = models.CharField(max_length=45, blank=True, default="",
+                          verbose_name="Conexión")
+    user_agent = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Navegador",
+    )
+    key_user = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Dueño de la llave que traía",
+    )
+    key_problem = models.CharField(
+        max_length=60, blank=True, default="",
+        verbose_name="Qué le pasa a la llave",
+    )
+    dni4 = models.CharField(
+        max_length=4, blank=True, default="",
+        verbose_name="4 últimos números del DNI",
+    )
+    dni_person = models.ForeignKey(
+        "document_explorer.PersonIdentity", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Trabajador por el DNI",
+    )
+    dni_matches = models.PositiveSmallIntegerField(
+        default=0, verbose_name="Trabajadores con esos números",
+    )
+
+    class Meta:
+        verbose_name = "Fichaje desde un móvil sin permiso"
+        verbose_name_plural = "Fichajes desde móviles sin permiso"
+        indexes = [
+            models.Index(fields=("first_seen",),
+                         name="clockuntrusted_first_seen"),
+        ]
+
+    def __str__(self) -> str:
+        return "%s %s" % (self.first_seen, self.ip)
+
+
 class ClockDayHold(models.Model):
     """
     A worker's day set aside to review later (S149).

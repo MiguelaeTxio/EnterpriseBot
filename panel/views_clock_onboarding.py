@@ -96,3 +96,29 @@ class ClockOnboardingExportView(SupervisorAccessMixin, View):
         sheet.title = "ALTA EN EL FICHAJE"
         write_sheet(sheet, columns, rows)
         return workbook_response(request, workbook, "alta_en_el_fichaje")
+
+
+class ClockUntrustedView(SupervisorAccessMixin, View):
+    """
+    Presses refused for coming from a phone that is not trusted.
+    ---
+    Fichajes rechazados por venir de un móvil sin permiso (S149, Miguel
+    Ángel, 27/11): cuándo, dónde, la llave que traía y los 4 números
+    del DNI que escribió el trabajador, para saber quién es.
+    """
+
+    def get(self, request):
+        import datetime
+
+        from django.utils import timezone
+
+        from hr_calendar.models import ClockUntrustedPress
+
+        since = timezone.now() - datetime.timedelta(days=60)
+        items = list(ClockUntrustedPress.objects.filter(
+            first_seen__gte=since,
+        ).select_related("key_user__user", "dni_person").order_by(
+            "-first_seen")[:500])
+        return render(request, "panel/clock_onboarding/untrusted.html", {
+            "items": items,
+        })

@@ -173,6 +173,70 @@ def _day_end(company_user):
     return max(ends).strftime("%H:%M") if ends else None
 
 
+def _log_untrusted(request, payload):
+    """
+    Note a press refused for not coming from a trusted device.
+    ---
+    Apunta un fichaje rechazado por no venir de un dispositivo de
+    confianza (S149, Miguel Ángel, 27/11: "un móvil lleva intentando
+    fichar desde el 12/11"): ubicación, la llave que traía y, si los ha
+    escrito en la página, los 4 últimos números del DNI. Nunca falla la
+    respuesta por esto.
+    """
+    from django.db.models import F
+
+    from document_explorer.models import PersonIdentity
+    from hr_calendar.models import ClockUntrustedPress
+    from panel.trusted_devices import stale_key_owner
+
+    try:
+        client_id = str(payload.get("id") or "").strip()[:64]
+        if not client_id:
+            return
+        dni4 = re.sub(r"\D", "", str(payload.get("dni4") or ""))[-4:]
+        person, matches = None, 0
+        if len(dni4) == 4:
+            candidates = [
+                p for p in PersonIdentity.objects.filter(
+                    is_active_employee=True, dni__contains=dni4)
+                if re.sub(r"\D", "", p.dni or "").endswith(dni4)]
+            matches = len(candidates)
+            person = candidates[0] if matches == 1 else None
+        else:
+            dni4 = ""
+        known = ClockUntrustedPress.objects.filter(client_id=client_id)
+        if known.update(tries=F("tries") + 1):
+            # Los números del DNI pueden llegar en un reintento.
+            if dni4:
+                known.filter(dni4="").update(
+                    dni4=dni4, dni_person=person, dni_matches=matches)
+            return
+        owner, problem = stale_key_owner(request)
+        latitude = _coordinate(payload.get("lat"), 90)
+        longitude = _coordinate(payload.get("lon"), 180)
+        pressed_at = parse_datetime(str(payload.get("pressed_at") or ""))
+        ClockUntrustedPress.objects.create(
+            client_id=client_id,
+            pressed_at=pressed_at if pressed_at is not None
+            and timezone.is_aware(pressed_at) else None,
+            kind=str(payload.get("kind") or "")[:4],
+            latitude=latitude if longitude is not None else None,
+            longitude=longitude if latitude is not None else None,
+            accuracy_m=_accuracy(payload.get("accuracy")),
+            ip=(request.META.get("HTTP_X_REAL_IP")
+                or request.META.get("REMOTE_ADDR") or "")[:45],
+            user_agent=request.META.get("HTTP_USER_AGENT", "")[:255],
+            key_user=owner,
+            key_problem=problem[:60],
+            dni4=dni4,
+            dni_person=person,
+            dni_matches=matches,
+        )
+    except Exception:  # apuntarlo nunca impide contestar
+        logger.exception("# [FICHAJE] No se pudo apuntar el fichaje sin "
+                         "permiso")
+
+
 def _untrusted_response(request):
     """
     401 for a browser that is not a trusted device. When the user has
@@ -659,6 +723,14 @@ def receive(request):
     """
     company_user = trusted_device_user(request)
     if company_user is None:
+        # S149: se apunta (ubicación, llave, DNI) para saber de quién es.
+        if len(request.body) <= MAX_BODY:
+            try:
+                payload = json.loads(request.body.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                payload = None
+            if isinstance(payload, dict):
+                _log_untrusted(request, payload)
         return _untrusted_response(request)
     if len(request.body) > MAX_BODY:
         return JsonResponse({"error": "Petición demasiado grande."},

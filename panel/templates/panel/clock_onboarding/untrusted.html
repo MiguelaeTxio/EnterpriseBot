@@ -1,0 +1,49 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_onboarding/untrusted.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+S149 (Miguel Ángel, 27/11): fichajes enviados desde móviles que no son
+de confianza (el servidor los rechaza). Para saber quién es: la llave
+caducada o anulada que traía y los 4 últimos números del DNI que
+escribe el trabajador en la página del fichaje. Vista:
+panel/views_clock_onboarding.ClockUntrustedView.
+{% endcomment %}
+
+{% block title %}Fichajes desde móviles sin permiso{% endblock %}
+
+{% block page_title %}Fichajes desde móviles sin permiso{% endblock %}
+
+{% block content %}
+{% url 'panel:documentation_hub' as back_fallback %}
+<div class="d-flex align-items-center gap-2 mb-3">
+    <a href="{{ back_fallback }}?tab=fichajes" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+    <div class="small text-muted">Últimos 60 días. Estos fichajes <strong>no se han guardado</strong>: el móvil no es de confianza. Hay que volver a darle acceso al trabajador.</div>
+</div>
+<div class="table-responsive border rounded">
+    <table class="table table-sm table-hover small align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>Pulsado</th>
+                <th>Quién (por el DNI)</th>
+                <th>Llave que traía</th>
+                <th>Dónde</th>
+                <th class="text-end">Envíos</th>
+                <th>Conexión</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td class="text-nowrap">{{ item.pressed_at|default:item.first_seen|date:"d/m/Y H:i:s" }}{% if item.kind %} <span class="text-muted">{{ item.kind|lower }}</span>{% endif %}</td>
+                <td>{% if item.dni_person %}<a href="{% url 'panel:clock_worker' item.dni_person.pk %}">{{ item.dni_person.first_surname }} {{ item.dni_person.second_surname }}, {{ item.dni_person.given_name }}</a> <span class="text-muted">(…{{ item.dni4 }})</span>{% elif item.dni4 %}…{{ item.dni4 }}: {% if item.dni_matches %}{{ item.dni_matches }} trabajadores con esos números{% else %}ningún trabajador activo{% endif %}{% else %}<span class="text-muted">no lo ha escrito</span>{% endif %}</td>
+                <td>{% if item.key_user %}{{ item.key_user.user.get_full_name|default:item.key_user.user.username }} <span class="text-muted">({{ item.key_user.user.username }})</span><div class="text-muted">{{ item.key_problem }}</div>{% else %}<span class="text-muted">{{ item.key_problem|default:"—" }}</span>{% endif %}</td>
+                <td class="text-nowrap">{% if item.latitude is not None %}<a href="https://www.google.com/maps?q={{ item.latitude|stringformat:'s' }},{{ item.longitude|stringformat:'s' }}" target="_blank" rel="noopener"><i class="bi bi-geo-alt"></i> mapa</a>{% if item.accuracy_m %} <span class="text-muted">±{{ item.accuracy_m }} m</span>{% endif %}{% else %}<span class="text-muted">sin ubicación</span>{% endif %}</td>
+                <td class="text-end">{{ item.tries }}</td>
+                <td class="text-muted" title="{{ item.user_agent }}">{{ item.ip }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-4">Ningún fichaje desde móviles sin permiso.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

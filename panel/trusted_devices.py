@@ -68,6 +68,36 @@ def current_device(request):
     return device
 
 
+def stale_key_owner(request):
+    """
+    (CompanyUser or None, problem) of a key that is not valid.
+    ---
+    De una llave que no vale (S149, Miguel Ángel, 27/11: saber de quién
+    es el móvil que ficha sin permiso): el usuario al que se dio y qué
+    le pasa (sin llave, firma mala, anulada, usuario dado de baja).
+    """
+    from ivr_config.models import CompanyUser
+
+    raw = request.COOKIES.get(COOKIE_NAME, "")
+    if not raw:
+        return None, "Sin llave de confianza"
+    try:
+        payload = signing.loads(raw, max_age=COOKIE_MAX_AGE)
+        token = uuid.UUID(str(payload.get("tok")))
+        uid = int(payload.get("uid"))
+    except (signing.BadSignature, AttributeError, TypeError, ValueError):
+        return None, "Llave no válida (firma mala o caducada)"
+    owner = CompanyUser.objects.filter(user_id=uid).first()
+    device = TrustedDevice.objects.filter(token=token).first()
+    if device is None:
+        return owner, "Llave anulada (se quitó el dispositivo)"
+    if owner is None or not owner.is_active or not owner.user.is_active:
+        return owner, "Usuario dado de baja"
+    if device.company_user_id != owner.pk:
+        return owner, "Llave de otro usuario"
+    return owner, ""
+
+
 def device_owner(request):
     """
     The CompanyUser that owns the request's valid trusted device.

@@ -239,6 +239,9 @@ recordatorios, secciones que fichan y permiso de envío).
                         {# S149 (20/11): quién tiene el alta y no ficha. #}
                         <a class="btn btn-sm btn-outline-secondary ms-1" href="{% url 'panel:clock_onboarding_report' %}"
                            title="Informe: a quién se le ha enviado el alta, si le llegó, si la abrió, si entró y si ficha; días sin fichar desde el alta y desde el reenvío. Con exportación."><i class="bi bi-clipboard-data me-1"></i>Informe del alta</a>
+                        {# S149 (27/11): fichajes rechazados por móvil sin permiso. #}
+                        <a class="btn btn-sm btn-outline-secondary ms-1" href="{% url 'panel:clock_untrusted' %}"
+                           title="Fichajes que el servidor rechazó por venir de un móvil sin permiso: cuándo, dónde y de quién (por la llave que traía o los 4 últimos números del DNI)."><i class="bi bi-phone-vibrate me-1"></i>Móviles sin permiso</a>
                     </div>
                     {# S149 (Miguel Ángel, 16/11): albaranes de varias personas a la vez, cotejados por la IA. #}
                     <div class="clk-action-pane clk-alb-pane" id="clkActAlb" role="tabpanel">

@@ -256,6 +256,7 @@ from panel.views_clock_worker import (
 from panel.views_clock_onboarding import (
     ClockOnboardingExportView,
     ClockOnboardingReportView,
+    ClockUntrustedView,
 )
 from panel.views_personal_access import (
     PersonalAccessCreateView,
@@ -2292,6 +2293,12 @@ urlpatterns = [
         "documentacion/fichajes/informe-alta/exportar/",
         ClockOnboardingExportView.as_view(),
         name="clock_onboarding_export",
+    ),
+    # S149 (27/11): fichajes desde móviles sin permiso.
+    path(
+        "documentacion/fichajes/moviles-sin-permiso/",
+        ClockUntrustedView.as_view(),
+        name="clock_untrusted",
     ),
     # S149 (18/11): marcar un día para revisarlo después.
     path(

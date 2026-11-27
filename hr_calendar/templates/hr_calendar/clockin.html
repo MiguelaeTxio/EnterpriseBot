@@ -138,6 +138,16 @@ responsable corregirá la salida (clock_report.forgotten_after).
             <div class="muted">Entra en el panel con tu usuario y contraseña; cuando te pregunte, marca este móvil como de confianza y volverás aquí.</div>
             <a class="action" href="/panel/login/?force_form=1&amp;next=/fichaje/">Entrar en el panel</a>
         </div>
+        <!-- S149 (Miguel Ángel, 27/11): saber quién ficha desde un móvil sin permiso. -->
+        <div class="mt" id="untrusted-dni">
+            <div class="fw">Tus fichajes desde este móvil no se están guardando.</div>
+            <label class="muted" for="untrusted-dni-text">Escribe los 4 últimos números de tu DNI para que la oficina sepa quién eres y te ayude:</label>
+            <div style="display:flex;gap:8px;margin-top:6px">
+                <input type="tel" id="untrusted-dni-text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" style="width:7em;font-size:1.2rem;padding:8px;border:1px solid #ced4da;border-radius:8px">
+                <button type="button" class="action" id="untrusted-dni-save" style="margin:0">Enviar</button>
+            </div>
+            <div class="muted" id="untrusted-dni-done"></div>
+        </div>
     </div>
 
     <!-- S143: no fichó la salida de la jornada anterior. -->
@@ -387,6 +397,17 @@ responsable corregirá la salida (clock_report.forgotten_after).
         document.getElementById("crane-albaranes-count").textContent = crane && crane.pending
             ? "· " + crane.pending + (crane.pending === 1 ? " pendiente" : " pendientes") : "";
     }
+    // S149: 4 últimos números del DNI desde un móvil sin permiso. Van
+    // con los fichajes pendientes (el servidor los apunta y la oficina
+    // ve quién es); se reenvían enseguida.
+    document.getElementById("untrusted-dni-save").addEventListener("click", function () {
+        const value = document.getElementById("untrusted-dni-text").value.replace(/\D/g, "");
+        const done = document.getElementById("untrusted-dni-done");
+        if (value.length !== 4) { done.textContent = "Tienen que ser 4 números."; return; }
+        store("fichaje-dni4", value);
+        done.textContent = "Gracias. Avisa también a la oficina: tienen que volver a darte acceso para fichar.";
+        sendPending("PAGE");
+    });
     // S143: qué avisos por WhatsApp quiere (casillas, los marca cada uno).
     const REMINDER_URL = "/fichaje/avisos/";
     function fillChecks(boxId, choices, chosen, group) {
@@ -947,7 +968,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
                         method: "POST",
                         credentials: "same-origin",
                         headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify(Object.assign({}, record, {sent_by: record.manual ? "MANUAL" : sentBy})),
+                        // S149: los 4 números del DNI, si este móvil no es de confianza.
+                        body: JSON.stringify(Object.assign({}, record, {sent_by: record.manual ? "MANUAL" : sentBy, dni4: load("fichaje-dni4") || ""})),
                     }).then(function (response) {
                         return response.json().catch(function () { return {}; }).then(function (data) {
                             if (response.ok) {
