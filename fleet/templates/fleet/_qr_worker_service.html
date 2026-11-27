@@ -5,25 +5,38 @@ qué contadores tiene, su revisión (800 h, 1200 h, cada N km; la de la
 grúa si la lleva) y actualizar los contadores (lectura real desde la que
 se controlan los repostajes). Contexto: fleet.views_qr_worker.worker_vehicle.
 {% endcomment %}
+<style>
+    /* S154 (27/11): casillas y botones de opción al lado de su texto (la
+       hoja general los ponía a todo el ancho, encima del texto). */
+    .qr-opt { display: flex; align-items: center; gap: 10px; font-weight: 600; margin-top: 8px; }
+    .qr-opt input { width: 24px; height: 24px; margin: 0; flex: none; }
+    .qr-row { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+</style>
 <form class="card" method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="service">
     <h2>Contadores y revisión</h2>
     <div class="muted">Qué contadores tiene este vehículo:</div>
-    <label><input type="checkbox" name="has_odometer" value="1" {% if machine.has_odometer %}checked{% endif %}> Kilómetros</label>
-    <label><input type="checkbox" name="has_engine_hours" value="1" {% if machine.has_engine_hours %}checked{% endif %}> Horas de motor</label>
-    <label><input type="checkbox" name="has_crane_hours" value="1" id="qr-crane" {% if machine.has_crane_hours %}checked{% endif %} onchange="document.getElementById('qr-crane-box').style.display = this.checked ? '' : 'none';"> Horas de grúa</label>
+    <div class="qr-row">
+    <label class="qr-opt"><input type="checkbox" name="has_odometer" value="1" {% if machine.has_odometer %}checked{% endif %}> Kilómetros</label>
+    <label class="qr-opt"><input type="checkbox" name="has_engine_hours" value="1" {% if machine.has_engine_hours %}checked{% endif %}> Horas de motor</label>
+    <label class="qr-opt"><input type="checkbox" name="has_crane_hours" value="1" id="qr-crane" {% if machine.has_crane_hours %}checked{% endif %} onchange="document.getElementById('qr-crane-box').style.display = this.checked ? '' : 'none';"> Horas de grúa</label>
+    </div>
     <div class="muted" style="margin-top:8px;">Revisión del camión por horas de motor:</div>
-    <label><input type="radio" name="service_hours" value="" {% if not machine.service_hours_interval %}checked{% endif %}> No</label>
-    <label><input type="radio" name="service_hours" value="800" {% if machine.service_hours_interval == 800 %}checked{% endif %}> A las 800 horas</label>
-    <label><input type="radio" name="service_hours" value="1200" {% if machine.service_hours_interval == 1200 %}checked{% endif %}> A las 1200 horas</label>
+    <div class="qr-row">
+    <label class="qr-opt"><input type="radio" name="service_hours" value="" {% if not machine.service_hours_interval %}checked{% endif %}> No</label>
+    <label class="qr-opt"><input type="radio" name="service_hours" value="800" {% if machine.service_hours_interval == 800 %}checked{% endif %}> A las 800 horas</label>
+    <label class="qr-opt"><input type="radio" name="service_hours" value="1200" {% if machine.service_hours_interval == 1200 %}checked{% endif %}> A las 1200 horas</label>
+    </div>
     <label for="qr-km">Revisión por kilómetros (cada cuántos km; vacío si no)</label>
     <input type="text" id="qr-km" name="service_km" inputmode="numeric" value="{{ machine.service_every_km|default_if_none:'' }}" placeholder="Por ejemplo: 30000">
     <div id="qr-crane-box" {% if not machine.has_crane_hours %}style="display:none"{% endif %}>
         <div class="muted" style="margin-top:8px;">Revisión de la grúa por horas de grúa:</div>
-        <label><input type="radio" name="service_crane_hours" value="" {% if not machine.service_crane_hours_interval %}checked{% endif %}> No</label>
-        <label><input type="radio" name="service_crane_hours" value="800" {% if machine.service_crane_hours_interval == 800 %}checked{% endif %}> A las 800 horas</label>
-        <label><input type="radio" name="service_crane_hours" value="1200" {% if machine.service_crane_hours_interval == 1200 %}checked{% endif %}> A las 1200 horas</label>
+        <div class="qr-row">
+        <label class="qr-opt"><input type="radio" name="service_crane_hours" value="" {% if not machine.service_crane_hours_interval %}checked{% endif %}> No</label>
+        <label class="qr-opt"><input type="radio" name="service_crane_hours" value="800" {% if machine.service_crane_hours_interval == 800 %}checked{% endif %}> A las 800 horas</label>
+        <label class="qr-opt"><input type="radio" name="service_crane_hours" value="1200" {% if machine.service_crane_hours_interval == 1200 %}checked{% endif %}> A las 1200 horas</label>
+        </div>
     </div>
     <button type="submit" class="action">Guardar contadores y revisión</button>
 </form>
