@@ -280,6 +280,9 @@ EDITOR_SESSION_KEY = "qr_editor_until"
 EDITOR_SESSION_HOURS = 8
 EDITOR_MAX_ATTEMPTS = 5
 EDITOR_ATTEMPTS_KEY = "qr_editor_attempts"
+# S154 (27/11): huella de la contraseña con la que se entró; si la
+# oficina la cambia, deja de valer y se vuelve a pedir.
+EDITOR_FINGERPRINT_KEY = "qr_editor_fingerprint"
 MIN_PASSWORD_LENGTH = 6
 
 
@@ -290,8 +293,8 @@ def set_editor_password(company, raw_password, user):
     ---
 
     Fija o cambia la contraseña del editor de fichas QR de la empresa
-    (se guarda cifrada). Al cambiarla, quien ya estaba dentro sigue
-    hasta que caduque su acceso (8 h).
+    (se guarda cifrada). Al cambiarla, quien ya estaba dentro tiene que
+    volver a meterla (S154, 27/11: `editor_unlocked` compara la huella).
     """
     from django.contrib.auth.hashers import make_password
 
@@ -350,18 +353,57 @@ def editor_password_set(company):
         company=company).exclude(password_hash="").exists()
 
 
-def editor_unlocked(request):
+def _password_fingerprint(company):
     """
-    Whether this browser entered the QR editor password recently.
+    A short fingerprint of the current editor password ("" if none).
 
     ---
 
-    Si este navegador metió la contraseña del editor hace menos de 8 h.
+    Huella de la contraseña actual del editor (no la contraseña): sirve
+    para saber si ha cambiado desde que se entró.
+    """
+    import hashlib
+
+    from fleet.models import QrEditorSettings
+
+    row = QrEditorSettings.objects.filter(company=company).first()
+    if row is None or not row.password_hash:
+        return ""
+    return hashlib.sha256(row.password_hash.encode()).hexdigest()[:16]
+
+
+def editor_unlocked(request, company):
+    """
+    Whether this browser entered the current QR editor password.
+
+    ---
+
+    Si este navegador metió la contraseña del editor hace menos de 8 h y
+    sigue siendo la misma (S154, 27/11: si la oficina la cambia, se
+    vuelve a pedir).
     """
     from django.utils import timezone
 
     until = request.session.get(EDITOR_SESSION_KEY)
-    return bool(until) and until > timezone.now().timestamp()
+    if not until or until <= timezone.now().timestamp():
+        return False
+    current = _password_fingerprint(company)
+    return bool(current) and (
+        request.session.get(EDITOR_FINGERPRINT_KEY) == current)
+
+
+def lock_editor(request):
+    """
+    Close the QR editor in this browser.
+
+    ---
+
+    Cierra el editor en este navegador: hay que volver a meter la
+    contraseña (S154, 27/11: se pide cada vez que se entra desde el
+    fichaje).
+    """
+    request.session.pop(EDITOR_SESSION_KEY, None)
+    request.session.pop(EDITOR_FINGERPRINT_KEY, None)
 
 
 def unlock_editor(request, company, raw_password):
@@ -393,4 +435,5 @@ def unlock_editor(request, company, raw_password):
     request.session[EDITOR_ATTEMPTS_KEY] = 0
     request.session[EDITOR_SESSION_KEY] = (
         timezone.now().timestamp() + EDITOR_SESSION_HOURS * 3600)
+    request.session[EDITOR_FINGERPRINT_KEY] = _password_fingerprint(company)
     return True, ""

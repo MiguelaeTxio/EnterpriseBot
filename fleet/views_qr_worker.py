@@ -47,7 +47,7 @@ def _gate(request):
     if company_user is None:
         return None, render(request, "fleet/qr_worker_list.html",
                             {"no_device": True})
-    if not qr.editor_unlocked(request):
+    if not qr.editor_unlocked(request, company_user.company):
         return company_user, redirect("fleet_qr_worker_list")
     return company_user, None
 
@@ -70,6 +70,12 @@ def worker_list(request):
                       {"no_device": True})
     company = company_user.company
     error = ""
+    # S154 (27/11), Miguel Ángel: la clave se pide cada vez que se entra
+    # desde el botón del fichaje (?entrar=1); dentro, se va y se vuelve
+    # entre la lista y los vehículos sin pedirla otra vez.
+    if request.method == "GET" and request.GET.get("entrar"):
+        qr.lock_editor(request)
+        return redirect("fleet_qr_worker_list")
     if request.method == "POST" and request.POST.get("action") == "unlock":
         ok, error = qr.unlock_editor(request, company,
                                      request.POST.get("password", ""))
@@ -78,13 +84,13 @@ def worker_list(request):
                         company_user.user.username)
             return redirect("fleet_qr_worker_list")
     if request.method == "POST" and request.POST.get("action") == "open":
-        if not qr.editor_unlocked(request):
+        if not qr.editor_unlocked(request, company):
             return redirect("fleet_qr_worker_list")
         pk = request.POST.get("machine") or ""
         if pk.isdigit():
             return redirect("fleet_qr_worker_vehicle", pk=int(pk))
         error = "Marca un vehículo."
-    if not qr.editor_unlocked(request):
+    if not qr.editor_unlocked(request, company):
         return render(request, "fleet/qr_worker_list.html", {
             "locked": True,
             "error": error,

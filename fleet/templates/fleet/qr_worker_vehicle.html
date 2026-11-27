@@ -1,7 +1,8 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/fleet/templates/fleet/qr_worker_vehicle.html #}
 {% comment %}
 H23 (S154, invasora). Editor de la ficha QR de un vehículo dentro del
-fichaje: observaciones, fotos y vídeos (cámara o galería) y quitarlos.
+fichaje: observaciones, fotos y vídeos (grabar con la cámara o elegir de la
+galería) y quitarlos.
 Contexto: fleet.views_qr_worker.worker_vehicle.
 {% endcomment %}
 <!DOCTYPE html>
@@ -34,12 +35,28 @@ Contexto: fleet.views_qr_worker.worker_vehicle.
     {% csrf_token %}
     <input type="hidden" name="action" value="upload">
     <h2>Añadir fotos o vídeos</h2>
-    <input type="file" name="files" accept="image/*,video/*" multiple required>
+    {# S154 (27/11), Miguel Ángel: grabar el vídeo desde la propia aplicación, no solo subirlo. capture abre la cámara del móvil. #}
+    <label class="action" style="display:block;text-align:center;margin-bottom:6px;">🎥 Grabar vídeo
+        <input type="file" name="files" accept="video/*" capture="environment" style="display:none" onchange="nuiPicked(this, 'Vídeo grabado')">
+    </label>
+    <label class="action" style="display:block;text-align:center;margin-bottom:6px;">📷 Hacer foto
+        <input type="file" name="files" accept="image/*" capture="environment" style="display:none" onchange="nuiPicked(this, 'Foto hecha')">
+    </label>
+    <div class="muted" style="margin:6px 0 2px;">O elige de la galería:</div>
+    <input type="file" name="files" accept="image/*,video/*" multiple>
+    <div class="muted" id="picked" style="margin-top:4px;font-weight:700;"></div>
     <div class="muted" style="margin-top:4px;">Fotos hasta {{ max_photo_mb }} MB; vídeos hasta {{ max_video_mb }} MB. Con cobertura buena o wifi.</div>
     <label for="cap">Descripción</label>
     <input type="text" id="cap" name="caption" maxlength="300" placeholder="Por ejemplo: botón para ver las horas de motor">
     <button type="submit" class="action green">Subir</button>
 </form>
+<script>
+function nuiPicked(input, text) {
+    if (input.files && input.files.length) {
+        document.getElementById("picked").textContent = text + ": falta pulsar «Subir».";
+    }
+}
+</script>
 
 <div class="card">
     <h2>Fotos y vídeos ({{ media|length }})</h2>
