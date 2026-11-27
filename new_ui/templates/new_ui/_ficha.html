@@ -128,12 +128,12 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
                             </span>
                             {% elif item.kind == "groups" %}
                             <input type="hidden" name="groups_sent" value="1" disabled>
-                            <span class="d-flex flex-column gap-0" id="nui-ficha-{{ item.name }}" style="max-height: 12rem; overflow-y: auto;">
+                            <span class="d-block" id="nui-ficha-{{ item.name }}" style="max-height: 14rem; overflow-y: auto;">
                                 {% for group in item.choices %}
                                 {% if group.editable %}
-                                <span class="form-check mb-0"><input class="form-check-input" type="checkbox" name="groups" value="{{ group.pk }}" id="nui-group-{{ group.pk }}"{% if group.checked %} checked{% endif %} disabled><label class="form-check-label" for="nui-group-{{ group.pk }}">{{ group.path }}</label></span>
+                                <span class="form-check d-block mb-1"><input class="form-check-input" type="checkbox" name="groups" value="{{ group.pk }}" id="nui-group-{{ group.pk }}"{% if group.checked %} checked{% endif %} disabled><label class="form-check-label" for="nui-group-{{ group.pk }}">{{ group.path }}</label></span>
                                 {% else %}
-                                <span class="text-muted"><i class="bi bi-lock me-1"></i>{{ group.path }} <span class="small">(de {{ group.owner|default:"otro usuario" }}: solo él lo cambia)</span></span>
+                                <span class="d-block text-muted mb-1"><i class="bi bi-lock me-1"></i>{{ group.path }} <span class="small">(de {{ group.owner|default:"otro usuario" }}: solo él lo cambia)</span></span>
                                 {% endif %}
                                 {% empty %}<span class="text-muted">No hay grupos de selección.</span>
                                 {% endfor %}
