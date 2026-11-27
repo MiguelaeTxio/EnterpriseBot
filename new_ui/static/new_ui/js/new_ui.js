@@ -2802,3 +2802,82 @@
         loadEditor(currentSubject());
     }
 }());
+
+/* S163 (27/11): ordenar por cualquier columna también las tablas propias
+ * de las vistas (jornadas, pagos, alta en el fichaje, saldos...), que no
+ * pasan por el listado común: clic en la cabecera, en el navegador. Las
+ * del listado común ordenan en el servidor (data-nui-sort). */
+(function () {
+    "use strict";
+    const root = document.getElementById("nui-lists");
+    if (!root) return;
+
+    function sortable(table) {
+        if (!table.tHead || !table.tBodies.length) return false;
+        if (table.classList.contains("cw-cal") || table.hasAttribute("data-nui-nosort")) return false;
+        if (table.querySelector("thead [data-nui-sort]")) return false;
+        const head = table.tHead.rows[table.tHead.rows.length - 1];
+        if (!head || head.cells.length < 2) return false;
+        const body = table.tBodies[0];
+        if (body.rows.length < 2) return false;
+        return !body.querySelector("[rowspan], [colspan]");
+    }
+
+    function key(text) {
+        const t = (text || "").trim();
+        if (!t || t === "—" || t === "-") return null;
+        let m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+        if (m) return [0, +m[3] * 1e8 + +m[2] * 1e6 + +m[1] * 1e4 + (+m[4] || 0) * 100 + (+m[5] || 0), ""];
+        m = t.match(/^[-+]?\d{1,3}(?:\.\d{3})*(?:,\d+)?(?![\d])|^[-+]?\d+(?:,\d+)?/);
+        if (m) return [1, parseFloat(m[0].replace(/\./g, "").replace(",", ".")), ""];
+        return [2, 0, t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()];
+    }
+
+    function compare(a, b) {
+        if (a[0] !== b[0]) return a[0] - b[0];
+        if (a[0] === 2) return a[2].localeCompare(b[2], "es", { numeric: true });
+        return a[1] - b[1];
+    }
+
+    function decorate() {
+        root.querySelectorAll("table").forEach(function (table) {
+            if (table.dataset.nuiLocalSort || !sortable(table)) return;
+            table.dataset.nuiLocalSort = "1";
+            const head = table.tHead.rows[table.tHead.rows.length - 1];
+            Array.from(head.cells).forEach(function (th) {
+                if (!th.textContent.trim() || th.querySelector("input")) return;
+                th.style.cursor = "pointer";
+                th.classList.add("text-nowrap");
+                th.insertAdjacentHTML("beforeend", ' <i class="bi bi-arrow-down-up text-muted opacity-50 small" data-nui-sort-icon></i>');
+            });
+        });
+    }
+
+    root.addEventListener("click", function (e) {
+        const th = e.target.closest("th");
+        if (!th || e.target.closest("a, button, input")) return;
+        const table = th.closest("table");
+        if (!table || table.dataset.nuiLocalSort !== "1" || !th.querySelector("[data-nui-sort-icon]")) return;
+        const index = th.cellIndex;
+        const desc = th.dataset.nuiDir === "asc";
+        th.parentNode.querySelectorAll("th").forEach(function (other) {
+            delete other.dataset.nuiDir;
+            const icon = other.querySelector("[data-nui-sort-icon]");
+            if (icon) icon.className = "bi bi-arrow-down-up text-muted opacity-50 small";
+        });
+        th.dataset.nuiDir = desc ? "desc" : "asc";
+        th.querySelector("[data-nui-sort-icon]").className = "bi bi-arrow-" + (desc ? "down" : "up") + "-short";
+        const body = table.tBodies[0];
+        const rows = Array.from(body.rows).map(function (row) {
+            const cell = row.cells[index];
+            return { row: row, k: key(cell ? cell.innerText : "") };
+        });
+        const filled = rows.filter(function (r) { return r.k; });
+        const empty = rows.filter(function (r) { return !r.k; });
+        filled.sort(function (a, b) { return desc ? compare(b.k, a.k) : compare(a.k, b.k); });
+        filled.concat(empty).forEach(function (r) { body.appendChild(r.row); });
+    });
+
+    new MutationObserver(decorate).observe(root, { childList: true, subtree: true });
+    decorate();
+}());

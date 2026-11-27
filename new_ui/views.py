@@ -937,7 +937,7 @@ class NewUiListView(SuperuserRequiredMixin, View):
     def get(self, request):
         from new_ui.lists import (
             ROW_LIMIT, apply_extras, filtered, headers, list_def,
-            materialize, rows_for, sorted_qs, visible_columns,
+            materialize, python_sort, rows_for, sorted_qs, visible_columns,
         )
 
         section = request.GET.get("s", "")
@@ -1033,7 +1033,8 @@ class NewUiListView(SuperuserRequiredMixin, View):
         # BD; dentro de cada grupo, el orden de siempre.
         objects, total = materialize(
             definition, qs, post, ROW_LIMIT,
-            state_first=bool(definition.prepare) and not current)
+            state_first=bool(definition.prepare) and not current,
+            py_sort=python_sort(definition, current))
         rows = rows_for(definition, objects, columns)
         # S163 (23/11): la fila TOTAL, fija abajo (de todo lo filtrado).
         totals_row = None
@@ -1076,8 +1077,8 @@ class NewUiExportView(SuperuserRequiredMixin, View):
 
         from new_ui.export_formats import workbook_response
         from new_ui.lists import (
-            apply_extras, filtered, list_def, materialize, rows_for,
-            sorted_qs, visible_columns,
+            apply_extras, filtered, list_def, materialize, python_sort,
+            rows_for, sorted_qs, visible_columns,
         )
 
         section = request.GET.get("s", "")
@@ -1111,8 +1112,10 @@ class NewUiExportView(SuperuserRequiredMixin, View):
                     extra.options) else extra.options
                 own_filters.append((extra.label, dict(
                     (str(k), v) for k, v in options).get(value, value)))
-        qs, _current = sorted_qs(definition, qs, request.GET.get("sort", ""))
-        objects, _total = materialize(definition, qs, post, 20000)
+        qs, current = sorted_qs(definition, qs, request.GET.get("sort", ""))
+        objects, _total = materialize(
+            definition, qs, post, 20000,
+            py_sort=python_sort(definition, current))
         rows = rows_for(definition, objects, columns)
         workbook = Workbook()
         # S163 (como la exportación antigua de Personal, «Separar por»):

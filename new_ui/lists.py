@@ -23,6 +23,8 @@ siempre (panel/person_groups).
 """
 import contextvars
 import datetime
+import re
+import unicodedata
 from types import SimpleNamespace
 
 from django.apps import apps
@@ -98,13 +100,18 @@ class Col:
     máquina de la fila (botón derecho, ver sus listados).
     """
 
-    def __init__(self, key, label, value, order="", css="", entity=False):
+    def __init__(self, key, label, value, order="", css="", entity=False,
+                 sort=None):
         self.key = key
         self.label = label
         self.value = value
         self.order = order
         self.css = css
         self.entity = entity
+        # S163 (27/11): sort(fila) -> valor por el que ordena cuando no
+        # hay campo en la BD (None: el texto que se pinta, con números y
+        # fechas entendidos como tales).
+        self.sort = sort
 
 
 class Extra:
@@ -199,7 +206,71 @@ def apply_extras(definition, company, qs, params, tab):
     return qs, post
 
 
-def materialize(definition, qs, post, limit, state_first=False):
+# S163 (27/11): hasta cuántas filas se ordenan en memoria por una
+# columna que no sale de la BD.
+PY_SORT_LIMIT = 20000
+_DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?")
+_NUM_RE = re.compile(r"^[-+]?\d{1,3}(?:\.\d{3})*(?:,\d+)?(?=\s|$|[^\d.,])"
+                     r"|^[-+]?\d+(?:,\d+)?(?=\s|$|[^\d.,])")
+
+
+def _natural(text):
+    """
+    Sort key of a painted value: dates and numbers as such, the rest as
+    text without accents ((0, ...) fechas, (1, ...) números, (2, ...)).
+    """
+    text = str(text).strip()
+    match = _DATE_RE.match(text)
+    if match:
+        day, month, year, hour, minute = match.groups()
+        return (0, (int(year), int(month), int(day), int(hour or 0),
+                    int(minute or 0)), "")
+    match = _NUM_RE.match(text)
+    if match:
+        number = match.group(0).replace(".", "").replace(",", ".")
+        try:
+            return (1, (float(number),), text.casefold())
+        except ValueError:
+            pass
+    plain = unicodedata.normalize("NFKD", text.casefold())
+    plain = "".join(c for c in plain if not unicodedata.combining(c))
+    parts = tuple((0, int(chunk), "") if chunk.isdigit() else (1, 0, chunk)
+                  for chunk in re.split(r"(\d+)", plain) if chunk)
+    return (2, parts, plain)
+
+
+def python_sort(definition, current):
+    """
+    The chosen sort as [(column, desc)] if some column of it is not in
+    the database (it is then sorted in memory), else None.
+    """
+    by_key = {c.key: c for c in definition.columns}
+    chosen = [(by_key[key], desc) for key, desc in current if key in by_key]
+    if not chosen or all(col.order for col, _desc in chosen):
+        return None
+    return chosen
+
+
+def _sort_rows(objects, chosen):
+    """Sorts in memory by the chosen columns; empty values always last."""
+    for col, desc in reversed(chosen):
+        def value(row, col=col):
+            raw = col.sort(row) if col.sort else col.value(row)
+            if raw is None or (isinstance(raw, str) and raw.strip() in (
+                    "", "—", "-")):
+                return None
+            return raw if col.sort else _natural(raw)
+
+        values = [(value(row), row) for row in objects]
+        filled = [item for item in values if item[0] is not None]
+        empty = [row for v, row in values if v is None]
+        filled.sort(key=lambda item: item[0], reverse=desc)
+        objects[:] = [row for _v, row in filled] + empty
+    return objects
+
+
+def materialize(definition, qs, post, limit, state_first=False,
+                py_sort=None):
     """
     Rows to paint or export and the real total, own filters applied.
 
@@ -210,13 +281,17 @@ def materialize(definition, qs, post, limit, state_first=False):
     se cuenta; sin ellos, el total sale de la BD y solo se carga el
     tramo. `state_first`: vigentes primero (sin orden elegido).
     """
-    if post:
+    if py_sort and not post and qs.count() > PY_SORT_LIMIT:
+        py_sort = None
+    if post or py_sort:
         objects = list(qs)
         if definition.prepare and objects:
             definition.prepare(objects)
         objects = [o for o in objects
                    if all(extra.keep(o, value) for extra, value in post)]
         total = len(objects)
+        if py_sort:
+            _sort_rows(objects, py_sort)
     else:
         total = qs.count()
         objects = list(qs[:limit])
@@ -3057,12 +3132,22 @@ def _maintenance_def():
     def sched(key):
         return lambda m: _service_cell(m.nui_sched.get(key))
 
+    def remaining(key):
+        # Lo que falta (negativo: pasada); sin dato, al final.
+        def value(m):
+            status = m.nui_sched.get(key)
+            return None if status is None or status.remaining is None \
+                else status.remaining
+        return value
+
     definition.columns = list(definition.columns) + [
         Col("plan", "Plan de revisiones", _plan_text),
-        Col("situacion", "Situación", lambda m: states[m.nui_state]),
-        Col("por_horas", "Por horas", sched(KEY_HOURS)),
-        Col("grua", "Grúa", sched(KEY_CRANE)),
-        Col("por_km", "Por km", sched(KEY_KM)),
+        Col("situacion", "Situación", lambda m: states[m.nui_state],
+            sort=lambda m: _SERVICE_RANK[m.nui_state]),
+        Col("por_horas", "Por horas", sched(KEY_HOURS),
+            sort=remaining(KEY_HOURS)),
+        Col("grua", "Grúa", sched(KEY_CRANE), sort=remaining(KEY_CRANE)),
+        Col("por_km", "Por km", sched(KEY_KM), sort=remaining(KEY_KM)),
         Col("ultima_revision", "Última revisión",
             lambda m: fmt_date(m.nui_rev_last), "nui_rev_last",
             "text-nowrap"),
@@ -3071,8 +3156,10 @@ def _maintenance_def():
             "text-nowrap"),
         Col("libro_ultima", "Última revisión en el libro",
             lambda m: fmt_date(m.nui_book_last) if m.nui_logbook else "",
-            "", "text-nowrap"),
-        Col("libro_huecos", "Huecos en el libro", _book_gaps_text),
+            "", "text-nowrap", sort=lambda m: m.nui_book_last),
+        Col("libro_huecos", "Huecos en el libro", _book_gaps_text,
+            sort=lambda m: len(m.nui_book_gaps) if m.nui_logbook
+            and m.nui_book_reviews else None),
     ]
     definition.default_cols = [
         "codigo", "familia", "descripcion", "plan", "situacion",
@@ -4360,9 +4447,11 @@ def sorted_qs(definition, qs, raw_sort):
     Orden múltiple por cabecera en la base de datos; sin orden
     elegido, el de la definición.
     """
-    valid = {c.key: c.order for c in definition.columns if c.order}
+    # S163 (27/11): todas las columnas ordenan; las que no tienen campo
+    # en la BD, en memoria (python_sort + materialize).
+    valid = {c.key: c.order for c in definition.columns}
     current = parse_sort(raw_sort, list(valid))
-    if not current:
+    if not current or not all(valid[key] for key, _d in current):
         return qs.order_by(*definition.default_order), current
     order = []
     for key, desc in current:
@@ -4386,18 +4475,18 @@ def headers(definition, columns, current):
     for col in columns:
         item = {"key": col.key, "label": col.label, "css": col.css,
                 "next": "", "arrow": "", "priority": ""}
-        if col.order:
-            if col.key in active:
-                index = active.index(col.key)
-                desc = current[index][1]
-                item["arrow"] = "down" if desc else "up"
-                item["priority"] = index + 1 if len(current) > 1 else ""
-                first = (col.key, (not desc) if index == 0 else desc)
-            else:
-                first = (col.key, False)
-            keys = [first] + [(k, d) for k, d in current if k != col.key]
-            item["next"] = ",".join(("-" if d else "") + k
-                                    for k, d in keys[:4])
+        # S163 (27/11): todas las columnas ordenan.
+        if col.key in active:
+            index = active.index(col.key)
+            desc = current[index][1]
+            item["arrow"] = "down" if desc else "up"
+            item["priority"] = index + 1 if len(current) > 1 else ""
+            first = (col.key, (not desc) if index == 0 else desc)
+        else:
+            first = (col.key, False)
+        keys = [first] + [(k, d) for k, d in current if k != col.key]
+        item["next"] = ",".join(("-" if d else "") + k
+                                for k, d in keys[:4])
         out.append(item)
     return out
 
