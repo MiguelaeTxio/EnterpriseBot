@@ -416,6 +416,24 @@ def _mark_broken(supply):
         supply.save(update_fields=["status", "status_note", "reading"])
 
 
+def real_counters(machine, unit):
+    """
+    (moment, value) of the machine's last real counters, or None.
+
+    ---
+
+    Los últimos contadores actualizados (lectura real, S154) del centro
+    de gasto para esa unidad: kilómetros o horas de motor. Momento =
+    cuando se anotaron.
+    """
+    field = _field_of(unit)
+    row = MachineMeterReading.objects.filter(
+        machine=machine, source=MachineMeterReading.SOURCE_REAL,
+        **{field + "__isnull": False},
+    ).order_by("-created_at").values_list("created_at", field).first()
+    return tuple(row) if row else None
+
+
 def recheck_series(machine, unit):
     """
     Recompute which supplies of a machine form its meter series.
@@ -443,12 +461,25 @@ def recheck_series(machine, unit):
             _mark_broken(supply)
         else:
             supplies.append(supply)
-    points = [(s.supplied_at, s.meter_value) for s in supplies]
-    forced = {i for i, s in enumerate(supplies)
+    # S154 (27/11): si se actualizaron los contadores (lectura real), la
+    # serie arranca en ella: los repostajes de antes no se tocan y los de
+    # después se comparan con ella.
+    anchor = real_counters(machine, unit)
+    if anchor is not None:
+        supplies = [s for s in supplies if s.supplied_at > anchor[0]]
+        points = [anchor] + [(s.supplied_at, s.meter_value)
+                             for s in supplies]
+        offset = 1
+    else:
+        points = [(s.supplied_at, s.meter_value) for s in supplies]
+        offset = 0
+    forced = {i + offset for i, s in enumerate(supplies)
               if s.status_note.startswith(DRIVER_NOTES)}
-    chain = best_series(points, unit, machine.family)
+    chain = best_series(points, unit, machine.family,
+                        anchored=anchor is not None)
     readings = doubtful = 0
-    for index, supply in enumerate(supplies):
+    for position, supply in enumerate(supplies):
+        index = position + offset
         if index in forced:
             readings += 1
             continue

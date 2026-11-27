@@ -294,7 +294,7 @@ def _fits(earlier, later, unit, family=""):
     return value_b - value_a <= max_rise(unit, when_a, when_b, family)
 
 
-def best_series(points, unit, family=""):
+def best_series(points, unit, family="", anchored=False):
     """
     Indexes of the points forming the vehicle's real meter series.
 
@@ -322,12 +322,23 @@ def best_series(points, unit, family=""):
     usable = [i for i, (_when, value) in enumerate(points)
               if value and value >= MIN_CREDIBLE_VALUE
               and (unit == UNIT_KM or value < MAX_CREDIBLE_HOURS)]
+    # S154 (27/11): con `anchored`, el punto 0 son los contadores
+    # actualizados (lectura real): la serie sale siempre de él y los
+    # repostajes que no encajan detrás de él quedan fuera.
+    if anchored and points:
+        usable = [0] + [i for i in usable if i != 0]
     score, back = {}, {}
     for pos, i in enumerate(usable):
+        if anchored and i == 0:
+            score[0], back[0] = 1, None
+            continue
         best, best_from = 0, None
         for j in usable[:pos]:
-            if score[j] > best and _fits(points[j], points[i], unit, family):
+            if (j in score and score[j] > best
+                    and _fits(points[j], points[i], unit, family)):
                 best, best_from = score[j], j
+        if anchored and best_from is None:
+            continue
         score[i], back[i] = best + 1, best_from
     if not score:
         return set()

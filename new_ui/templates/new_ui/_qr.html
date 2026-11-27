@@ -38,6 +38,46 @@ Contexto: _machine_qr_context (new_ui/views.py).
             </div>
         </section>
 
+        {# S154 (27/11): toma de datos -- contadores, revisión y lectura real. #}
+        <section class="nui-ficha-box">
+            <div class="nui-ficha-head">Contadores y revisión</div>
+            <form class="p-2 small" data-nui-pane-form action="{{ action_url }}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="service">
+                <div class="text-muted">Qué contadores tiene:</div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="nui-qr-odo" name="has_odometer" value="1" {% if machine.has_odometer %}checked{% endif %}><label class="form-check-label" for="nui-qr-odo">Kilómetros</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="nui-qr-eng" name="has_engine_hours" value="1" {% if machine.has_engine_hours %}checked{% endif %}><label class="form-check-label" for="nui-qr-eng">Horas de motor</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="nui-qr-crane" name="has_crane_hours" value="1" {% if machine.has_crane_hours %}checked{% endif %}><label class="form-check-label" for="nui-qr-crane">Horas de grúa</label></div>
+                <div class="text-muted mt-2">Revisión por horas de motor:</div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="radio" id="nui-qr-h0" name="service_hours" value="" {% if not machine.service_hours_interval %}checked{% endif %}><label class="form-check-label" for="nui-qr-h0">No</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="radio" id="nui-qr-h800" name="service_hours" value="800" {% if machine.service_hours_interval == 800 %}checked{% endif %}><label class="form-check-label" for="nui-qr-h800">800 h</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="radio" id="nui-qr-h1200" name="service_hours" value="1200" {% if machine.service_hours_interval == 1200 %}checked{% endif %}><label class="form-check-label" for="nui-qr-h1200">1200 h</label></div>
+                <label class="form-label mb-0 mt-2" for="nui-qr-km">Revisión cada N km (vacío si no)</label>
+                <input type="text" id="nui-qr-km" name="service_km" inputmode="numeric" class="form-control form-control-sm" value="{{ machine.service_every_km|default_if_none:'' }}">
+                <div class="text-muted mt-2">Revisión de la grúa por horas de grúa (solo si tiene horas de grúa):</div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="radio" id="nui-qr-c0" name="service_crane_hours" value="" {% if not machine.service_crane_hours_interval %}checked{% endif %}><label class="form-check-label" for="nui-qr-c0">No</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="radio" id="nui-qr-c800" name="service_crane_hours" value="800" {% if machine.service_crane_hours_interval == 800 %}checked{% endif %}><label class="form-check-label" for="nui-qr-c800">800 h</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="radio" id="nui-qr-c1200" name="service_crane_hours" value="1200" {% if machine.service_crane_hours_interval == 1200 %}checked{% endif %}><label class="form-check-label" for="nui-qr-c1200">1200 h</label></div>
+                <div><button type="submit" class="btn btn-sm btn-primary mt-2"><i class="bi bi-save me-1"></i>Guardar contadores y revisión</button></div>
+            </form>
+        </section>
+
+        <section class="nui-ficha-box">
+            <div class="nui-ficha-head">Actualizar contadores</div>
+            <form class="p-2 small" data-nui-pane-form action="{{ action_url }}" data-nui-confirm="¿Guardar estos valores como la lectura real? Los repostajes se controlarán a partir de ella.">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="counters">
+                <p class="text-muted mb-1">Lo que marcan ahora mismo: queda como la lectura real y correcta, y desde ella se controlan los repostajes.</p>
+                {% if last_real %}<p class="text-muted mb-1">Última: {{ last_real.created_at|date:"d/m/Y H:i" }}{% if last_real.km is not None %} · {{ last_real.km }} km{% endif %}{% if last_real.hours is not None %} · {{ last_real.hours }} h motor{% endif %}{% if last_real.crane_hours is not None %} · {{ last_real.crane_hours }} h grúa{% endif %}</p>{% endif %}
+                <div class="row g-1">
+                    <div class="col-4"><label class="form-label mb-0" for="nui-qr-rkm">Km</label><input type="text" id="nui-qr-rkm" name="km" inputmode="numeric" class="form-control form-control-sm"></div>
+                    <div class="col-4"><label class="form-label mb-0" for="nui-qr-rh">H motor</label><input type="text" id="nui-qr-rh" name="hours" inputmode="numeric" class="form-control form-control-sm"></div>
+                    <div class="col-4"><label class="form-label mb-0" for="nui-qr-rc">H grúa</label><input type="text" id="nui-qr-rc" name="crane_hours" inputmode="numeric" class="form-control form-control-sm"></div>
+                </div>
+                <button type="submit" class="btn btn-sm btn-success mt-2"><i class="bi bi-speedometer2 me-1"></i>Actualizar contadores</button>
+            </form>
+        </section>
+
         <section class="nui-ficha-box nui-ficha-wide">
             <div class="nui-ficha-head">Observaciones</div>
             <form class="p-2" data-nui-pane-form action="{{ action_url }}">

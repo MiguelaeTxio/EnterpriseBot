@@ -23,6 +23,8 @@ Contexto: fleet.views_qr_worker.worker_vehicle.
 <div class="muted">{{ machine.brand_model|default:"" }}{% if machine.plate %} · {{ machine.plate }}{% endif %}</div>
 {% if error %}<div class="card"><span class="badge err">{{ error }}</span></div>{% endif %}
 
+{% include "fleet/_qr_worker_service.html" %}
+
 <form class="card" method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="notes">

@@ -156,6 +156,20 @@ def worker_vehicle(request, pk):
                 notice = "Subidos: %d." % added
             elif not error:
                 error = "Elige una foto o un vídeo."
+        elif action == "service":
+            # S154 (27/11): contadores y revisión del vehículo.
+            try:
+                qr.save_service_setup(machine, request.POST)
+                notice = "Contadores y revisión guardados."
+            except qr.QrSheetError as exc:
+                error = str(exc)
+        elif action == "counters":
+            # S154 (27/11): lectura real de los contadores.
+            try:
+                notice = qr.set_real_counters(machine, request.POST,
+                                              company_user)
+            except qr.QrSheetError as exc:
+                error = str(exc)
         elif action == "delete":
             media = MachineQrMedia.objects.filter(
                 sheet=sheet, pk=request.POST.get("media_id") or 0).first()
@@ -166,6 +180,7 @@ def worker_vehicle(request, pk):
             return redirect("fleet_qr_worker_vehicle", pk=machine.pk)
     return render(request, "fleet/qr_worker_vehicle.html", {
         "machine": machine,
+        "last_real": qr.last_real_counters(machine),
         "sheet": sheet,
         "media": qr.media_rows(sheet),
         "public_url": qr.public_url(request, sheet),

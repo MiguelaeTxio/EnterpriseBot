@@ -296,3 +296,30 @@ class MaxRiseTests(unittest.TestCase):
         points = [(_d("2026-06-01 08:00:00"), 100000),
                   (_d("2026-06-01 18:00:00"), 101200)]
         self.assertEqual(best_series(points, UNIT_KM, "TURISMOS"), {0, 1})
+
+
+class AnchoredSeriesTests(unittest.TestCase):
+    """
+    Series anchored at the real counters (S154).
+
+    ---
+
+    Serie que arranca en los contadores actualizados (S154): los
+    repostajes que no encajan detrás de la lectura real quedan fuera.
+    """
+
+    def test_series_starts_at_real_counters(self):
+        points = [(_d("2026-06-01 08:00:00"), 5000),
+                  (_d("2026-06-02 08:00:00"), 5010),
+                  (_d("2026-06-03 08:00:00"), 250000),
+                  (_d("2026-06-04 08:00:00"), 5030)]
+        self.assertEqual(best_series(points, UNIT_HOURS, anchored=True),
+                         {0, 1, 3})
+
+    def test_values_below_the_real_counters_are_out(self):
+        points = [(_d("2026-06-01 08:00:00"), 5000),
+                  (_d("2026-06-02 08:00:00"), 4000),
+                  (_d("2026-06-03 08:00:00"), 4010),
+                  (_d("2026-06-04 08:00:00"), 4020)]
+        self.assertEqual(best_series(points, UNIT_HOURS, anchored=True),
+                         {0})

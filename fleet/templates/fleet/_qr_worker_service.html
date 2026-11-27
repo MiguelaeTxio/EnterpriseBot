@@ -1,0 +1,44 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/fleet/templates/fleet/_qr_worker_service.html #}
+{% comment %}
+S154 (27/11). Toma de datos del vehículo en el editor QR del fichaje:
+qué contadores tiene, su revisión (800 h, 1200 h, cada N km; la de la
+grúa si la lleva) y actualizar los contadores (lectura real desde la que
+se controlan los repostajes). Contexto: fleet.views_qr_worker.worker_vehicle.
+{% endcomment %}
+<form class="card" method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="service">
+    <h2>Contadores y revisión</h2>
+    <div class="muted">Qué contadores tiene este vehículo:</div>
+    <label><input type="checkbox" name="has_odometer" value="1" {% if machine.has_odometer %}checked{% endif %}> Kilómetros</label>
+    <label><input type="checkbox" name="has_engine_hours" value="1" {% if machine.has_engine_hours %}checked{% endif %}> Horas de motor</label>
+    <label><input type="checkbox" name="has_crane_hours" value="1" id="qr-crane" {% if machine.has_crane_hours %}checked{% endif %} onchange="document.getElementById('qr-crane-box').style.display = this.checked ? '' : 'none';"> Horas de grúa</label>
+    <div class="muted" style="margin-top:8px;">Revisión del camión por horas de motor:</div>
+    <label><input type="radio" name="service_hours" value="" {% if not machine.service_hours_interval %}checked{% endif %}> No</label>
+    <label><input type="radio" name="service_hours" value="800" {% if machine.service_hours_interval == 800 %}checked{% endif %}> A las 800 horas</label>
+    <label><input type="radio" name="service_hours" value="1200" {% if machine.service_hours_interval == 1200 %}checked{% endif %}> A las 1200 horas</label>
+    <label for="qr-km">Revisión por kilómetros (cada cuántos km; vacío si no)</label>
+    <input type="text" id="qr-km" name="service_km" inputmode="numeric" value="{{ machine.service_every_km|default_if_none:'' }}" placeholder="Por ejemplo: 30000">
+    <div id="qr-crane-box" {% if not machine.has_crane_hours %}style="display:none"{% endif %}>
+        <div class="muted" style="margin-top:8px;">Revisión de la grúa por horas de grúa:</div>
+        <label><input type="radio" name="service_crane_hours" value="" {% if not machine.service_crane_hours_interval %}checked{% endif %}> No</label>
+        <label><input type="radio" name="service_crane_hours" value="800" {% if machine.service_crane_hours_interval == 800 %}checked{% endif %}> A las 800 horas</label>
+        <label><input type="radio" name="service_crane_hours" value="1200" {% if machine.service_crane_hours_interval == 1200 %}checked{% endif %}> A las 1200 horas</label>
+    </div>
+    <button type="submit" class="action">Guardar contadores y revisión</button>
+</form>
+
+<form class="card" method="post" onsubmit="return confirm('¿Guardar estos valores como la lectura real de los contadores? Los repostajes se controlarán a partir de ella.');">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="counters">
+    <h2>Actualizar contadores</h2>
+    <div class="muted">Lo que marcan ahora mismo. Queda como la lectura real y correcta, y desde ella se controlan los repostajes.</div>
+    {% if last_real %}<div class="muted" style="margin-top:4px;">Última actualización: {{ last_real.created_at|date:"d/m/Y H:i" }}{% if last_real.km is not None %} · {{ last_real.km }} km{% endif %}{% if last_real.hours is not None %} · {{ last_real.hours }} h motor{% endif %}{% if last_real.crane_hours is not None %} · {{ last_real.crane_hours }} h grúa{% endif %}</div>{% endif %}
+    {% if machine.has_odometer or not machine.has_engine_hours and not machine.has_crane_hours %}<label for="qr-real-km">Kilómetros</label>
+    <input type="text" id="qr-real-km" name="km" inputmode="numeric">{% endif %}
+    {% if machine.has_engine_hours or not machine.has_odometer and not machine.has_crane_hours %}<label for="qr-real-hours">Horas de motor</label>
+    <input type="text" id="qr-real-hours" name="hours" inputmode="numeric">{% endif %}
+    {% if machine.has_crane_hours %}<label for="qr-real-crane">Horas de grúa</label>
+    <input type="text" id="qr-real-crane" name="crane_hours" inputmode="numeric">{% endif %}
+    <button type="submit" class="action green">Actualizar contadores</button>
+</form>

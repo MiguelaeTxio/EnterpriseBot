@@ -479,7 +479,8 @@ class MachineQrPrintView(SuperuserRequiredMixin, View):
 
 class MachineQrActionView(SuperuserRequiredMixin, View):
     """
-    POST action=notes|upload|caption|delete|editor_password (JSON).
+    POST action=notes|upload|caption|delete|service|counters|
+    editor_password (JSON).
 
     ---
 
@@ -533,6 +534,19 @@ class MachineQrActionView(SuperuserRequiredMixin, View):
                                      "message": "Descripción guardada."})
             qr.delete_media(media)
             return JsonResponse({"ok": True, "message": "Quitado."})
+        if action in ("service", "counters"):
+            # S154 (27/11): contadores, revisión y lectura real.
+            try:
+                if action == "service":
+                    qr.save_service_setup(machine, request.POST)
+                    message = "Contadores y revisión guardados."
+                else:
+                    message = qr.set_real_counters(machine, request.POST,
+                                                   company_user)
+            except qr.QrSheetError as exc:
+                return JsonResponse({"ok": False, "message": str(exc)},
+                                    status=400)
+            return JsonResponse({"ok": True, "message": message})
         if action == "editor_password":
             try:
                 qr.set_editor_password(machine.company,

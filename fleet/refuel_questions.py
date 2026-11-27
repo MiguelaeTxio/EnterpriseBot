@@ -240,10 +240,21 @@ def _previous_reading(supply):
     Fecha y valor de la última lectura buena del mismo centro de gasto
     y unidad anterior a este repostaje, o None.
     """
-    return _references(supply).filter(
+    from fleet.gasoges_sync import real_counters
+
+    previous = _references(supply).filter(
         supplied_at__lt=supply.supplied_at,
     ).order_by("-supplied_at").values_list(
         "supplied_at", "meter_value").first()
+    # S154 (27/11): los contadores actualizados (lectura real) mandan si
+    # son posteriores al último repostaje bueno.
+    vehicle = supply.vehicle
+    anchor = real_counters(vehicle.machine, vehicle.unit) if (
+        vehicle.machine_id) else None
+    if anchor is not None and anchor[0] < supply.supplied_at and (
+            previous is None or anchor[0] > previous[0]):
+        return anchor
+    return previous
 
 
 def _next_reading(supply):

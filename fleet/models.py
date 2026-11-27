@@ -734,10 +734,20 @@ class MachineMeterReading(models.Model):
     # H30 (S137): readings typed by the mechanic in the digital work
     # order.
     SOURCE_WORK_ORDER = "PARTE"
+    # S154 (27/11), Miguel Ángel: «actualizar los contadores [...] los
+    # valores reales que tiene ahora mismo para que conste como la
+    # lectura real y correcta, y a partir de ahí se controlen los
+    # repostajes». Los repostajes posteriores se comparan con ella y los
+    # anteriores ya no cuentan (gasoges_sync.recheck_series).
+    # ---
+    # S154: real counters typed from the QR editor; refuels are checked
+    # from it onwards.
+    SOURCE_REAL = "REAL"
     SOURCE_CHOICES = [
         (SOURCE_MANUAL, _("A mano")),
         (SOURCE_GASOGES, _("Surtidor (GasoGes)")),
         (SOURCE_WORK_ORDER, _("Parte de trabajo")),
+        (SOURCE_REAL, _("Contadores actualizados (lectura real)")),
     ]
     source = models.CharField(
         _("Origen"),

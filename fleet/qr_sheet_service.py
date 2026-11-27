@@ -222,6 +222,17 @@ def service_lines(machine):
     revisiones de la ficha, H30).
     """
     lines = []
+    # S154 (27/11): qué contadores tiene que anotar quien reposta o hace
+    # el parte, según la toma de datos del QR.
+    counters = [name for flag, name in (
+        (machine.has_odometer, "kilómetros"),
+        (machine.has_engine_hours, "horas de motor"),
+        (machine.has_crane_hours, "horas de grúa"),
+    ) if flag]
+    if counters:
+        text = (", ".join(counters[:-1]) + " y " + counters[-1]
+                if len(counters) > 1 else counters[0])
+        lines.append("Contadores que se anotan: %s." % text)
     if machine.service_hours_interval:
         lines.append("Revisión por horas de motor: cada %d h." %
                      machine.service_hours_interval)
@@ -234,6 +245,137 @@ def service_lines(machine):
     if not lines:
         lines.append("Sin plan de revisiones en la ficha.")
     return lines
+
+
+def _hours_interval(raw):
+    """
+    800, 1200 or None from a form value; QrSheetError if invalid.
+
+    ---
+
+    800, 1200 o nada a partir de lo marcado.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    if raw not in ("800", "1200"):
+        raise QrSheetError("La revisión por horas es a las 800 o a las "
+                           "1200.")
+    return int(raw)
+
+
+def _whole_number(raw, label):
+    """
+    A positive whole number from a form value, or None if empty.
+
+    ---
+
+    Un número entero positivo (admite puntos de miles) o nada.
+    """
+    raw = (raw or "").strip().replace(".", "").replace(" ", "")
+    if not raw:
+        return None
+    if not raw.isdigit() or int(raw) <= 0:
+        raise QrSheetError("%s: pon un número entero." % label)
+    return int(raw)
+
+
+def save_service_setup(machine, data):
+    """
+    Save counters and service plan from the QR data form.
+
+    ---
+
+    S154 (27/11), Miguel Ángel: «casilleros para indicar si pasa la
+    revisión a las 800 horas, a las 1200, si la pasa por X kilómetros
+    [...] dependiendo si tiene grúas». Guarda en la ficha del centro de
+    gasto qué contadores tiene (km, horas de motor, horas de grúa) y su
+    revisión: horas (800/1200), cada N km y, con grúa, la de la grúa.
+    Lo mismo que se cambia en la pestaña Ficha. `data`: request.POST.
+    """
+    has_odometer = data.get("has_odometer") == "1"
+    has_engine_hours = data.get("has_engine_hours") == "1"
+    has_crane_hours = data.get("has_crane_hours") == "1"
+    hours = _hours_interval(data.get("service_hours"))
+    crane = _hours_interval(data.get("service_crane_hours"))
+    every_km = _whole_number(data.get("service_km"),
+                             "Revisión por kilómetros")
+    if not has_crane_hours:
+        crane = None
+    machine.has_odometer = has_odometer
+    machine.has_engine_hours = has_engine_hours
+    machine.has_crane_hours = has_crane_hours
+    machine.service_hours_interval = hours
+    machine.service_crane_hours_interval = crane
+    machine.service_every_km = every_km
+    machine.save(update_fields=[
+        "has_odometer", "has_engine_hours", "has_crane_hours",
+        "service_hours_interval", "service_crane_hours_interval",
+        "service_every_km",
+    ])
+
+
+def set_real_counters(machine, data, company_user):
+    """
+    Store the machine's real counters now; refuels count from them.
+
+    ---
+
+    S154 (27/11), Miguel Ángel: «un botón para actualizar los
+    contadores [...] los valores reales que tiene ahora mismo para que
+    conste como la lectura real y correcta, y a partir de ahí se
+    controlen los repostajes». Guarda una lectura «Contadores
+    actualizados» con lo que marcan ahora (km, horas de motor, horas de
+    grúa) y rehace la serie de sus repostajes desde ella: los de antes
+    ya no cuentan. Devuelve el mensaje.
+    """
+    from django.utils import timezone
+
+    from fleet.gasoges_sync import recheck_series
+    from fleet.models import GasoGesVehicle, MachineMeterReading
+
+    km = _whole_number(data.get("km"), "Kilómetros")
+    hours = _whole_number(data.get("hours"), "Horas de motor")
+    crane = _whole_number(data.get("crane_hours"), "Horas de grúa")
+    if km is None and hours is None and crane is None:
+        raise QrSheetError("Pon lo que marca ahora al menos un contador.")
+    MachineMeterReading.objects.create(
+        machine=machine,
+        reading_date=timezone.localdate(),
+        km=km, hours=hours, crane_hours=crane,
+        source=MachineMeterReading.SOURCE_REAL,
+        created_by=company_user,
+    )
+    units = set(GasoGesVehicle.objects.filter(machine=machine).exclude(
+        unit=GasoGesVehicle.UNIT_UNKNOWN).values_list("unit", flat=True))
+    for unit in units:
+        if (unit == GasoGesVehicle.UNIT_KM and km is not None) or (
+                unit == GasoGesVehicle.UNIT_HOURS and hours is not None):
+            recheck_series(machine, unit)
+    parts = []
+    if km is not None:
+        parts.append("{:,} km".format(km).replace(",", "."))
+    if hours is not None:
+        parts.append("{:,} h de motor".format(hours).replace(",", "."))
+    if crane is not None:
+        parts.append("{:,} h de grúa".format(crane).replace(",", "."))
+    return ("Contadores actualizados: %s. Los repostajes se controlan a "
+            "partir de aquí." % ", ".join(parts))
+
+
+def last_real_counters(machine):
+    """
+    The machine's last real counters reading, or None.
+
+    ---
+
+    La última lectura de contadores actualizados del centro de gasto.
+    """
+    from fleet.models import MachineMeterReading
+
+    return MachineMeterReading.objects.filter(
+        machine=machine, source=MachineMeterReading.SOURCE_REAL,
+    ).order_by("-created_at").first()
 
 
 def spec_rows(machine):

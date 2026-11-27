@@ -1446,6 +1446,7 @@ def _machine_qr_context(request, machine):
         "media": qr.media_rows(sheet),
         "specs": qr.spec_rows(machine),
         "service_lines": qr.service_lines(machine),
+        "last_real": qr.last_real_counters(machine),
         "max_photo_mb": qr.MAX_PHOTO_BYTES // (1024 * 1024),
         "max_video_mb": qr.MAX_VIDEO_BYTES // (1024 * 1024),
         "editor_password_set": qr.editor_password_set(machine.company),
