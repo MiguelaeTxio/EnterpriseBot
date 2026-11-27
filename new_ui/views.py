@@ -1325,7 +1325,7 @@ def _person_ficha_context(request, person):
     from django.urls import reverse
 
     from document_explorer.models import JobPosition, PersonIdPhoto
-    from new_ui.lists import fmt_date, person_name, persons_base
+    from new_ui.lists import fmt_date, person_name
     from new_ui.docs_core import (
         _person_employment_periods, _person_lifting_accessories,
     )
@@ -1353,8 +1353,8 @@ def _person_ficha_context(request, person):
                            field if editable else "",
                            value.isoformat() if value else "", "date")
 
-    section = persons_base().filter(pk=person.pk).values_list(
-        "current_section_name", flat=True).first()
+    from new_ui.ficha_membership import ficha_items
+
     user = person.company_user
     requirements = list(person.document_requirements.order_by("name"))
     boxes = [
@@ -1380,7 +1380,8 @@ def _person_ficha_context(request, person):
         {"title": "Empresa y puesto", "items": [
             _ficha_item("Empresa", person.employer_company),
             text("Categoría profesional", "professional_category"),
-            _ficha_item("Sección (SIME)", section or ""),
+            # S149: sección y grupos de selección se asignan aquí mismo.
+            *ficha_items(person, _company_user(request)),
             _ficha_item("Requisitos de documentación", ", ".join(
                 r.name for r in requirements), "document_requirements",
                 [r.pk for r in requirements], "requirements"),

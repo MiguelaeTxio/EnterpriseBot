@@ -181,12 +181,16 @@ class PersonUpdateView(SuperuserRequiredMixin, View):
                 return JsonResponse({"ok": False,
                                      "error": "Algún requisito ya no existe."},
                                     status=400)
-        if not updated_fields and requirements is None:
+        membership = ("section_sent" in request.POST
+                      or "groups_sent" in request.POST)
+        if not updated_fields and requirements is None and not membership:
             return JsonResponse({"ok": False,
                                  "error": "Sin campos que actualizar."},
                                 status=400)
         try:
-            person.full_clean(validate_unique=False)
+            # S149: sección y grupos no tocan los campos de la persona.
+            if updated_fields or requirements is not None:
+                person.full_clean(validate_unique=False)
         except ValidationError as exc:
             return JsonResponse({"ok": False,
                                  "error": "; ".join(exc.messages)},
@@ -196,6 +200,15 @@ class PersonUpdateView(SuperuserRequiredMixin, View):
                 person.save(update_fields=updated_fields)
             if requirements is not None:
                 person.document_requirements.set(requirements)
+            # S149: sección (SIME) y grupos de selección desde la ficha.
+            try:
+                from new_ui.ficha_membership import save as save_membership
+
+                save_membership(request, person)
+            except ValueError as exc:
+                transaction.set_rollback(True)
+                return JsonResponse({"ok": False, "error": str(exc)},
+                                    status=400)
         renamed = 0
         if tuple(getattr(person, f) for f in self.NAME_FIELDS) != old_names:
             renamed = _realign_person_document_names(person)
