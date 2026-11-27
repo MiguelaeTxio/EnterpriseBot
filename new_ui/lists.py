@@ -1630,13 +1630,15 @@ def _cdg_lists():
                               " (%s)" % fmt_num(sp.quantity)
                               if sp.quantity else "")
                     for sp in r.spare_parts.all())),
+                Col("fotos", "Fotos", lambda r: len(r.photos.all()) or "",
+                    "", "text-end"),
             ], "entry__work_date",
             search=("fault_description", "repair_notes", "entry__worker_name"),
             default_order=("-entry__work_date",),
             extras=_parte_line_extras("pk", with_machine=False),
             row_url=lambda r: reverse("new_ui:parte_sheet",
                                       args=[r.entry.work_order_id]),
-            prefetch=("spare_parts",),
+            prefetch=("spare_parts", "photos"),
             note="Periodo: fecha del parte. Pincha una tarea para ver su "
                  "parte."),
         # S154 (27/11), Miguel Ángel: «qué repuestos se han gastado en
@@ -4097,6 +4099,11 @@ def _parte_line_extras(path_to_order, with_machine=True,
             ("si", "Con horas"), ("no", "Sin horas")],
             apply=with_or_without(WorkOrderEntryLine.objects.filter(
                 delta_hours__gt=0))),
+        # S154 (27/11), Miguel Ángel: «poder filtrar por fotos».
+        Extra("fotos", "Fotos", lambda company: [
+            ("si", "Con fotos"), ("no", "Sin fotos")],
+            apply=with_or_without(WorkOrderEntryLine.objects.filter(
+                photos__isnull=False))),
         Extra("familia", "Familia de avería", lambda company: list(
             FaultCategory.choices),
             apply=lambda qs, v: qs.filter(
