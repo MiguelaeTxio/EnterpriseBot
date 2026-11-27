@@ -207,6 +207,12 @@ class Command(BaseCommand):
     help = ("Carga los partes en papel de Plataformas (21-26/11/2026) como "
             "partes digitales de cada trabajador.")
 
+    # Otras cargas (import_paper_partes_cruces_s149) cambian solo esto.
+    PARTES = PARTES
+    DIETS = DIETS
+    NO_CLOCK = NO_CLOCK
+    NO_LUNCH = set()
+
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
@@ -238,10 +244,10 @@ class Command(BaseCommand):
         from document_explorer.models import PersonIdentity
 
         people = {p.pk: p for p in PersonIdentity.objects.filter(
-            pk__in={row[0] for row in PARTES}).select_related(
+            pk__in={row[0] for row in self.PARTES}).select_related(
             "company_user__user", "company_user__company")}
         total = Decimal("0")
-        for person_id, day_text, tasks, parts, note in PARTES:
+        for person_id, day_text, tasks, parts, note in self.PARTES:
             person = people.get(person_id)
             if person is None or person.company_user_id is None:
                 self._log("!! Persona %d sin usuario: no se carga el %s."
@@ -303,6 +309,9 @@ class Command(BaseCommand):
                       % (label, existing))
             return None
         lunch_start, lunch_end = self._lunch(company_user, day)
+        no_lunch = (person.pk, day.isoformat()) in self.NO_LUNCH
+        if no_lunch:
+            lunch_start = lunch_end = None
         worker_name = (company_user.user.get_full_name()
                        or company_user.user.username).upper()
         work_order = WorkOrder(
@@ -318,13 +327,15 @@ class Command(BaseCommand):
             work_date=day, uncertain_date=False,
             extraction_confidence=WorkOrderEntry.Confidence.HIGH,
             raw_gemini_response=None, lunch_break_start=lunch_start,
-            lunch_break_end=lunch_end, no_lunch_break=False,
-            has_diet=(person.pk, day.isoformat()) in DIETS,
+            lunch_break_end=lunch_end, no_lunch_break=no_lunch,
+            has_diet=(person.pk, day.isoformat()) in self.DIETS,
             is_intensive_shift=False,
         )
-        self._log("== %s -> parte nº %d (comida %s-%s)%s%s" % (
-            label, work_order.pk, lunch_start.strftime("%H:%M"),
-            lunch_end.strftime("%H:%M"),
+        self._log("== %s -> parte nº %d (%s)%s%s" % (
+            label, work_order.pk,
+            "comida %s-%s" % (lunch_start.strftime("%H:%M"),
+                              lunch_end.strftime("%H:%M"))
+            if lunch_start else "sin pausa de comida",
             " · DIETA" if entry.has_diet else "",
             " · " + note if note else ""))
         taller = self._asset(company, TALLER)
@@ -344,7 +355,8 @@ class Command(BaseCommand):
             hc, hf = _t(start), _t(end)
             gross = _minutes(hf) - _minutes(hc)
             overlap = max(0, min(_minutes(hf), _minutes(lunch_end))
-                          - max(_minutes(hc), _minutes(lunch_start)))
+                          - max(_minutes(hc), _minutes(lunch_start))
+                          ) if lunch_start else 0
             hours = (Decimal(gross - overlap) / Decimal(60)).quantize(
                 Decimal("0.01"))
             day_hours += hours
@@ -399,7 +411,7 @@ class Command(BaseCommand):
             who = "%s %s" % (company_user.user.username,
                              day.strftime("%d/%m"))
             if (company_user.person_identity_id_s149, day.isoformat()) in \
-                    NO_CLOCK:
+                    self.NO_CLOCK:
                 self._log("   %s: no se compara (el parte acaba a las 13:30 "
                           "y fichó la tarde): revisar a mano." % who)
                 continue
