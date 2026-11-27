@@ -12,9 +12,11 @@ y debajo PERSONAL y un trabajador por fila) y una X en cada día de
 vacaciones. Lo demás que traen las celdas (BAJA, ENFERMO, notas) no son
 vacaciones y no se carga.
 
-- Los nombres se reconocen como en el planning (crane_albaranes.traffic.
-  NameResolver: tabla de Tráfico › Nombres, DNI, mote, palabras con
-  abreviaturas e iniciales); los que no, se apuntan en esa tabla «Sin
+- Los nombres se reconocen con las mismas reglas que el planning
+  (crane_albaranes.traffic.NameResolver: DNI, mote, palabras con
+  abreviaturas e iniciales), pero con su propia lista de nombres
+  (VacationChartName, Personal › Vacaciones › Nombres del cuadrante),
+  separada de la de Tráfico; los que no se reconocen se apuntan ahí «Sin
   asignar» y se dicen.
 - Cada racha de días seguidos con X es un periodo. Los días que ya
   están en un periodo registrado no se repiten (se puede cargar el
@@ -25,7 +27,7 @@ vacaciones y no se carga.
   pueden estar liquidados); la tarea solo sirve para avisar antes de
   empezar.
 - `dry_run`: solo cuenta lo que haría (los nombres sin reconocer sí
-  quedan apuntados en Tráfico › Planning › Nombres para asignarlos).
+  quedan apuntados en Personal › Vacaciones › Nombres del cuadrante).
 
 Los datos son personales: el Excel no se guarda, solo los periodos.
 """
@@ -169,10 +171,11 @@ def import_chart(company, uploaded, created_by=None, dry_run=False):
     fantasma), días que ya estaban, nombres sin reconocer y problemas.
     Con `dry_run`, no guarda nada.
     """
-    from crane_albaranes.traffic import NameResolver, remember_unknown
+    from crane_albaranes.traffic import (
+        NameResolver, plain, remember_unknown,
+    )
+    from hr_calendar.models import VacationChartName
     from hr_calendar.services import create_vacation_period
-
-    from crane_albaranes.models import PlanningName
 
     today = timezone.localdate()
     marks, problems = read_chart(uploaded.read())
@@ -182,23 +185,17 @@ def import_chart(company, uploaded, created_by=None, dry_run=False):
     marks = {text: {d for d in dates if d.year == today.year}
              for text, dates in marks.items()}
     marks = {text: dates for text, dates in marks.items() if dates}
-    # Y fuera de Nombres lo apuntado sin asignar que no sale ni en el
-    # cuadrante del año en curso ni en el planning de este año (también
-    # lo apuntado antes de guardar las fechas, S165).
-    from crane_albaranes.models import PlanningService
-    from crane_albaranes.traffic import plain
-
-    keep = {plain(t) for t in marks} | {
-        plain(raw) for raw in PlanningService.objects.filter(
-            company=company, day__year=today.year).exclude(
-            raw_person="").values_list("raw_person", flat=True).distinct()}
-    PlanningName.objects.filter(
+    # Fuera de la lista de nombres del cuadrante lo apuntado sin asignar
+    # que ya no sale en el cuadrante del año en curso.
+    VacationChartName.objects.filter(
         company=company, person__isnull=True, not_a_worker=False,
-        updated_by__isnull=True).exclude(key__in=keep).delete()
+        updated_by__isnull=True).exclude(
+        key__in={plain(t) for t in marks}).delete()
     if not marks:
         raise ValueError("El Excel no trae ninguna X de vacaciones de %d."
                          % today.year)
-    people = NameResolver(company)
+    # Su propia lista de nombres, separada de la del planning (S165).
+    people = NameResolver(company, VacationChartName)
     summary = {"people": 0, "periods": 0, "past": 0, "days": 0,
                "already": 0, "unknown": [], "problems": problems,
                "errors": []}
@@ -242,7 +239,8 @@ def import_chart(company, uploaded, created_by=None, dry_run=False):
     # También al comprobar: solo se apuntan los nombres por asignar (no
     # las vacaciones), para poder asignarlos antes de cargar.
     remember_unknown(company, {t: spans[t] for t in marks
-                               if not people.is_ignored(t)}, people)
+                               if not people.is_ignored(t)}, people,
+                     VacationChartName)
     logger.info(
         "# [VACACIONES CUADRANTE] %s%d periodos (%d pasados) de %d "
         "trabajadores, %d días; %d ya estaban; %d nombres sin reconocer.",

@@ -1,8 +1,8 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_traffic_name.html -- S165: un nombre del planning/cuadrante en la ventana (Tráfico › Planning › Nombres): decir quién es. Vista: new_ui/views_traffic.py (NameSheetView); guarda NamesAssignView. #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_traffic_name.html -- S165: un nombre del planning (Tráfico › Planning › Nombres) o del cuadrante de vacaciones (Personal › Vacaciones › Nombres del cuadrante) en la ventana: decir quién es. Vista: new_ui/views_traffic.py (NameSheetView); guarda NamesAssignView. #}
 <div class="small">
-    <p class="mb-2">En el planning o el cuadrante viene como <strong>«{{ name.text }}»</strong>.
+    <p class="mb-2">En {{ where }} viene como <strong>«{{ name.text }}»</strong>.
         {% if name.seen_from %}Aparece del <strong>{{ name.seen_from|date:"d/m/Y" }}</strong> al <strong>{{ name.seen_to|date:"d/m/Y" }}</strong>. {% endif %}{% if name.person %}Ahora: <strong>{{ name.person.given_name }} {{ name.person.first_surname }}</strong>.{% elif name.not_a_worker %}Ahora: no es un trabajador.{% else %}Sin asignar.{% endif %}</p>
-    <form data-nui-action-form action="{% url 'new_ui:traffic_names' %}">
+    <form data-nui-action-form action="{{ assign_url }}">
         {% csrf_token %}<input type="hidden" name="selected" value="{{ name.pk }}">
         {% if suggested %}
         <div class="fw-semibold mb-1">Se parecen</div>

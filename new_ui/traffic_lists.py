@@ -251,33 +251,41 @@ def _imports_def():
 
 
 # ---------------------------------------------------------------- nombres
-def _prepare_names(rows):
-    """Number of planning rows of each name (ListDef.prepare)."""
-    from crane_albaranes.models import PlanningService
-    from crane_albaranes.traffic import plain
+def _prepare_names(model, with_rows):
+    """
+    ListDef.prepare of a names list: why each one is not assigned.
+    ---
+    Por qué no se asigna solo cada nombre (con las mismas reglas que al
+    cargar, y con su propia lista) y, en el planning, cuántas filas
+    trae.
+    """
+    def prepare(rows):
+        from crane_albaranes.models import PlanningService
+        from crane_albaranes.traffic import NameResolver, plain
 
-    if not rows:
-        return
-    counts = {}
-    for raw, n in PlanningService.objects.filter(
-            company_id=rows[0].company_id).exclude(raw_person="").values_list(
-            "raw_person").annotate(n=Count("pk")):
-        key = plain(raw)
-        counts[key] = counts.get(key, 0) + n
-    from crane_albaranes.traffic import NameResolver
-
-    resolver = None
-    for row in rows:
-        row.nui_rows = counts.get(row.key, 0)
-        row.nui_why = ""
-        if row.person_id and not row.person.is_active_employee:
-            row.nui_why = "asignado a un trabajador de baja"
-        elif not row.person_id and not row.not_a_worker:
-            resolver = resolver or NameResolver(row.company)
-            dates = (row.seen_from, row.seen_to) if row.seen_from \
-                and row.seen_to else None
-            row.nui_why = resolver.resolve(row.text, dates)[1].replace(
-                "«%s» " % row.text, "")
+        if not rows:
+            return
+        counts = {}
+        if with_rows:
+            for raw, n in PlanningService.objects.filter(
+                    company_id=rows[0].company_id).exclude(
+                    raw_person="").values_list("raw_person").annotate(
+                    n=Count("pk")):
+                key = plain(raw)
+                counts[key] = counts.get(key, 0) + n
+        resolver = None
+        for row in rows:
+            row.nui_rows = counts.get(row.key, 0)
+            row.nui_why = ""
+            if row.person_id and not row.person.is_active_employee:
+                row.nui_why = "asignado a un trabajador de baja"
+            elif not row.person_id and not row.not_a_worker:
+                resolver = resolver or NameResolver(row.company, model)
+                dates = (row.seen_from, row.seen_to) if row.seen_from \
+                    and row.seen_to else None
+                row.nui_why = resolver.resolve(row.text, dates)[1].replace(
+                    "«%s» " % row.text, "")
+    return prepare
 
 
 def _name_person(r):
@@ -298,19 +306,37 @@ def _name_state(r):
     return "Sin asignar"
 
 
-def _names_def():
+def names_def(kind="tra"):
     """
-    Tráfico › Planning › Nombres: how each worker comes written.
+    Names list: Tráfico › Planning › Nombres or the vacation chart's.
+
     ---
-    Cómo viene escrito cada trabajador en el planning y el cuadrante de
-    vacaciones. Los que no se reconocen solos salen «Sin asignar»: se
-    asignan una vez (o se marcan «no es un trabajador») y vale para
-    siempre.
+
+    Cómo viene escrito cada trabajador y quién es. Dos listas separadas
+    (S165: «lo que se suba a tráfico quede como tráfico, y lo que se
+    suba a vacaciones quede como vacaciones»): `tra`, la del planning de
+    grúas (Tráfico › Planning › Nombres); `vac`, la del cuadrante de
+    vacaciones (Personal › Vacaciones › Nombres del cuadrante). Los que
+    no se reconocen solos salen «Sin asignar»: se asignan una vez y vale
+    para siempre.
     """
-    from crane_albaranes.models import PlanningName
+    if kind == "vac":
+        from hr_calendar.models import VacationChartName as model
+        sheet = "new_ui:vacation_name_sheet"
+        title = "Nombre del cuadrante"
+        note = ("Cómo viene escrito cada trabajador en el cuadrante de "
+                "vacaciones. Pulsa uno para decir quién es (o que no es un "
+                "trabajador).")
+    else:
+        from crane_albaranes.models import PlanningName as model
+        sheet = "new_ui:traffic_name_sheet"
+        title = "Nombre del planning"
+        note = ("Cómo viene escrito cada trabajador en el planning de "
+                "grúas. Pulsa uno para decir quién es (o que no es un "
+                "trabajador).")
 
     def queryset(company):
-        return PlanningName.objects.filter(company=company).select_related(
+        return model.objects.filter(company=company).select_related(
             "person", "updated_by__user")
 
     def state(qs, value):
@@ -320,42 +346,42 @@ def _names_def():
             return qs.filter(not_a_worker=True)
         return qs.filter(person__isnull=True, not_a_worker=False)
 
-    definition = ListDef(
-        "Nombres", queryset, [
-            Col("como_viene", "Como viene", lambda r: r.text, "text"),
-            Col("persona", "Trabajador", _name_person,
-                "person__first_surname", entity=True),
-            Col("estado", "Estado", _name_state, "not_a_worker"),
-            Col("motivo", "Por qué no se asigna solo",
-                lambda r: getattr(r, "nui_why", "")),
-            Col("aparece", "Aparece", lambda r: "%s – %s" % (
-                fmt_date(r.seen_from), fmt_date(r.seen_to))
-                if r.seen_from else "", "seen_from", "text-nowrap"),
-            Col("filas", "Filas del planning",
-                lambda r: getattr(r, "nui_rows", ""), "", "text-end"),
-            Col("por", "Asignado por", lambda r: getattr(getattr(
-                r.updated_by, "user", None), "username", "")
-                if r.updated_by_id else ""),
-            Col("cuando", "Asignado", lambda r: fmt_datetime(r.updated_at)
-                if r.person_id or r.not_a_worker else "", "updated_at",
-                "text-nowrap"),
-        ],
-        entity="person", entity_path="person",
+    cols = [
+        Col("como_viene", "Como viene", lambda r: r.text, "text"),
+        Col("persona", "Trabajador", _name_person,
+            "person__first_surname", entity=True),
+        Col("estado", "Estado", _name_state, "not_a_worker"),
+        Col("motivo", "Por qué no se asigna solo",
+            lambda r: getattr(r, "nui_why", "")),
+        Col("aparece", "Aparece", lambda r: "%s – %s" % (
+            fmt_date(r.seen_from), fmt_date(r.seen_to))
+            if r.seen_from else "", "seen_from", "text-nowrap"),
+    ]
+    if kind == "tra":
+        cols.append(Col("filas", "Filas del planning",
+                        lambda r: getattr(r, "nui_rows", ""), "",
+                        "text-end"))
+    cols += [
+        Col("por", "Asignado por", lambda r: getattr(getattr(
+            r.updated_by, "user", None), "username", "")
+            if r.updated_by_id else ""),
+        Col("cuando", "Asignado", lambda r: fmt_datetime(r.updated_at)
+            if r.person_id or r.not_a_worker else "", "updated_at",
+            "text-nowrap"),
+    ]
+    return ListDef(
+        "Nombres del cuadrante" if kind == "vac" else "Nombres", queryset,
+        cols, entity="person", entity_path="person",
         entity_filter=_person_or_null("person"),
         entity_of=lambda r: r.person,
         search=("text", "person__given_name", "person__first_surname"),
         default_order=("person_id", "not_a_worker", "text"),
-        prepare=_prepare_names,
-        row_url=lambda r: reverse("new_ui:traffic_name_sheet",
-                                  args=[r.pk]),
-        row_title="Nombre del planning",
+        prepare=_prepare_names(model, kind == "tra"),
+        row_url=lambda r: reverse(sheet, args=[r.pk]), row_title=title,
         extras=[Extra("estado", "Estado", lambda company: [
             ("sin", "Sin asignar"), ("trabajador", "Trabajador"),
             ("no", "No es un trabajador")], state)],
-        note="Los nombres del planning y del cuadrante de vacaciones que "
-             "no se reconocen solos. Marca uno y, en Acciones, dile quién "
-             "es (o que no es un trabajador).")
-    return definition
+        note=note)
 
 
 # ----------------------------------------------------------------- envíos
@@ -589,7 +615,7 @@ def traffic_lists():
     lists = {
         "servicios": _services_def(),
         "cargas": _imports_def(),
-        "nombres": _names_def(),
+        "nombres": names_def("tra"),
         "envios": _notices_def(),
         "albaranes": _albaranes_def(),
         "obras": _worksites_def(),

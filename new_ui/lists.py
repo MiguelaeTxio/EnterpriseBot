@@ -4173,9 +4173,12 @@ def list_def(section, tab):
         _CACHE["per"] = _per_lists()
         _CACHE["doc"] = _doc_lists()
         # S165: Tráfico (planning de grúas, envíos, obras y clientes).
-        from new_ui.traffic_lists import traffic_lists
+        from new_ui.traffic_lists import names_def, traffic_lists
 
         _CACHE["tra"] = traffic_lists()
+        # S165: nombres del cuadrante de vacaciones, lista propia en
+        # Personal › Vacaciones (separada de la de Tráfico).
+        _CACHE["per"]["nombres_vac"] = names_def("vac")
         # S163 (23/11): se configuran en Empresa (catalog.MOVED_VIEWS).
         for key in ("lista_horarios", "tipos_fichaje", "catalogo_epis"):
             _CACHE["doc"][key] = _CACHE["per"].pop(key)

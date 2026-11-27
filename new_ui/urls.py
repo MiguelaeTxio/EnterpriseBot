@@ -583,6 +583,12 @@ urlpatterns = [
     path("vacaciones/cuadrante/",
          views_vacation_chart.VacationChartUploadView.as_view(),
          name="vacation_chart_upload"),
+    path("vacaciones/nombres/",
+         views_traffic.VacationNamesAssignView.as_view(),
+         name="vacation_names"),
+    path("vacaciones/nombres/<int:pk>/",
+         views_traffic.VacationNameSheetView.as_view(),
+         name="vacation_name_sheet"),
     # S165: Tráfico (planning de grúas, envíos, nombres, obras, clientes).
     path("trafico/planning/cargar/",
          views_traffic.PlanningUploadView.as_view(),

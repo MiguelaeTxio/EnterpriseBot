@@ -3009,3 +3009,57 @@ class PayLine(models.Model):
 
     def __str__(self) -> str:
         return "%s %s %s" % (self.period_id, self.company_user_id, self.key)
+
+
+class VacationChartName(models.Model):
+    """
+    How a worker is written in the vacation chart (S165).
+
+    ---
+
+    Cómo viene escrito un trabajador en el cuadrante de vacaciones
+    (VACACIONES.xlsx: «FCO GOMEZ RIVERO», «PETRUS»...) y quién es. Lista
+    propia de Personal › Vacaciones, separada de la del planning de
+    Tráfico (Miguel Ángel, S165: «lo que se suba a tráfico quede como
+    tráfico, y lo que se suba a vacaciones quede como vacaciones»). Se
+    asigna una vez y vale para siempre; también «no es un trabajador».
+    """
+
+    company = models.ForeignKey(
+        "ivr_config.Company", on_delete=models.CASCADE,
+        related_name="vacation_chart_names", verbose_name="Empresa",
+    )
+    key = models.CharField(max_length=120, verbose_name="Clave",
+                           help_text="El texto sin tildes, mayúsculas ni "
+                                     "signos.")
+    text = models.CharField(max_length=120, verbose_name="Como viene")
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="vacation_chart_names",
+        verbose_name="Trabajador",
+    )
+    not_a_worker = models.BooleanField(
+        default=False, verbose_name="No es un trabajador")
+    seen_from = models.DateField(null=True, blank=True,
+                                 verbose_name="Aparece desde")
+    seen_to = models.DateField(null=True, blank=True,
+                               verbose_name="Aparece hasta")
+    updated_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Asignado por",
+    )
+    updated_at = models.DateTimeField(auto_now=True,
+                                      verbose_name="Asignado")
+
+    class Meta:
+        ordering = ["text"]
+        verbose_name = "Nombre del cuadrante de vacaciones"
+        verbose_name_plural = "Nombres del cuadrante de vacaciones"
+        constraints = [
+            models.UniqueConstraint(fields=["company", "key"],
+                                    name="vacationchartname_unique_key"),
+        ]
+
+    def __str__(self):
+        return self.text

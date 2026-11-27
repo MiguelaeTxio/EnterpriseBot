@@ -29,7 +29,7 @@ class VacationChartUploadView(SuperuserRequiredMixin, View):
     POST: comprueba (`check`) o carga (`load`) el cuadrante de
     vacaciones y dice cuántos periodos, de cuántos trabajadores, cuántos
     días ya estaban y qué nombres no se reconocen (se asignan en
-    Tráfico › Nombres y se vuelve a cargar).
+    Personal › Vacaciones › Nombres del cuadrante y se vuelve a cargar).
     """
 
     def post(self, request):
@@ -63,9 +63,8 @@ class VacationChartUploadView(SuperuserRequiredMixin, View):
                          summary["already"])
         if summary["unknown"]:
             parts.append("Sin reconocer: %s%s. Di quién es cada uno en "
-                         "Tráfico › Planning › Nombres (la misma lista de "
-                         "nombres sirve para el planning de grúas y para "
-                         "este cuadrante) y vuelve a comprobar." % (
+                         "Personal › Vacaciones › Nombres del cuadrante y "
+                         "vuelve a comprobar." % (
                              ", ".join(summary["unknown"][:SHOWN]),
                              " y %d más" % (len(summary["unknown"]) - SHOWN)
                              if len(summary["unknown"]) > SHOWN else ""))

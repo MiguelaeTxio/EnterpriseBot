@@ -18,6 +18,7 @@ from decimal import Decimal, InvalidOperation
 from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
@@ -193,14 +194,15 @@ class NamesAssignView(SuperuserRequiredMixin, View):
     aplica en el acto a los servicios ya cargados.
     """
 
+    kind = "tra"
+
     def post(self, request):
-        from crane_albaranes.models import PlanningName
         from crane_albaranes.traffic import relink_names
         from document_explorer.models import PersonIdentity
 
         cu = request.user.company_user
-        names = list(PlanningName.objects.filter(company=cu.company,
-                                                 pk__in=_ids(request)))
+        names = list(_names_model(self.kind).objects.filter(
+            company=cu.company, pk__in=_ids(request)))
         if not names:
             return _error("Marca primero los nombres.")
         action = request.POST.get("action", "")
@@ -218,13 +220,38 @@ class NamesAssignView(SuperuserRequiredMixin, View):
             name.not_a_worker = action == "not_worker"
             name.updated_by = cu
             name.save()
-        changed = relink_names(cu.company, {n.key for n in names})
         what = {"assign": "asignado(s) a %s" % (
             person.given_name if person else ""),
             "not_worker": "marcado(s) «no es un trabajador»",
             "clear": "sin asignar"}[action]
+        if self.kind == "vac":
+            return _ok("%d nombre(s) %s. Vuelve a comprobar el cuadrante "
+                       "de vacaciones." % (len(names), what))
+        changed = relink_names(cu.company, {n.key for n in names})
         return _ok("%d nombre(s) %s; %d servicio(s) del planning "
                    "cambiado(s)." % (len(names), what, changed))
+
+
+class VacationNamesAssignView(NamesAssignView):
+    """
+    POST: the same for the vacation chart names (own list, S165).
+    ---
+    POST: lo mismo con los nombres del cuadrante de vacaciones (su
+    propia lista, Personal › Vacaciones › Nombres del cuadrante).
+    """
+
+    kind = "vac"
+
+
+def _names_model(kind):
+    """The names table of each list: planning (tra) or vacation chart."""
+    if kind == "vac":
+        from hr_calendar.models import VacationChartName
+
+        return VacationChartName
+    from crane_albaranes.models import PlanningName
+
+    return PlanningName
 
 
 class NameSheetView(SuperuserRequiredMixin, View):
@@ -238,14 +265,15 @@ class NameSheetView(SuperuserRequiredMixin, View):
     botones Asignar, «No es un trabajador» y «Dejar sin asignar».
     """
 
+    kind = "tra"
+
     def get(self, request, pk):
-        from crane_albaranes.models import PlanningName
         from crane_albaranes.traffic import plain
         from document_explorer.models import PersonIdentity
         from new_ui.lists import person_name
 
         cu = request.user.company_user
-        name = PlanningName.objects.filter(
+        name = _names_model(self.kind).objects.filter(
             pk=pk, company=cu.company).select_related("person").first()
         if name is None:
             raise Http404
@@ -269,6 +297,11 @@ class NameSheetView(SuperuserRequiredMixin, View):
                            key=lambda p: -p[0])[:8]
         return render(request, "new_ui/_traffic_name.html", {
             "name": name,
+            "where": "el cuadrante de vacaciones" if self.kind == "vac"
+            else "el planning",
+            "assign_url": reverse("new_ui:vacation_names"
+                                  if self.kind == "vac"
+                                  else "new_ui:traffic_names"),
             "suggested": [p + (_person_dates(p[1]),) for p in suggested],
             "people": [p for p in people if p not in suggested],
         })
@@ -306,6 +339,16 @@ def _person_dates(pk):
             docs["first"].strftime("%d/%m/%Y"),
             docs["last"].strftime("%d/%m/%Y")))
     return ", ".join(parts) or "sin fechas de alta, baja ni documentos"
+
+
+class VacationNameSheetView(NameSheetView):
+    """
+    GET: one vacation chart name in the viewer (own list, S165).
+    ---
+    GET: un nombre del cuadrante de vacaciones en la ventana.
+    """
+
+    kind = "vac"
 
 
 class ImportSheetView(SuperuserRequiredMixin, View):

@@ -334,11 +334,15 @@ class NameResolver:
     días), nunca para un cuadrante de 2024.
     """
 
-    def __init__(self, company):
+    def __init__(self, company, model=None):
         from document_explorer.models import PersonIdentity
 
         self.company = company
-        self.names = {n.key: n for n in PlanningName.objects.filter(
+        # La lista de nombres: la del planning (PlanningName) o la del
+        # cuadrante de vacaciones (hr_calendar.VacationChartName). S165:
+        # cada una por su lado.
+        self.model = model or PlanningName
+        self.names = {n.key: n for n in self.model.objects.filter(
             company=company)}
         self.people = []
         # También las fichas sin empresa (muchos antiguos y gruistas).
@@ -388,7 +392,7 @@ class NameResolver:
         person, why = self._auto(key, text, dates)
         if name is not None and name.person_id and name.person_id != (
                 person.pk if person else None):
-            PlanningName.objects.filter(
+            self.model.objects.filter(
                 pk=name.pk, updated_by__isnull=True,
                 not_a_worker=False).update(person=person)
             name.person = person
@@ -396,8 +400,8 @@ class NameResolver:
                 not name.person_id:
             # Apuntado «Sin asignar» en una carga anterior y ahora
             # reconocido solo: queda asignado en la lista de nombres.
-            PlanningName.objects.filter(pk=name.pk, person__isnull=True,
-                                        not_a_worker=False).update(
+            self.model.objects.filter(pk=name.pk, person__isnull=True,
+                                      not_a_worker=False).update(
                 person=person)
             name.person = person
         return person, why
@@ -882,7 +886,7 @@ def _group_problems(problems):
         for r in order]
 
 
-def remember_unknown(company, texts, people=None):
+def remember_unknown(company, texts, people=None, model=None):
     """
     Add the names not recognised to the names table, «Sin asignar».
 
@@ -894,10 +898,11 @@ def remember_unknown(company, texts, people=None):
     A los que ya estaban sin asignar se les amplían esas fechas.
     Devuelve cuántos nuevos.
     """
-    people = people or NameResolver(company)
+    model = model or PlanningName
+    people = people or NameResolver(company, model)
     if not isinstance(texts, dict):
         texts = {t: None for t in texts}
-    existing = {n.key: n for n in PlanningName.objects.filter(
+    existing = {n.key: n for n in model.objects.filter(
         company=company)}
     new = {}
     for text, dates in texts.items():
@@ -909,15 +914,15 @@ def remember_unknown(company, texts, people=None):
             continue
         name = existing.get(key) or new.get(key)
         if name is None:
-            name = new[key] = PlanningName(company=company, key=key[:120],
-                                           text=clean(text, 120))
+            name = new[key] = model(company=company, key=key[:120],
+                                    text=clean(text, 120))
         if dates:
             name.seen_from = min(d for d in (name.seen_from, dates[0]) if d)
             name.seen_to = max(d for d in (name.seen_to, dates[1]) if d)
             if name.pk:
-                PlanningName.objects.filter(pk=name.pk).update(
+                model.objects.filter(pk=name.pk).update(
                     seen_from=name.seen_from, seen_to=name.seen_to)
-    PlanningName.objects.bulk_create(new.values(), ignore_conflicts=True)
+    model.objects.bulk_create(new.values(), ignore_conflicts=True)
     return len(new)
 
 

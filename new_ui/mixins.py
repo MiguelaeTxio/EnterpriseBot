@@ -62,6 +62,7 @@ PATH_KEYS = (
     ("vacaciones", "/tipos-ausencia/", "doc.tipos_ausencia"),
     ("vacaciones", "/ajustes/", "doc.vacaciones"),
     ("vacaciones", "/cuadrante/", "per.saldo_vacaciones"),
+    ("vacaciones", "/nombres/", "per.saldo_vacaciones"),
     ("epis", "/catalogo/", "doc.catalogo_epis"),
     ("epis", "/lotes/", "doc.lotes_epis"),
     ("nominas", "/entregas/", "doc.entregas_nominas"),
