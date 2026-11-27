@@ -35,6 +35,7 @@ import unicodedata
 from django.conf import settings
 from django.core import signing
 from django.db import transaction
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 
@@ -267,13 +268,33 @@ def _expand(word):
     return NAME_ABBREVIATIONS.get(word, word).split() or [word]
 
 
+def _close(word, token):
+    """
+    True if two name words are the same written slightly differently.
+    ---
+    Dos palabras de nombre son la misma escrita algo distinto: una
+    empieza por la otra («PETRUS»/«PETRU») o, con 5 letras o más, solo
+    cambia, sobra o falta una («ALEXANDRO»/«ALEXANDRU»).
+    """
+    short, long_ = sorted((word, token), key=len)
+    if len(short) >= 4 and long_.startswith(short):
+        return True
+    if len(short) < 5 or len(long_) - len(short) > 1:
+        return False
+    if len(short) == len(long_):
+        return sum(a != b for a, b in zip(short, long_)) == 1
+    return any(long_[:i] + long_[i + 1:] == short
+               for i in range(len(long_)))
+
+
 def _word_matches(word, tokens, used):
     """
     Index of the name token a planning word matches, or None.
     ---
     Índice de la palabra del nombre con la que casa una del planning:
-    igual, por su abreviatura (FCO = Francisco) o, si es una inicial
-    («A.», «J»), por su primera letra.
+    igual, por su abreviatura (FCO = Francisco), si es una inicial
+    («A.», «J») por su primera letra, y si no, escrita algo distinto
+    (_close). Primero la igual, después la parecida.
     """
     for index, token in enumerate(tokens):
         if index in used:
@@ -281,6 +302,9 @@ def _word_matches(word, tokens, used):
         if token == word:
             return index
         if len(word) == 1 and token.startswith(word):
+            return index
+    for index, token in enumerate(tokens):
+        if index not in used and _close(word, token):
             return index
     return None
 
@@ -307,8 +331,9 @@ class NameResolver:
         self.names = {n.key: n for n in PlanningName.objects.filter(
             company=company)}
         self.people = []
+        # También las fichas sin empresa (muchos antiguos y gruistas).
         for person in PersonIdentity.objects.filter(
-                company=company).only(
+                Q(company=company) | Q(company__isnull=True)).only(
                 "pk", "dni", "given_name", "first_surname",
                 "second_surname", "nickname", "is_active_employee"):
             tokens = plain(" ".join((
@@ -346,6 +371,17 @@ class NameResolver:
                 return None, ""
             if name.person_id:
                 return name.person, ""
+        person, why = self._auto(key, text)
+        if person is not None and name is not None:
+            # Apuntado «Sin asignar» en una carga anterior y ahora
+            # reconocido solo: queda asignado en la lista de nombres.
+            PlanningName.objects.filter(pk=name.pk, person__isnull=True,
+                                        not_a_worker=False).update(
+                person=person)
+            name.person = person
+        return person, why
+
+    def _auto(self, key, text):
         dni = re.sub(r"[^0-9A-Za-z]", "", str(text)).upper()
         if re.match(r"^[0-9XYZ]\d{7}[A-Z]$", dni):
             found = [p for p, _t, _n in self.people

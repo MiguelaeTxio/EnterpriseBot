@@ -15,6 +15,7 @@ import datetime
 import logging
 from decimal import Decimal, InvalidOperation
 
+from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
@@ -61,7 +62,8 @@ def traffic_context(section, company):
 
     today = timezone.localdate()
     people = PersonIdentity.objects.filter(
-        company=company, is_active_employee=True).order_by(
+        Q(company=company) | Q(company__isnull=True),
+        is_active_employee=True).order_by(
         "first_surname", "second_surname", "given_name")
     return {
         "tra_today": today.isoformat(),
@@ -205,8 +207,8 @@ class NamesAssignView(SuperuserRequiredMixin, View):
         person = None
         if action == "assign":
             person = PersonIdentity.objects.filter(
-                company=cu.company, pk=request.POST.get("person") or 0
-            ).first()
+                Q(company=cu.company) | Q(company__isnull=True),
+                pk=request.POST.get("person") or 0).first()
             if person is None:
                 return _error("Elige el trabajador.")
         elif action not in ("not_worker", "clear"):
@@ -223,6 +225,52 @@ class NamesAssignView(SuperuserRequiredMixin, View):
             "clear": "sin asignar"}[action]
         return _ok("%d nombre(s) %s; %d servicio(s) del planning "
                    "cambiado(s)." % (len(names), what, changed))
+
+
+class NameSheetView(SuperuserRequiredMixin, View):
+    """
+    GET: one planning name in the viewer, to say who it is.
+
+    ---
+
+    GET: un nombre del planning/cuadrante en la ventana, con los
+    trabajadores para elegir (primero los que más se le parecen) y los
+    botones Asignar, «No es un trabajador» y «Dejar sin asignar».
+    """
+
+    def get(self, request, pk):
+        from crane_albaranes.models import PlanningName
+        from crane_albaranes.traffic import plain
+        from document_explorer.models import PersonIdentity
+        from new_ui.lists import person_name
+
+        cu = request.user.company_user
+        name = PlanningName.objects.filter(
+            pk=pk, company=cu.company).select_related("person").first()
+        if name is None:
+            raise Http404
+        words = set(plain(name.text).split())
+        people = []
+        for person in PersonIdentity.objects.filter(
+                Q(company=cu.company) | Q(company__isnull=True)).order_by(
+                "-is_active_employee", "first_surname", "given_name"):
+            tokens = plain(" ".join((
+                person.given_name or "", person.first_surname or "",
+                person.second_surname or "", person.nickname or ""))
+            ).split()
+            score = sum(1 for w in words if any(
+                t == w or (len(w) > 3 and t.startswith(w[:4]))
+                for t in tokens))
+            label = person_name(person)
+            if not person.is_active_employee:
+                label += " (de baja)"
+            people.append((score, person.pk, label))
+        suggested = sorted([p for p in people if p[0]],
+                           key=lambda p: -p[0])[:8]
+        return render(request, "new_ui/_traffic_name.html", {
+            "name": name, "suggested": suggested,
+            "people": [p for p in people if p not in suggested],
+        })
 
 
 class ImportSheetView(SuperuserRequiredMixin, View):

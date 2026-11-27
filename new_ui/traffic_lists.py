@@ -264,8 +264,16 @@ def _prepare_names(rows):
             "raw_person").annotate(n=Count("pk")):
         key = plain(raw)
         counts[key] = counts.get(key, 0) + n
+    from crane_albaranes.traffic import NameResolver
+
+    resolver = None
     for row in rows:
         row.nui_rows = counts.get(row.key, 0)
+        row.nui_why = ""
+        if not row.person_id and not row.not_a_worker:
+            resolver = resolver or NameResolver(row.company)
+            row.nui_why = resolver.resolve(row.text)[1].replace(
+                "«%s» " % row.text, "")
 
 
 def _name_state(r):
@@ -304,6 +312,8 @@ def _names_def():
             Col("persona", "Trabajador", lambda r: person_name(r.person),
                 "person__first_surname", entity=True),
             Col("estado", "Estado", _name_state, "not_a_worker"),
+            Col("motivo", "Por qué no se asigna solo",
+                lambda r: getattr(r, "nui_why", "")),
             Col("filas", "Filas del planning",
                 lambda r: getattr(r, "nui_rows", ""), "", "text-end"),
             Col("por", "Asignado por", lambda r: getattr(getattr(
@@ -318,7 +328,9 @@ def _names_def():
         entity_of=lambda r: r.person,
         search=("text", "person__given_name", "person__first_surname"),
         default_order=("person_id", "not_a_worker", "text"),
-        prepare=_prepare_names, row_url=_row_sheet("nombres"),
+        prepare=_prepare_names,
+        row_url=lambda r: reverse("new_ui:traffic_name_sheet",
+                                  args=[r.pk]),
         row_title="Nombre del planning",
         extras=[Extra("estado", "Estado", lambda company: [
             ("sin", "Sin asignar"), ("trabajador", "Trabajador"),

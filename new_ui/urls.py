@@ -579,6 +579,8 @@ urlpatterns = [
          name="traffic_send"),
     path("trafico/nombres/", views_traffic.NamesAssignView.as_view(),
          name="traffic_names"),
+    path("trafico/nombres/<int:pk>/", views_traffic.NameSheetView.as_view(),
+         name="traffic_name_sheet"),
     path("trafico/cargas/<int:pk>/", views_traffic.ImportSheetView.as_view(),
          name="traffic_import_sheet"),
     path("trafico/obras/<int:pk>/",
