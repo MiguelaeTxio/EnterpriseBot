@@ -268,9 +268,44 @@ class NameSheetView(SuperuserRequiredMixin, View):
         suggested = sorted([p for p in people if p[0]],
                            key=lambda p: -p[0])[:8]
         return render(request, "new_ui/_traffic_name.html", {
-            "name": name, "suggested": suggested,
+            "name": name,
+            "suggested": [p + (_person_dates(p[1]),) for p in suggested],
             "people": [p for p in people if p not in suggested],
         })
+
+
+def _person_dates(pk):
+    """
+    Dates that help to tell who worked when (alta, baja, documents).
+    ---
+    Lo que ayuda a saber si trabajaba en esas fechas: alta y baja de la
+    ficha y las fechas de sus documentos (primera y última).
+    """
+    from django.contrib.contenttypes.models import ContentType
+    from django.db.models import Max, Min
+    from django.db.models.functions import Coalesce
+
+    from document_explorer.models import DocumentIndexEntry, PersonIdentity
+
+    person = PersonIdentity.objects.only(
+        "hire_date", "termination_date").get(pk=pk)
+    parts = []
+    if person.hire_date:
+        parts.append("alta %s" % person.hire_date.strftime("%d/%m/%Y"))
+    if person.termination_date:
+        parts.append("baja %s" % person.termination_date.strftime(
+            "%d/%m/%Y"))
+    docs = DocumentIndexEntry.objects.filter(
+        domain_content_type=ContentType.objects.get_for_model(
+            PersonIdentity), domain_object_id=pk, deleted_at__isnull=True,
+        entry_kind=DocumentIndexEntry.KIND_FILE).aggregate(
+        first=Min(Coalesce("period_start_date", "issue_date")),
+        last=Max(Coalesce("period_end_date", "issue_date")))
+    if docs["first"]:
+        parts.append("documentos del %s al %s" % (
+            docs["first"].strftime("%d/%m/%Y"),
+            docs["last"].strftime("%d/%m/%Y")))
+    return ", ".join(parts) or "sin fechas de alta, baja ni documentos"
 
 
 class ImportSheetView(SuperuserRequiredMixin, View):

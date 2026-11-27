@@ -333,6 +333,12 @@ class PlanningName(models.Model):
     )
     not_a_worker = models.BooleanField(
         default=False, verbose_name="No es un trabajador")
+    # S165: entre qué fechas aparece en el planning o en el cuadrante
+    # (para decidir quién es: depende de quién trabajaba entonces).
+    seen_from = models.DateField(null=True, blank=True,
+                                 verbose_name="Aparece desde")
+    seen_to = models.DateField(null=True, blank=True,
+                               verbose_name="Aparece hasta")
     updated_by = models.ForeignKey(
         "ivr_config.CompanyUser", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="+",

@@ -181,8 +181,9 @@ def import_chart(company, uploaded, created_by=None, dry_run=False):
                "already": 0, "unknown": [], "problems": problems,
                "errors": []}
     by_person = {}
+    spans = {text: (min(dates), max(dates)) for text, dates in marks.items()}
     for text, dates in marks.items():
-        person, why = people.resolve(text)
+        person, why = people.resolve(text, spans[text])
         if person is None:
             if not people.is_ignored(text):
                 summary["unknown"].append(text)
@@ -218,9 +219,8 @@ def import_chart(company, uploaded, created_by=None, dry_run=False):
                     end.strftime("%d/%m/%Y"), exc))
     # También al comprobar: solo se apuntan los nombres por asignar (no
     # las vacaciones), para poder asignarlos antes de cargar.
-    remember_unknown(company, [t for t in marks
-                               if people.resolve(t)[0] is None
-                               and not people.is_ignored(t)], people)
+    remember_unknown(company, {t: spans[t] for t in marks
+                               if not people.is_ignored(t)}, people)
     logger.info(
         "# [VACACIONES CUADRANTE] %s%d periodos (%d pasados) de %d "
         "trabajadores, %d días; %d ya estaban; %d nombres sin reconocer.",

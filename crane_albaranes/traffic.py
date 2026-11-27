@@ -51,6 +51,9 @@ logger = logging.getLogger(__name__)
 
 STATUS_SALT = "crane-planning-notice-status"
 DEFAULT_DAYS_AHEAD = 14
+# Hasta cuántos días atrás cuenta estar hoy en activo para decidir quién
+# es un nombre (más atrás, solo las fechas de alta y baja).
+RECENT_DAYS = 60
 # Columnas del planning, en su orden real (por si la cabecera de alguna
 # hoja viene cambiada: en dos hojas LUGAR DE TRABAJO lleva la fecha).
 COLUMNS = (
@@ -248,6 +251,7 @@ def read_planning(data, date_from=None, date_to=None):
                     break
                 item = {key: row[index] for key, index in columns.items()}
                 item["row"] = number
+                item["day"] = day
                 if all(item[key] in (None, "") or not str(
                         item[key]).strip() for key, _a in COLUMNS
                         if key != "person"):
@@ -319,9 +323,14 @@ class NameResolver:
     cuadrante. Primero la tabla PlanningName (lo que ya asignó la
     oficina, o «no es un trabajador»); si no, DNI, mote exacto o que
     todas las palabras escritas (con abreviaturas e iniciales) estén en
-    su nombre y apellidos, primero entre los activos y luego entre los
-    de baja. Lo que no casa con uno solo se deja sin reconocer, nunca
-    se adivina.
+    su nombre y apellidos. Lo que no casa con uno solo se deja sin
+    reconocer, nunca se adivina.
+
+    Fechas (Miguel Ángel, S165: «todo depende de las fechas»): con las
+    fechas en que aparece el nombre, se descarta a quien tiene fecha de
+    alta posterior o de baja anterior; y estar hoy en activo o de baja
+    solo desempata si esas fechas son recientes (el planning de estos
+    días), nunca para un cuadrante de 2024.
     """
 
     def __init__(self, company):
@@ -335,7 +344,8 @@ class NameResolver:
         for person in PersonIdentity.objects.filter(
                 Q(company=company) | Q(company__isnull=True)).only(
                 "pk", "dni", "given_name", "first_surname",
-                "second_surname", "nickname", "is_active_employee"):
+                "second_surname", "nickname", "is_active_employee",
+                "hire_date", "termination_date"):
             tokens = plain(" ".join((
                 person.given_name or "", person.first_surname or "",
                 person.second_surname or ""))).split()
@@ -343,20 +353,22 @@ class NameResolver:
                                 plain(person.nickname or "")))
         self._cache = {}
 
-    def resolve(self, text):
+    def resolve(self, text, dates=None):
         """
-        (person or None, reason) for a planning text.
+        (person or None, reason) for a planning text on some dates.
         ---
-        (trabajador o None, motivo). Motivo vacío si se ha reconocido o
-        si la tabla dice que no es un trabajador.
+        (trabajador o None, motivo) de un texto que aparece entre
+        `dates` = (desde, hasta), o sin fechas. Motivo vacío si se ha
+        reconocido o si la tabla dice que no es un trabajador.
         """
         key = plain(text)
         if not key:
             return None, ""
-        if key in self._cache:
-            return self._cache[key]
-        result = self._resolve(key, text)
-        self._cache[key] = result
+        cache_key = (key, dates)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        result = self._resolve(key, text, dates)
+        self._cache[cache_key] = result
         return result
 
     def is_ignored(self, text):
@@ -364,15 +376,23 @@ class NameResolver:
         name = self.names.get(plain(text))
         return bool(name and name.not_a_worker)
 
-    def _resolve(self, key, text):
+    def _resolve(self, key, text, dates=None):
         name = self.names.get(key)
-        if name is not None:
-            if name.not_a_worker:
-                return None, ""
-            if name.person_id:
-                return name.person, ""
-        person, why = self._auto(key, text)
-        if person is not None and name is not None:
+        # Lo decidido por la oficina manda (asignado por alguien, o «no
+        # es un trabajador»); lo asignado solo se vuelve a calcular.
+        if name is not None and name.not_a_worker:
+            return None, ""
+        if name is not None and name.person_id and name.updated_by_id:
+            return name.person, ""
+        person, why = self._auto(key, text, dates)
+        if name is not None and name.person_id and name.person_id != (
+                person.pk if person else None):
+            PlanningName.objects.filter(
+                pk=name.pk, updated_by__isnull=True,
+                not_a_worker=False).update(person=person)
+            name.person = person
+        elif name is not None and person is not None and \
+                not name.person_id:
             # Apuntado «Sin asignar» en una carga anterior y ahora
             # reconocido solo: queda asignado en la lista de nombres.
             PlanningName.objects.filter(pk=name.pk, person__isnull=True,
@@ -381,7 +401,7 @@ class NameResolver:
             name.person = person
         return person, why
 
-    def _auto(self, key, text):
+    def _auto(self, key, text, dates=None):
         dni = re.sub(r"[^0-9A-Za-z]", "", str(text)).upper()
         if re.match(r"^[0-9XYZ]\d{7}[A-Z]$", dni):
             found = [p for p, _t, _n in self.people
@@ -408,10 +428,10 @@ class NameResolver:
                 used.add(index)
             else:
                 matches.append(person)
-        return self._choose(text.strip(), matches)
+        return self._choose(text.strip(), matches, dates)
 
     @staticmethod
-    def _choose(text, matches):
+    def _choose(text, matches, dates=None):
         """
         One person from the candidates, or (None, why with their state).
 
@@ -423,23 +443,48 @@ class NameResolver:
         activo o de baja (Miguel Ángel, S165: «todas las posibles
         opciones son trabajadores inactivos»).
         """
+        if not matches:
+            return None, "«%s» sin reconocer: ningún trabajador se llama " \
+                         "así" % text
+        when = ""
+        if dates:
+            # Fuera quien no trabajaba entonces (si se sabe).
+            start, end = dates
+            dated = [p for p in matches
+                     if not (p.hire_date and p.hire_date > end)
+                     and not (p.termination_date
+                              and p.termination_date < start)]
+            if not dated:
+                return None, "«%s» puede ser %d trabajadores, pero según " \
+                             "sus fechas de alta y baja ninguno trabajaba " \
+                             "entonces" % (text, len(matches))
+            matches = dated
+            when = " (aparece del %s al %s)" % (
+                start.strftime("%d/%m/%Y"), end.strftime("%d/%m/%Y"))
+            if end < timezone.localdate() - datetime.timedelta(
+                    RECENT_DAYS):
+                # Fechas pasadas: hoy en activo o de baja no dice quién
+                # era entonces; solo vale uno solo.
+                if len(matches) == 1:
+                    return matches[0], ""
+                return None, "«%s» puede ser %d trabajadores; de baja hoy: " \
+                             "%d%s" % (text, len(matches), sum(
+                                 1 for p in matches
+                                 if not p.is_active_employee), when)
         active = [p for p in matches if p.is_active_employee]
         inactive = [p for p in matches if not p.is_active_employee]
         if len(active) == 1:
             return active[0], ""
         if not active and len(inactive) == 1:
             return inactive[0], ""
-        if not matches:
-            return None, "«%s» sin reconocer: ningún trabajador se llama " \
-                         "así" % text
         if not active:
-            return None, "«%s» puede ser %d trabajadores, todos de baja" % (
-                text, len(inactive))
+            return None, "«%s» puede ser %d trabajadores, todos de baja%s" % (
+                text, len(inactive), when)
         why = "«%s» puede ser %d trabajadores en activo" % (text,
                                                             len(active))
         if inactive:
             why += " (y %d de baja)" % len(inactive)
-        return None, why
+        return None, why + when
 
 
 def _vehicle_key(text):
@@ -664,7 +709,7 @@ def _service_values(item, people, machines, sites):
     raw_person = clean(item.get("person"), 120)
     kind = (PlanningService.KIND_SERVICE if _is_service(item)
             else PlanningService.KIND_NOTE)
-    person, why = people.resolve(raw_person)
+    person, why = people.resolve(raw_person, (item["day"], item["day"]))
     raw_vehicle = clean(item.get("vehicle"), 60)
     machine = machines.resolve(raw_vehicle) if raw_vehicle else None
     raw_client = clean(item.get("client"), 200)
@@ -796,12 +841,14 @@ def import_planning(company, uploaded, date_from=None, date_to=None,
         planning.days_loaded = len(days)
         planning.problems = _group_problems(problems)
         planning.save()
-        remember_unknown(company, [
-            s.raw_person for s in PlanningService.objects.filter(
+        seen = {}
+        for raw, day in PlanningService.objects.filter(
                 company=company, day__gte=date_from, day__lte=date_to,
-                person__isnull=True,
-                kind=PlanningService.KIND_SERVICE).exclude(raw_person="")],
-            people)
+                person__isnull=True, kind=PlanningService.KIND_SERVICE
+        ).exclude(raw_person="").values_list("raw_person", "day"):
+            first, last = seen.get(raw, (day, day))
+            seen[raw] = (min(first, day), max(last, day))
+        remember_unknown(company, seen, people)
     logger.info(
         "# [TRÁFICO] Planning %s: %d días, %d filas (%d nuevas, %d "
         "cambiadas, %d quitadas), %d clientes y %d obras nuevos.",
@@ -836,21 +883,38 @@ def _group_problems(problems):
 def remember_unknown(company, texts, people=None):
     """
     Add the names not recognised to the names table, «Sin asignar».
+
     ---
+
     Apunta en Tráfico › Nombres los textos que no se han reconocido (y
-    que no estaban ya), para asignarlos una vez. Devuelve cuántos.
+    que no estaban ya), para asignarlos una vez, con las fechas entre
+    las que aparecen (`texts` es {texto: (desde, hasta)} o una lista).
+    A los que ya estaban sin asignar se les amplían esas fechas.
+    Devuelve cuántos nuevos.
     """
     people = people or NameResolver(company)
-    known = set(PlanningName.objects.filter(company=company).values_list(
-        "key", flat=True))
+    if not isinstance(texts, dict):
+        texts = {t: None for t in texts}
+    existing = {n.key: n for n in PlanningName.objects.filter(
+        company=company)}
     new = {}
-    for text in texts:
+    for text, dates in texts.items():
         key = plain(text)
-        if key and key not in known and key not in new:
-            person, _why = people.resolve(text)
-            if person is None:
-                new[key] = PlanningName(company=company, key=key[:120],
-                                        text=clean(text, 120))
+        if not key:
+            continue
+        person, _why = people.resolve(text, dates)
+        if person is not None:
+            continue
+        name = existing.get(key) or new.get(key)
+        if name is None:
+            name = new[key] = PlanningName(company=company, key=key[:120],
+                                           text=clean(text, 120))
+        if dates:
+            name.seen_from = min(d for d in (name.seen_from, dates[0]) if d)
+            name.seen_to = max(d for d in (name.seen_to, dates[1]) if d)
+            if name.pk:
+                PlanningName.objects.filter(pk=name.pk).update(
+                    seen_from=name.seen_from, seen_to=name.seen_to)
     PlanningName.objects.bulk_create(new.values(), ignore_conflicts=True)
     return len(new)
 
@@ -867,11 +931,12 @@ def relink_names(company, keys=None):
     services = PlanningService.objects.filter(company=company).exclude(
         raw_person="")
     changed = 0
-    for service in services.only("pk", "raw_person", "person_id"):
+    for service in services.only("pk", "raw_person", "person_id", "day"):
         key = plain(service.raw_person)
         if keys is not None and key not in keys:
             continue
-        person, _why = people.resolve(service.raw_person)
+        person, _why = people.resolve(service.raw_person,
+                                      (service.day, service.day))
         person_id = person.pk if person else None
         if person_id != service.person_id:
             PlanningService.objects.filter(pk=service.pk).update(

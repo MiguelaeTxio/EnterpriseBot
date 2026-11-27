@@ -274,7 +274,9 @@ def _prepare_names(rows):
             row.nui_why = "asignado a un trabajador de baja"
         elif not row.person_id and not row.not_a_worker:
             resolver = resolver or NameResolver(row.company)
-            row.nui_why = resolver.resolve(row.text)[1].replace(
+            dates = (row.seen_from, row.seen_to) if row.seen_from \
+                and row.seen_to else None
+            row.nui_why = resolver.resolve(row.text, dates)[1].replace(
                 "«%s» " % row.text, "")
 
 
@@ -326,6 +328,9 @@ def _names_def():
             Col("estado", "Estado", _name_state, "not_a_worker"),
             Col("motivo", "Por qué no se asigna solo",
                 lambda r: getattr(r, "nui_why", "")),
+            Col("aparece", "Aparece", lambda r: "%s – %s" % (
+                fmt_date(r.seen_from), fmt_date(r.seen_to))
+                if r.seen_from else "", "seen_from", "text-nowrap"),
             Col("filas", "Filas del planning",
                 lambda r: getattr(r, "nui_rows", ""), "", "text-end"),
             Col("por", "Asignado por", lambda r: getattr(getattr(

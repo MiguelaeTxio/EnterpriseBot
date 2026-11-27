@@ -1,12 +1,12 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_traffic_name.html -- S165: un nombre del planning/cuadrante en la ventana (Tráfico › Planning › Nombres): decir quién es. Vista: new_ui/views_traffic.py (NameSheetView); guarda NamesAssignView. #}
 <div class="small">
     <p class="mb-2">En el planning o el cuadrante viene como <strong>«{{ name.text }}»</strong>.
-        {% if name.person %}Ahora: <strong>{{ name.person.given_name }} {{ name.person.first_surname }}</strong>.{% elif name.not_a_worker %}Ahora: no es un trabajador.{% else %}Sin asignar.{% endif %}</p>
+        {% if name.seen_from %}Aparece del <strong>{{ name.seen_from|date:"d/m/Y" }}</strong> al <strong>{{ name.seen_to|date:"d/m/Y" }}</strong>. {% endif %}{% if name.person %}Ahora: <strong>{{ name.person.given_name }} {{ name.person.first_surname }}</strong>.{% elif name.not_a_worker %}Ahora: no es un trabajador.{% else %}Sin asignar.{% endif %}</p>
     <form data-nui-action-form action="{% url 'new_ui:traffic_names' %}">
         {% csrf_token %}<input type="hidden" name="selected" value="{{ name.pk }}">
         {% if suggested %}
         <div class="fw-semibold mb-1">Se parecen</div>
-        <div class="mb-2">{% for score, pk, label in suggested %}<label class="form-check mb-0"><input class="form-check-input" type="radio" name="person" value="{{ pk }}"{% if name.person_id == pk or forloop.first and not name.person_id %} checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>{% endfor %}</div>
+        <div class="mb-2">{% for score, pk, label, dates in suggested %}<label class="form-check mb-1"><input class="form-check-input" type="radio" name="person" value="{{ pk }}"{% if name.person_id == pk %} checked{% endif %}> <span class="form-check-label">{{ label }}<br><span class="text-muted">{{ dates }}</span></span></label>{% endfor %}</div>
         {% endif %}
         <input type="search" class="form-control form-control-sm mb-1" placeholder="Buscar a otro trabajador…" aria-label="Buscar trabajador" data-nui-filter-list>
         <div class="border rounded px-2 py-1 mb-2" style="max-height: 12rem; overflow-y: auto;" data-nui-filter-target>
