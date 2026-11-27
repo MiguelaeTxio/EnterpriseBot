@@ -275,6 +275,18 @@ def record_press(company_user, payload, user_agent=""):
             # casi simultáneos no pasan los dos el control de abajo).
             type(company_user).objects.select_for_update().filter(
                 pk=company_user.pk).first()
+            # S149 (27/11, Alejandro García y Antonio Fontalba): la
+            # página y el segundo plano envían la misma pulsación en el
+            # mismo segundo; el segundo esperaba aquí al primero y luego
+            # el control de 2 minutos lo rechazaba ("Ya fichaste...") por
+            # su propia pulsación, y el móvil decía que no se había
+            # fichado. Es la misma: se devuelve la ya guardada.
+            existing = ClockEvent.objects.filter(client_id=client_id).first()
+            if existing is not None:
+                if existing.company_user_id != company_user.pk:
+                    raise ClockInError(
+                        "Esa pulsación pertenece a otro usuario.")
+                return PressResult(existing, False)
             _reject_too_soon(company_user, pressed_at, clock_type)
             if auto:
                 kind, forgotten = _decide_kind(company_user, pressed_at)
