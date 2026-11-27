@@ -62,8 +62,10 @@ class VacationChartUploadView(SuperuserRequiredMixin, View):
             parts.append("%d día(s) ya estaban registrados." %
                          summary["already"])
         if summary["unknown"]:
-            parts.append("Sin reconocer (asígnalos en Tráfico › Nombres y "
-                         "vuelve a cargar): %s%s." % (
+            parts.append("Sin reconocer: %s%s. Di quién es cada uno en "
+                         "Tráfico › Planning › Nombres (la misma lista de "
+                         "nombres sirve para el planning de grúas y para "
+                         "este cuadrante) y vuelve a comprobar." % (
                              ", ".join(summary["unknown"][:SHOWN]),
                              " y %d más" % (len(summary["unknown"]) - SHOWN)
                              if len(summary["unknown"]) > SHOWN else ""))

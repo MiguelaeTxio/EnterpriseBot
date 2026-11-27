@@ -23,7 +23,8 @@ vacaciones y no se carga.
   se registran sin tarea fantasma: sus días ya tienen sus partes (y
   pueden estar liquidados); la tarea solo sirve para avisar antes de
   empezar.
-- `dry_run`: solo cuenta lo que haría.
+- `dry_run`: solo cuenta lo que haría (los nombres sin reconocer sí
+  quedan apuntados en Tráfico › Planning › Nombres para asignarlos).
 
 Los datos son personales: el Excel no se guarda, solo los periodos.
 """
@@ -215,10 +216,11 @@ def import_chart(company, uploaded, created_by=None, dry_run=False):
                 summary["errors"].append("%s %s a %s: %s" % (
                     person.given_name, start.strftime("%d/%m/%Y"),
                     end.strftime("%d/%m/%Y"), exc))
-    if not dry_run:
-        remember_unknown(company, [t for t in marks
-                                   if people.resolve(t)[0] is None
-                                   and not people.is_ignored(t)], people)
+    # También al comprobar: solo se apuntan los nombres por asignar (no
+    # las vacaciones), para poder asignarlos antes de cargar.
+    remember_unknown(company, [t for t in marks
+                               if people.resolve(t)[0] is None
+                               and not people.is_ignored(t)], people)
     logger.info(
         "# [VACACIONES CUADRANTE] %s%d periodos (%d pasados) de %d "
         "trabajadores, %d días; %d ya estaban; %d nombres sin reconocer.",
