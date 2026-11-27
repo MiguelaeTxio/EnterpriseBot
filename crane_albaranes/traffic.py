@@ -397,26 +397,49 @@ class NameResolver:
         words = []
         for word in key.split():
             words.extend(_expand(word))
-        for active in (True, False):
-            matches = []
-            for person, tokens, nick in self.people:
-                if bool(person.is_active_employee) != active:
-                    continue
-                pool = tokens + nick.split()
-                used = set()
-                for word in words:
-                    index = _word_matches(word, pool, used)
-                    if index is None:
-                        break
-                    used.add(index)
-                else:
-                    matches.append(person)
-            if len(matches) == 1:
-                return matches[0], ""
-            if len(matches) > 1:
-                return None, "«%s» puede ser %d trabajadores" % (
-                    text.strip(), len(matches))
-        return None, "«%s» sin reconocer" % text.strip()
+        matches = []
+        for person, tokens, nick in self.people:
+            pool = tokens + nick.split()
+            used = set()
+            for word in words:
+                index = _word_matches(word, pool, used)
+                if index is None:
+                    break
+                used.add(index)
+            else:
+                matches.append(person)
+        return self._choose(text.strip(), matches)
+
+    @staticmethod
+    def _choose(text, matches):
+        """
+        One person from the candidates, or (None, why with their state).
+
+        ---
+
+        Con un solo candidato en activo, ese (aunque haya otros de baja
+        que se llamen igual). Sin ninguno en activo y uno solo de baja,
+        ese. Si no, nadie, y el motivo dice cuántos son y si están en
+        activo o de baja (Miguel Ángel, S165: «todas las posibles
+        opciones son trabajadores inactivos»).
+        """
+        active = [p for p in matches if p.is_active_employee]
+        inactive = [p for p in matches if not p.is_active_employee]
+        if len(active) == 1:
+            return active[0], ""
+        if not active and len(inactive) == 1:
+            return inactive[0], ""
+        if not matches:
+            return None, "«%s» sin reconocer: ningún trabajador se llama " \
+                         "así" % text
+        if not active:
+            return None, "«%s» puede ser %d trabajadores, todos de baja" % (
+                text, len(inactive))
+        why = "«%s» puede ser %d trabajadores en activo" % (text,
+                                                            len(active))
+        if inactive:
+            why += " (y %d de baja)" % len(inactive)
+        return None, why
 
 
 def _vehicle_key(text):

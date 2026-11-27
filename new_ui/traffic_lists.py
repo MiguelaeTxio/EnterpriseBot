@@ -270,10 +270,22 @@ def _prepare_names(rows):
     for row in rows:
         row.nui_rows = counts.get(row.key, 0)
         row.nui_why = ""
-        if not row.person_id and not row.not_a_worker:
+        if row.person_id and not row.person.is_active_employee:
+            row.nui_why = "asignado a un trabajador de baja"
+        elif not row.person_id and not row.not_a_worker:
             resolver = resolver or NameResolver(row.company)
             row.nui_why = resolver.resolve(row.text)[1].replace(
                 "«%s» " % row.text, "")
+
+
+def _name_person(r):
+    """Worker of a planning name, «(de baja)» if no longer active."""
+    if not r.person_id:
+        return ""
+    label = person_name(r.person)
+    if not r.person.is_active_employee:
+        label += " (de baja)"
+    return label
 
 
 def _name_state(r):
@@ -309,7 +321,7 @@ def _names_def():
     definition = ListDef(
         "Nombres", queryset, [
             Col("como_viene", "Como viene", lambda r: r.text, "text"),
-            Col("persona", "Trabajador", lambda r: person_name(r.person),
+            Col("persona", "Trabajador", _name_person,
                 "person__first_surname", entity=True),
             Col("estado", "Estado", _name_state, "not_a_worker"),
             Col("motivo", "Por qué no se asigna solo",
