@@ -185,8 +185,10 @@ def _history_type_code(name):
         return "TC1_EMPRESA"
     if "TC2" in words:
         return "TC2_EMPRESA"
-    if "VIDA LABORAL" in name:
+    if "VIDA LABORAL" in name or "VIDA CCC" in name:
         return "VIDA_LABORAL_EMPRESA"
+    if "REA" in words:
+        return "CERT_REA"
     if "ITA" in words:
         return "ITA_EMPRESA"
     if "AEAT" in words or "HACIENDA" in words:
@@ -241,13 +243,14 @@ def _file_date(name, folders):
     return None
 
 
-def type_cae_entry(entry):
+def type_cae_entry(entry, code=None):
     """Type one CAE file in place (type, company, date). True if typed.
     ---
     Tipa un archivo CAE (tipo, empresa del grupo y fecha) sin moverlo.
     Una fecha futura es la de validez del certificado ("VALIDO
     31-12-27", "CERTIFICADO SPA 05-02-27") y va a expiry_date; las
-    demas, a issue_date. Devuelve True si le ha puesto tipo.
+    demas, a issue_date. Devuelve True si le ha puesto tipo. Con
+    `code`, ese tipo (leído del contenido) en lugar del de las reglas.
     """
     prefix = CAE_ROOT + "/"
     if not entry.parent_path.startswith(prefix):
@@ -258,12 +261,13 @@ def type_cae_entry(entry):
     name = _plain(entry.name)
     # [0] = "00 DOCUMENTACION MENSUAL 2026" / "00 OBRAS EN EJECUCION 2026".
     if len(folders) >= 2 and "DOCUMENTACION MENSUAL" in folders[0]:
-        code = _type_code(folders[1], " / ".join(folders[2:]), name)
+        code = code or _type_code(
+            folders[1], " / ".join(folders[2:]), name)
         company_text = " / ".join(folders[1:] + [name])
     elif any("Y HACIENDA" in folder for folder in folders):
         # Meses anteriores en la carpeta de cada empresa: la empresa, por
         # la ruta (el nombre lleva abreviaturas como «TR»).
-        code = _history_type_code(name)
+        code = code or _history_type_code(name)
         company_text = " / ".join(folders)
     else:
         return False
