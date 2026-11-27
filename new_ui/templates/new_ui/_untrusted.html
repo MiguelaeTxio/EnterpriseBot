@@ -1,0 +1,25 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_untrusted.html -- S149 (27/11): fichajes rechazados por venir de un móvil sin permiso: cuándo, de quién (por la llave que traía o los 4 últimos números del DNI) y dónde. Vista: new_ui/views_untrusted.py. #}
+<div class="small">
+    <p class="text-muted mb-2">Últimos 60 días. Estos fichajes <strong>no se han guardado</strong>: el móvil no es de confianza. Hay que volver a darle acceso al trabajador.</p>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr><th>Pulsado</th><th>Quién (por el DNI)</th><th>Llave que traía</th><th>Dónde</th><th class="text-end">Envíos</th><th>Conexión</th></tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td class="text-nowrap">{{ item.pressed_at|default:item.first_seen|date:"d/m/Y H:i:s" }}{% if item.kind %} <span class="text-muted">{% if item.kind == "IN" %}entrada{% elif item.kind == "OUT" %}salida{% else %}{{ item.kind|lower }}{% endif %}</span>{% endif %}</td>
+                    <td>{% if item.dni_person %}{{ item.dni_person.first_surname }} {{ item.dni_person.second_surname }}, {{ item.dni_person.given_name }} <span class="text-muted">(…{{ item.dni4 }})</span>{% elif item.dni4 %}…{{ item.dni4 }}: {% if item.dni_matches %}{{ item.dni_matches }} trabajadores con esos números{% else %}ningún trabajador activo{% endif %}{% else %}<span class="text-muted">no lo ha escrito</span>{% endif %}</td>
+                    <td>{% if item.key_user %}{{ item.key_user.user.get_full_name|default:item.key_user.user.username }} <span class="text-muted">({{ item.key_user.user.username }})</span><div class="text-muted">{{ item.key_problem }}</div>{% else %}<span class="text-muted">{{ item.key_problem|default:"—" }}</span>{% endif %}</td>
+                    <td class="text-nowrap">{% if item.latitude is not None %}<a href="https://www.google.com/maps?q={{ item.latitude|stringformat:'s' }},{{ item.longitude|stringformat:'s' }}" target="_blank" rel="noopener"><i class="bi bi-geo-alt"></i> mapa</a>{% if item.accuracy_m %} <span class="text-muted">±{{ item.accuracy_m }} m</span>{% endif %}{% else %}<span class="text-muted">sin ubicación</span>{% endif %}</td>
+                    <td class="text-end">{{ item.tries }}</td>
+                    <td class="text-muted" title="{{ item.user_agent }}">{{ item.ip }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-4">Ningún fichaje desde móviles sin permiso en los últimos 60 días.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>

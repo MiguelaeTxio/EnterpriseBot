@@ -21,7 +21,7 @@ from new_ui import (
     views_notices, views_partes, views_pay, views_photos, views_safety,
     views_signatures_nui, views_cae, views_insurance_nui,
     views_logbook, views_refuels, views_requirements, views_schedules,
-    views_service, views_traffic, views_vacation_chart,
+    views_service, views_traffic, views_untrusted, views_vacation_chart,
 )
 
 app_name = "new_ui"
@@ -253,6 +253,10 @@ urlpatterns = [
          name="parte_sheet"),
     path("partes/resumen/", views_partes.PartesSummaryView.as_view(),
          name="partes_summary"),
+    # S149 (27/11): fichajes desde móviles sin permiso.
+    path("fichaje/moviles-sin-permiso/",
+         views_untrusted.UntrustedPressesView.as_view(),
+         name="untrusted_presses"),
     path("partes/exportar/", views_partes.PartesExportView.as_view(),
          name="partes_export"),
     path("pagos/ajustes/", views_pay.PaySettingsSaveView.as_view(),

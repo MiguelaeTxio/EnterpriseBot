@@ -21,6 +21,14 @@
 {% include "new_ui/actions/_refuels.html" with refuel_drivers=True %}
 {% include "new_ui/actions/_clock.html" %}
 {% include "new_ui/actions/_albaranes.html" %}
+{# S149 (27/11): fichajes rechazados por venir de un móvil sin permiso. #}
+<div class="d-none" data-nui-actions-for="horarios fichajes jornadas">
+    <div class="mb-3" data-nui-for="new" data-nui-tabs="horarios">
+        <div class="small fw-semibold mb-1"><i class="bi bi-phone-vibrate me-1"></i>Fichajes desde móviles sin permiso</div>
+        <p class="small text-muted mb-1">Los que el servidor no guardó porque el móvil no es de confianza: cuándo, dónde y de quién (por la llave que traía o los 4 últimos números del DNI que escribe el trabajador).</p>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-nui-viewer-url="{% url 'new_ui:untrusted_presses' %}" data-nui-viewer-title="Fichajes desde móviles sin permiso"><i class="bi bi-phone-vibrate me-1"></i>Ver los fichajes rechazados</button>
+    </div>
+</div>
 {# S163 (23/11): «Alta en el fichaje» ya no es una vista: su informe está en Fichaje (filtro y plantilla de columnas «Informe de alta en el fichaje»). #}
 {% include "new_ui/actions/_clock_settings.html" %}
 {% include "new_ui/actions/_vacations.html" %}
