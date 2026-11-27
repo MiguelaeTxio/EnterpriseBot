@@ -1444,13 +1444,15 @@ def _machine_specs():
 
 def _machine_fk_def(label, model_path, related, entity_path, columns,
                     date_field, date_is_datetime=False, search=(),
-                    default_order=("-pk",), note=""):
+                    default_order=("-pk",), note="", extras=(),
+                    row_url=None, prefetch=()):
     def queryset(company):
         from django.apps import apps
 
         model = apps.get_model(model_path)
         return model.objects.filter(
-            **{entity_path + "__company": company}).select_related(*related)
+            **{entity_path + "__company": company}).select_related(
+            *related).prefetch_related(*prefetch)
 
     def entity_of(row):
         obj = row
@@ -1467,6 +1469,7 @@ def _machine_fk_def(label, model_path, related, entity_path, columns,
         date_field=date_field, date_is_datetime=date_is_datetime,
         default_order=default_order,
         actions=lambda r: _machine_actions(entity_of(r)), note=note,
+        extras=extras, row_url=row_url,
     )
 
 
@@ -1621,10 +1624,21 @@ def _cdg_lists():
                     r.repair_notes), "repair_notes"),
                 Col("horas", "Horas", lambda r: fmt_num(r.delta_hours),
                     "delta_hours", "text-end"),
+                # S154 (27/11): los repuestos gastados en la tarea.
+                Col("repuestos", "Repuestos", lambda r: "; ".join(
+                    "%s%s" % (sp.material or sp.reference or "Repuesto",
+                              " (%s)" % fmt_num(sp.quantity)
+                              if sp.quantity else "")
+                    for sp in r.spare_parts.all())),
             ], "entry__work_date",
             search=("fault_description", "repair_notes", "entry__worker_name"),
             default_order=("-entry__work_date",),
-            note="Periodo: fecha del parte."),
+            extras=_parte_line_extras("pk", with_machine=False),
+            row_url=lambda r: reverse("new_ui:parte_sheet",
+                                      args=[r.entry.work_order_id]),
+            prefetch=("spare_parts",),
+            note="Periodo: fecha del parte. Pincha una tarea para ver su "
+                 "parte."),
         "averias": _machine_fk_def(
             "Averías", "chat.BreakdownTicket", ("assigned_to__user",),
             "machine", [
@@ -3953,9 +3967,9 @@ def _prepare_pay_partes(rows):
             day_out.rounded_at or day_out.pressed_at) if day_out else None
 
 
-def _parte_line_extras(path_to_order):
+def _parte_line_extras(path_to_order, with_machine=True):
     """
-    «Máquina» and «Familia de avería» filters of the partes lists.
+    Filters of the partes lists, by what their blocks have.
 
     ---
 
@@ -3963,9 +3977,18 @@ def _parte_line_extras(path_to_order):
     máquina de alguna de sus tareas y la familia de avería. Por
     subconsulta (pk__in), para no tocar las sumas anotadas de horas.
     `path_to_order` va de la línea a lo que lista el listado
-    ("entry__work_order" o "entry").
+    ("entry__work_order", "entry" o "pk" si lista las propias líneas).
+
+    S154 (27/11), Miguel Ángel: «poder filtrar y decir qué partes de
+    trabajo tienen repuestos asignados [...] si en un parte tenemos
+    horas de trabajo, tenemos mecánicos, tenemos centro de gastos,
+    tenemos repuestos», en Personal y en Centros de gasto: se añaden
+    Repuestos (con / sin), Horas de trabajo (con / sin) y Mecánico.
+    `with_machine=False` quita «Centro de gasto» (el listado ya es de
+    uno).
     """
     from work_order_processor.models import FaultCategory, WorkOrderEntryLine
+    from work_order_processor.models import WorkOrder
 
     def machines(company):
         rows = WorkOrderEntryLine.objects.filter(
@@ -3977,12 +4000,46 @@ def _parte_line_extras(path_to_order):
                         else code) for pk, code, name in rows),
                       key=lambda x: x[1].upper())
 
-    return [
-        Extra("maquina", "Máquina", machines,
+    def mechanics(company):
+        rows = WorkOrder.objects.filter(
+            company=company, uploaded_by__isnull=False).values_list(
+            "uploaded_by_id", "uploaded_by__person_identity__given_name",
+            "uploaded_by__person_identity__first_surname",
+            "uploaded_by__person_identity__second_surname",
+            "uploaded_by__user__username").distinct()
+        return sorted(((str(pk), " ".join(p for p in (given, first, second)
+                                          if p) or username)
+                       for pk, given, first, second, username in rows),
+                      key=lambda x: x[1].upper())
+
+    def with_or_without(lines):
+        ids = lines.values(path_to_order)
+        return lambda qs, v: (qs.filter(pk__in=ids) if v == "si"
+                              else qs.exclude(pk__in=ids))
+
+    extras = []
+    if with_machine:
+        extras.append(Extra(
+            "maquina", "Centro de gasto", machines,
+            apply=lambda qs, v: qs.filter(
+                pk__in=WorkOrderEntryLine.objects.filter(
+                    machine_asset_id=v).values(path_to_order))
+            if v.isdigit() else qs))
+    return extras + [
+        Extra("mecanico", "Mecánico", mechanics,
               apply=lambda qs, v: qs.filter(
                   pk__in=WorkOrderEntryLine.objects.filter(
-                      machine_asset_id=v).values(path_to_order))
+                      entry__work_order__uploaded_by_id=v).values(
+                      path_to_order))
               if v.isdigit() else qs),
+        Extra("repuestos", "Repuestos", lambda company: [
+            ("si", "Con repuestos"), ("no", "Sin repuestos")],
+            apply=with_or_without(WorkOrderEntryLine.objects.filter(
+                spare_parts__isnull=False))),
+        Extra("horas_trabajo", "Horas de trabajo", lambda company: [
+            ("si", "Con horas"), ("no", "Sin horas")],
+            apply=with_or_without(WorkOrderEntryLine.objects.filter(
+                delta_hours__gt=0))),
         Extra("familia", "Familia de avería", lambda company: list(
             FaultCategory.choices),
             apply=lambda qs, v: qs.filter(
