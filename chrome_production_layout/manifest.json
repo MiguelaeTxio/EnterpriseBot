@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Disposición PRODUCCIÓN",
   "version": "1.3.0",
-  "description": "Guarda el grupo de pestañas PRODUCCIÓN con sus vistas divididas y lo abre con un clic; solo con sesión iniciada en Chrome, y al cerrarla borra las sesiones de los sitios.",
+  "description": "Guarda y abre el grupo PRODUCCIÓN con sus vistas divididas. Sin sesión en Chrome no abre nada y cierra las de los sitios.",
   "minimum_chrome_version": "155",
   "permissions": [
     "tabs",
