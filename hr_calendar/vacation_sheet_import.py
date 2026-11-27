@@ -5,7 +5,8 @@ Vacation periods from the cranes' vacation chart (S165).
 ---
 
 Periodos de vacaciones desde el cuadrante de los gruistas (S165, sesión
-invasora sobre H11): VACACIONES.xlsx, una hoja por año («2024», «2025»,
+invasora sobre H11), solo del año en curso: VACACIONES.xlsx, una hoja
+por año («2024», «2025»,
 «2026 »), bloques por mes (una fila con el mes, otra con los días 1..31
 y debajo PERSONAL y un trabajador por fila) y una X en cada día de
 vacaciones. Lo demás que traen las celdas (BAJA, ENFERMO, notas) no son
@@ -171,12 +172,25 @@ def import_chart(company, uploaded, created_by=None, dry_run=False):
     from crane_albaranes.traffic import NameResolver, remember_unknown
     from hr_calendar.services import create_vacation_period
 
-    marks, problems = read_chart(uploaded.read())
-    if not marks:
-        raise ValueError("El Excel no trae ninguna X de vacaciones en "
-                         "hojas de año (2024, 2025...).")
-    people = NameResolver(company)
+    from crane_albaranes.models import PlanningName
+
     today = timezone.localdate()
+    marks, problems = read_chart(uploaded.read())
+    # Solo el año en curso (Miguel Ángel, S165: «estamos en 2026 y nos da
+    # igual lo que pasara en 2025 o 2024»): las hojas de otros años no
+    # se cargan.
+    marks = {text: {d for d in dates if d.year == today.year}
+             for text, dates in marks.items()}
+    marks = {text: dates for text, dates in marks.items() if dates}
+    # Y fuera de Nombres lo apuntado solo de otros años que nadie asignó.
+    PlanningName.objects.filter(
+        company=company, person__isnull=True, not_a_worker=False,
+        updated_by__isnull=True, seen_to__lt=datetime.date(
+            today.year, 1, 1)).delete()
+    if not marks:
+        raise ValueError("El Excel no trae ninguna X de vacaciones de %d."
+                         % today.year)
+    people = NameResolver(company)
     summary = {"people": 0, "periods": 0, "past": 0, "days": 0,
                "already": 0, "unknown": [], "problems": problems,
                "errors": []}
