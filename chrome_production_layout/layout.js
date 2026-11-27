@@ -107,10 +107,37 @@ export async function saveLayout(windowId, title) {
   return { ok: true, text: "Disposición guardada." };
 }
 
+// Is someone signed in to Chrome in this profile? (S156, 1.3.0)
+// ---
+// ¿Hay una cuenta con la sesión iniciada en Chrome en este perfil?
+// Miguel Ángel: sin sesión en Chrome, la disposición no se abre.
+export async function chromeSignedIn() {
+  const info = await chrome.identity.getProfileUserInfo(
+    { accountStatus: "ANY" });
+  return Boolean(info && info.email);
+}
+
+// Sign-out: close every site's session in this profile (S156, 1.3.0).
+// ---
+// Al cerrar la sesión de Chrome, Chrome solo cierra las de Google: las
+// de Microsoft, GitHub, PythonAnywhere... seguían abiertas. Se borran
+// las cookies y los datos de sesión de todos los sitios de este perfil
+// (no el historial, ni las contraseñas guardadas, ni los marcadores).
+export async function wipeSiteSessions() {
+  await chrome.browsingData.remove({ since: 0 }, {
+    cookies: true, localStorage: true, indexedDB: true,
+    serviceWorkers: true, cacheStorage: true, fileSystems: true,
+  });
+}
+
 // Open: create the tabs, group them and rebuild the split views.
 // Abrir: crea las pestañas, las agrupa y vuelve a montar las vistas
 // divididas. Si el grupo ya está en la ventana no lo duplica.
 export async function openLayout(windowId) {
+  if (!(await chromeSignedIn())) {
+    return { ok: false, text: "Inicia sesión en Chrome para abrir la " +
+                               "disposición." };
+  }
   const layout = await readLayout();
   if (!layout) {
     return { ok: false, text: "Primero monta el grupo a mano y pulsa " +

@@ -4,7 +4,16 @@
 // ventana normal, salvo que se haya desactivado en la ventana de la
 // extensión. Si Chrome ya ha restaurado el grupo, no lo duplica.
 
-import { getAutoOpen, openLayout } from "./layout.js";
+import {
+  chromeSignedIn, getAutoOpen, openLayout, wipeSiteSessions,
+} from "./layout.js";
+
+// S156 (1.3.0): al cerrar la sesión de Chrome se cierran también las de
+// todos los sitios; y si Chrome arranca sin sesión, igual (por si se
+// cerró con Chrome apagado o la extensión no llegó a enterarse).
+chrome.identity.onSignInChanged.addListener(async (_account, signedIn) => {
+  if (!signedIn) await wipeSiteSessions();
+});
 
 // Chrome may still be restoring the last session when it starts: wait a
 // moment so a restored PRODUCCION group is found and not duplicated.
@@ -21,6 +30,10 @@ async function openInWindow(windowId) {
 }
 
 chrome.runtime.onStartup.addListener(async () => {
+  if (!(await chromeSignedIn())) {
+    await wipeSiteSessions();
+    return;
+  }
   const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
   if (windows.length) {
     await openInWindow(windows[0].id);

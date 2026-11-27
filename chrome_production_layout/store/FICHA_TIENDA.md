@@ -40,6 +40,14 @@ popup.js e icons/ de la carpeta `chrome_production_layout`; esta carpeta
   crearlo y ponerle su nombre y color.
 - **Justificación de `storage`:** Guardar la disposición en el
   almacenamiento sincronizado de Chrome del propio usuario.
+- **Justificación de `identity` e `identity.email`:** Saber si hay una
+  cuenta con la sesión iniciada en Chrome: sin sesión, la disposición no
+  se abre. No se lee ni se envía nada más de la cuenta.
+- **Justificación de `browsingData`:** Al cerrar la sesión de Chrome (o
+  si Chrome arranca sin sesión), borrar las cookies y los datos de
+  sesión de los sitios del perfil, para que las cuentas abiertas en
+  otros servicios no queden accesibles. No borra historial, contraseñas
+  ni marcadores.
 - **¿Código remoto?:** No.
 - **Uso de datos:** guarda «Actividad web» (las direcciones de las
   pestañas del grupo) solo en el almacenamiento de Chrome del propio
