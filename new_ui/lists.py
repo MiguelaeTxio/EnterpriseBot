@@ -1639,6 +1639,40 @@ def _cdg_lists():
             prefetch=("spare_parts",),
             note="Periodo: fecha del parte. Pincha una tarea para ver su "
                  "parte."),
+        # S154 (27/11), Miguel Ángel: «qué repuestos se han gastado en
+        # esta máquina en concreto»: los de sus partes, uno por fila.
+        "repuestos": _machine_fk_def(
+            "Repuestos", "work_order_processor.SparePartLine",
+            ("entry_line__entry__work_order",), "entry_line__machine_asset", [
+                Col("fecha", "Fecha", lambda r: fmt_date(
+                    r.entry_line.entry.work_date),
+                    "entry_line__entry__work_date", "text-nowrap"),
+                Col("mecanico", "Mecánico",
+                    lambda r: r.entry_line.entry.worker_name,
+                    "entry_line__entry__worker_name"),
+                Col("pieza", "Pieza", lambda r: r.material, "material"),
+                Col("referencia", "Referencia", lambda r: r.reference,
+                    "reference"),
+                Col("cantidad", "Cantidad", lambda r: fmt_num(r.quantity)
+                    if r.quantity is not None else "", "quantity",
+                    "text-end"),
+                Col("precio", "Precio unidad", lambda r: fmt_num(
+                    r.unit_price) if r.unit_price is not None else "",
+                    "unit_price", "text-end"),
+                Col("proveedor", "Proveedor", lambda r: r.supplier,
+                    "supplier"),
+                Col("averia", "Avería", lambda r: short(
+                    r.entry_line.fault_description),
+                    "entry_line__fault_description"),
+            ], "entry_line__entry__work_date",
+            search=("material", "reference", "supplier",
+                    "entry_line__entry__worker_name"),
+            default_order=("-entry_line__entry__work_date",),
+            row_url=lambda r: reverse(
+                "new_ui:parte_sheet",
+                args=[r.entry_line.entry.work_order_id]),
+            note="Periodo: fecha del parte. Pincha un repuesto para ver su "
+                 "parte."),
         "averias": _machine_fk_def(
             "Averías", "chat.BreakdownTicket", ("assigned_to__user",),
             "machine", [
@@ -2873,6 +2907,10 @@ def _annotate_taller(qs, start, end):
     return qs.annotate(
         nui_par=_count("work_order_processor.WorkOrderEntryLine",
                        "machine_asset", "entry__work_date", start, end),
+        # S154 (27/11): repuestos gastados en el periodo.
+        nui_repu=_count("work_order_processor.SparePartLine",
+                        "entry_line__machine_asset",
+                        "entry_line__entry__work_date", start, end),
         nui_ave=_count("chat.BreakdownTicket", "machine",
                        "created_at__date", start, end),
         nui_ave_open=_count("chat.BreakdownTicket", "machine", "", None,
@@ -2949,6 +2987,8 @@ MACHINE_THEME_COLUMNS = {
     "taller_maq": (_annotate_taller, [
         Col("partes", "Líneas de parte en el periodo",
             lambda m: m.nui_par or "", "nui_par", "text-end"),
+        Col("repuestos", "Repuestos en el periodo",
+            lambda m: m.nui_repu or "", "nui_repu", "text-end"),
         Col("averias", "Averías en el periodo",
             lambda m: m.nui_ave or "", "nui_ave", "text-end"),
         Col("averias_abiertas", "Averías abiertas",
@@ -3312,7 +3352,14 @@ def _machine_theme_extras(key, definition):
             _has("abiertas", "Averías abiertas", "nui_ave_open",
                  "Con averías abiertas", "Sin averías abiertas"),
             _has("partes", "Partes en el periodo", "nui_par",
-                 "Con partes", "Sin partes")]
+                 "Con partes", "Sin partes"),
+            # S154 (27/11): repuestos en el periodo y lo demás de sus
+            # partes (mecánico, horas, familia de avería).
+            _has("repuestos_periodo", "Repuestos en el periodo",
+                 "nui_repu", "Con repuestos", "Sin repuestos"),
+        ] + [x for x in _parte_line_extras("machine_asset",
+                                           with_machine=False)
+             if x.key != "repuestos"]
     if key == "repostajes_maq":
         return [_has("repostajes", "Repostajes en el periodo", "nui_rep",
                      "Ha repostado", "No ha repostado")]
