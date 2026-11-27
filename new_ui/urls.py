@@ -22,6 +22,7 @@ from new_ui import (
     views_signatures_nui, views_cae, views_insurance_nui,
     views_logbook, views_refuels, views_requirements, views_schedules,
     views_service, views_traffic, views_untrusted, views_vacation_chart,
+    views_clock_preview,
 )
 
 app_name = "new_ui"
@@ -253,6 +254,13 @@ urlpatterns = [
          name="parte_sheet"),
     path("partes/resumen/", views_partes.PartesSummaryView.as_view(),
          name="partes_summary"),
+    # S149 (27/11): cómo ve el trabajador el fichaje en el móvil.
+    path("fichaje/vista-movil/",
+         views_clock_preview.ClockPreviewView.as_view(),
+         name="clock_preview"),
+    path("fichaje/vista-movil/pagina/",
+         views_clock_preview.ClockPreviewPageView.as_view(),
+         name="clock_preview_page"),
     # S149 (27/11): fichajes desde móviles sin permiso.
     path("fichaje/moviles-sin-permiso/",
          views_untrusted.UntrustedPressesView.as_view(),

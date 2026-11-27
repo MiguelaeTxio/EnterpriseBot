@@ -1,0 +1,18 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_clock_preview.html -- S149 (27/11): cómo ve el trabajador el fichaje en el móvil, por tipos, botón único y botón único con «No he parado para comer», antes de entrar y con la jornada abierta. Es la página del fichaje de verdad en modo vista previa (no ficha). Vista: new_ui/views_clock_preview.py. #}
+<div class="small">
+    <p class="text-muted mb-2">La página del fichaje tal como la ve el trabajador en el móvil, con un trabajador de ejemplo y los tipos de fichaje de la empresa. Los botones no fichan.</p>
+    {% for mode, label, help in modes %}
+    <div class="mb-4">
+        <div class="fw-semibold">{{ label }}</div>
+        <div class="text-muted mb-2">{{ help }}</div>
+        <div class="d-flex flex-wrap gap-3">
+            {% for state, state_label in states %}
+            <div>
+                <div class="text-muted mb-1">{{ state_label }}</div>
+                <iframe src="{% url 'new_ui:clock_preview_page' %}?mode={{ mode }}&amp;state={{ state }}" title="{{ label }}: {{ state_label }}" loading="lazy" style="width: 360px; height: 720px; border: 1px solid #ced4da; border-radius: 1.5rem; background: #f8f9fa;"></iframe>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>

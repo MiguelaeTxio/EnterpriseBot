@@ -264,9 +264,20 @@ responsable corregirá la salida (clock_report.forgotten_after).
 
     <div class="card muted" id="sw-state">Preparando la página para usarla sin cobertura…</div>
 
+{# S149 (Miguel Ángel, 27/11): vista previa para el panel (Empresa › Fichaje): la misma página con un estado de ejemplo, sin fichar ni tocar lo guardado en el navegador. #}
+{{ preview|default:None|json_script:"eb-preview" }}
 <script>
 (function () {
     "use strict";
+    // S149: vista previa (null en el fichaje de verdad).
+    const PREVIEW = JSON.parse(document.getElementById("eb-preview").textContent || "null");
+    if (PREVIEW) {
+        // Nada de red: el estado es el de ejemplo y el resto contesta "ok".
+        window.fetch = function (url) {
+            const body = String(url).indexOf("/fichaje/estado/") >= 0 ? PREVIEW.status : {ok: true};
+            return Promise.resolve(new Response(JSON.stringify(body), {status: 200, headers: {"Content-Type": "application/json"}}));
+        };
+    }
     // Entrando desde el menú del panel, enlace para volver a donde se
     // estaba; desde el icono del escritorio no sale (no hay de dónde
     // venir). Se recuerda en la pestaña por si se recarga la página.
@@ -306,10 +317,14 @@ responsable corregirá la salida (clock_report.forgotten_after).
         statusEl.dataset.pendingId = pendingId || "";
     }
 
+    // S149: en la vista previa, en memoria (no toca el fichaje real del navegador).
+    const MEMORY = {};
     function store(key, value) {
+        if (PREVIEW) { MEMORY[key] = value; return; }
         try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* sin almacenamiento */ }
     }
     function load(key) {
+        if (PREVIEW) return key in MEMORY ? MEMORY[key] : null;
         try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
     }
 
@@ -343,6 +358,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
         });
     }
     function allRecords() {
+        if (PREVIEW) return Promise.resolve([]);
         return openDb().then(function (db) {
             return new Promise(function (resolve, reject) {
                 const req = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
@@ -352,6 +368,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
         });
     }
     function putRecord(record) {
+        if (PREVIEW) return Promise.resolve();
         return openDb().then(function (db) {
             return new Promise(function (resolve, reject) {
                 const tx = db.transaction(STORE, "readwrite");
@@ -1114,6 +1131,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
         store("fichaje-sin-comida", this.checked ? true : null);
     });
     function press(type, forceKind) {
+        if (PREVIEW) { setStatus("Vista previa: aquí no se ficha.", "wait"); return; }
         const pressedAt = new Date();   // la hora se toma AL PULSAR
         const chosen = type && type.id ? type : null;
         const claimNow = chosen ? null : pendingClaim;
@@ -1211,7 +1229,9 @@ responsable corregirá la salida (clock_report.forgotten_after).
 
     // ---- Service worker ------------------------------------------------------
     const swState = document.getElementById("sw-state");
-    if ("serviceWorker" in navigator) {
+    if (PREVIEW) {
+        swState.textContent = "Vista previa del fichaje: los botones no fichan.";
+    } else if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/fichaje/sw.js", {scope: "/fichaje/"});
         navigator.serviceWorker.ready.then(function () {
             swState.textContent = "Página guardada en el móvil: funciona sin cobertura." +
