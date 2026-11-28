@@ -27,6 +27,8 @@ import logging
 import re
 import unicodedata
 
+from django.db import connection
+
 logger = logging.getLogger(__name__)
 
 # Palabras que delatan una página con contadores o el display.
@@ -56,7 +58,7 @@ MAX_PER_KIND = 2
 RENDER_DPI = 220
 CROP_MARGIN = 0.03
 JPEG_QUALITY = 90
-GEMINI_TIMEOUT_MS = 240_000
+GEMINI_TIMEOUT_MS = 480_000
 
 _PROMPT = """Eres un mecánico de maquinaria pesada. Te paso páginas del
 manual de la máquina «{model}». Busca las que enseñan al conductor o al
@@ -417,6 +419,9 @@ def extract_for_model(model, log=print):
             found.append((kind, not is_photo, -confidence, entry, page,
                           caption, is_photo, box))
     found.sort(key=lambda x: x[:3])
+    # S154 (28/11): tras minutos esperando a Gemini, MySQL corta la
+    # conexión por inactividad; se abre una nueva antes de guardar.
+    connection.close()
     saved, per_kind, seen, pdf_cache = 0, {}, set(), {}
     for kind, _p, _c, entry, page, caption, is_photo, box in found:
         if per_kind.get(kind, 0) >= MAX_PER_KIND:

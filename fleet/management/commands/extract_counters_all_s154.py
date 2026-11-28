@@ -19,6 +19,7 @@ counter images; without --apply it only estimates the cost.
 from datetime import datetime, timedelta
 
 from django.core.management.base import BaseCommand
+from django.db import connection
 
 from fleet.models import MachineModel
 
@@ -149,6 +150,7 @@ class Command(BaseCommand):
                                             model.name)
                       + (self._eta(start, position - 1, len(models))
                          if position > 1 else ""))
+            connection.close()
             try:
                 saved = service.extract_for_model(model, self._log)
             except Exception as exc:  # noqa: BLE001 -- se sigue
