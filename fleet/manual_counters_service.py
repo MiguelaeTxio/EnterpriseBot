@@ -45,7 +45,8 @@ DISPLAY_WORDS = (
 )
 MAX_CANDIDATE_PAGES = 24
 SCANNED_CHUNK_PAGES = 20
-SCANNED_MAX_PAGES = 120
+# S154 (28/11): el manual entero (los de la A29 tienen hasta 568).
+SCANNED_MAX_PAGES = 800
 MAX_SUBSET_BYTES = 15 * 1024 * 1024
 MAX_PER_KIND = 2
 RENDER_DPI = 110
@@ -60,9 +61,12 @@ gruista DÓNDE leer:
 - GRUA: el horómetro de la grúa o de la superestructura;
 - DISPLAY: los botones o el menú que cambian lo que sale en el display
   para ver esos contadores.
-Solo cuenta una página si enseña la ubicación con una foto o un dibujo
-(no si solo lo menciona en el texto). Prefiere fotos. Cada página es la
-número `n` del orden en que te las paso (la primera es 1).
+Solo vale la página donde SE VE el dibujo o la foto del contador, de la
+pantalla o de los botones. Las páginas de solo texto, las listas
+numeradas de mandos (leyendas) y las tablas NO valen: si la leyenda está
+en una página y el dibujo en otra, devuelve la del dibujo. Prefiere
+fotos. Cada página es la número `n` del orden en que te las paso (la
+primera es 1).
 Para cada página útil da: n, kind (KM, MOTOR, GRUA o DISPLAY), caption
 (una frase en castellano para el conductor: dónde está y cómo verlo, sin
 inventar nada que no salga en la página), is_photo (true si es una foto
@@ -232,18 +236,21 @@ def _batches(document, pages):
 
     Reparte las páginas en tandas que caben en una petición.
     """
-    batch = []
+    # S154 (28/11): el tamaño de cada página una vez (rehacer la tanda
+    # entera en cada página era cuadrático con manuales de 568 páginas).
+    batch, size = [], 0
     for index in pages:
-        trial = batch + [index]
-        if batch and len(_subset(document, trial)) > MAX_SUBSET_BYTES:
+        page_size = len(_subset(document, [index]))
+        if batch and size + page_size > MAX_SUBSET_BYTES:
             yield batch
-            trial = [index]
-        batch = trial
+            batch, size = [], 0
+        batch.append(index)
+        size += page_size
     if batch:
         yield batch
 
 
-def find_counter_pages(model_name, entry, log=print):
+def find_counter_pages(model_name, entry, log=print, page_counts=None):
     """
     Pages of one manual that show where the counters are.
 
@@ -262,6 +269,8 @@ def find_counter_pages(model_name, entry, log=print):
     except Exception:  # noqa: BLE001 -- PDF dañado
         log("   %s: no se puede abrir, se salta." % entry.name)
         return []
+    if page_counts is not None:
+        page_counts[entry.pk] = document.page_count
     pages = _candidate_pages(document)
     if pages is None:
         pages = list(range(min(document.page_count, SCANNED_MAX_PAGES)))
@@ -316,18 +325,24 @@ def extract_for_model(model, log=print):
     from spare_parts.gcs_service import TASK_PHOTOS_BUCKET, upload_bytes
 
     manuals = list(model.manuals.all())
-    found = []
+    found, page_counts = [], {}
     for position, entry in enumerate(manuals, 1):
         log("[%s/%s] %s" % (position, len(manuals), entry.name))
         for page, kind, caption, is_photo, confidence in \
-                find_counter_pages(model.name, entry, log):
+                find_counter_pages(model.name, entry, log, page_counts):
             found.append((kind, not is_photo, -confidence, entry, page,
                           caption, is_photo))
     found.sort(key=lambda x: x[:3])
-    saved, per_kind = 0, {}
+    saved, per_kind, seen = 0, {}, set()
     for kind, _p, _c, entry, page, caption, is_photo in found:
         if per_kind.get(kind, 0) >= MAX_PER_KIND:
             continue
+        # S154 (28/11): manuales que son copia uno de otro (mismas
+        # páginas, otro tamaño) daban la misma página dos veces.
+        same = (kind, page, page_counts.get(entry.pk))
+        if same in seen:
+            continue
+        seen.add(same)
         if ManualCounterImage.objects.filter(
                 machine_model=model, manual=entry, page=page + 1,
                 kind=kind).exists():
@@ -347,6 +362,27 @@ def extract_for_model(model, log=print):
             dict(ManualCounterImage.KIND_CHOICES)[kind], entry.name,
             page + 1, "foto" if is_photo else "dibujo"))
     return saved
+
+
+def clear_pending(model):
+    """
+    Delete the model's images still pending review (and their files).
+
+    ---
+
+    Borra las imágenes del modelo que siguen pendientes de revisar (y su
+    archivo), para volver a buscar. Las publicadas y las quitadas se
+    quedan. Devuelve cuántas.
+    """
+    from fleet.models import ManualCounterImage
+    from spare_parts.gcs_service import delete_file
+
+    pending = list(model.counter_images.filter(
+        status=ManualCounterImage.STATUS_PENDING))
+    for image in pending:
+        delete_file(image.bucket, image.blob_name)
+        image.delete()
+    return len(pending)
 
 
 def image_rows(machine, published_only=True):

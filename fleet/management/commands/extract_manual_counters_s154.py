@@ -8,7 +8,8 @@ pendientes de revisar para la ficha QR (fleet.manual_counters_service).
 --model es la Marca / Modelo exacta de las máquinas (p. ej. «LUNA AT
 35/32»): crea el modelo con ellas y sus manuales sin repetir, y busca.
 Sin --apply solo dice qué máquinas y manuales entran, sin llamar a
-Gemini. Escribe en pantalla y en su propio fichero de log a la vez
+Gemini. --reset borra antes las pendientes de revisar del
+modelo. Escribe en pantalla y en su propio fichero de log a la vez
 (com-standards 0bis), con progreso y hora estimada de fin (0ter).
 
 ---
@@ -39,6 +40,10 @@ class Command(BaseCommand):
                             help="Marca / Modelo exacta (p. ej. "
                                  "«LUNA AT 35/32»).")
         parser.add_argument("--apply", action="store_true")
+        parser.add_argument(
+            "--reset", action="store_true",
+            help="Borra antes las imágenes del modelo pendientes de "
+                 "revisar (las publicadas se quedan).")
         parser.add_argument("--log-file", required=True)
 
     def _log(self, text, stamp=True):
@@ -76,6 +81,9 @@ class Command(BaseCommand):
             return
         company = machines[0].company
         model = service.build_model(company, name)
+        if options["reset"]:
+            self._log("Pendientes de revisar borradas: %s."
+                      % service.clear_pending(model))
         start = datetime.now()
         total = model.manuals.count()
         done = [0]
