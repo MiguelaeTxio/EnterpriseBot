@@ -49,7 +49,12 @@ SCANNED_CHUNK_PAGES = 20
 SCANNED_MAX_PAGES = 800
 MAX_SUBSET_BYTES = 15 * 1024 * 1024
 MAX_PER_KIND = 2
-RENDER_DPI = 110
+# S154 (28/11), Miguel Ángel: «las imágenes se ven realmente mal»: la
+# página entera a 110 ppp no se leía en el móvil. Ahora se recorta el
+# dibujo (recuadro que da Gemini) y se saca a más resolución.
+RENDER_DPI = 220
+CROP_MARGIN = 0.03
+JPEG_QUALITY = 90
 GEMINI_TIMEOUT_MS = 240_000
 
 _PROMPT = """Eres un mecánico de maquinaria pesada. Te paso páginas del
@@ -70,8 +75,10 @@ primera es 1).
 Para cada página útil da: n, kind (KM, MOTOR, GRUA o DISPLAY), caption
 (una frase en castellano para el conductor: dónde está y cómo verlo, sin
 inventar nada que no salga en la página), is_photo (true si es una foto
-real, false si es un dibujo) y confidence (0 a 1). Si ninguna sirve,
-devuelve una lista vacía."""
+real, false si es un dibujo), confidence (0 a 1) y box: el recuadro del
+dibujo o la foto en la página, [ymin, xmin, ymax, xmax] de 0 a 1000,
+que abarque el dibujo con sus números y flechas pero no el texto de
+alrededor. Si ninguna sirve, devuelve una lista vacía."""
 
 _SCHEMA = {
     "type": "OBJECT",
@@ -87,6 +94,8 @@ _SCHEMA = {
                     "caption": {"type": "STRING"},
                     "is_photo": {"type": "BOOLEAN"},
                     "confidence": {"type": "NUMBER"},
+                    "box": {"type": "ARRAY",
+                            "items": {"type": "INTEGER"}},
                 },
                 "required": ["n", "kind", "caption", "is_photo",
                              "confidence"],
@@ -285,7 +294,7 @@ def find_counter_pages(model_name, entry, log=print, page_counts=None):
     ---
 
     Las páginas de un manual que enseñan dónde están los contadores:
-    lista de (página desde 0, kind, caption, is_photo, confidence).
+    lista de (página desde 0, kind, caption, is_photo, confidence, box).
     """
     import fitz
 
@@ -323,19 +332,55 @@ def find_counter_pages(model_name, entry, log=print, page_counts=None):
                 found.append((batch[n - 1], item["kind"],
                               (item.get("caption") or "")[:300],
                               bool(item.get("is_photo")),
-                              float(item.get("confidence") or 0)))
+                              float(item.get("confidence") or 0),
+                              _valid_box(item.get("box"))))
     return found
 
 
-def _render_page(entry, page_index):
+def _valid_box(box):
+    """
+    The box as 4 numbers 0-1000 (ymin, xmin, ymax, xmax), or None.
+
+    ---
+
+    El recuadro si tiene sentido (4 números de 0 a 1000, con alto y
+    ancho); si no, None y se saca la página entera.
+    """
+    if not isinstance(box, (list, tuple)) or len(box) != 4:
+        return None
+    try:
+        ymin, xmin, ymax, xmax = (max(0, min(1000, int(v))) for v in box)
+    except (TypeError, ValueError):
+        return None
+    if ymax - ymin < 50 or xmax - xmin < 50:
+        return None
+    return ymin, xmin, ymax, xmax
+
+
+def _render_page(data, page_index, box=None):
+    """
+    JPEG of the page (or of the box in it) at RENDER_DPI.
+
+    ---
+
+    La página en JPEG a RENDER_DPI; con recuadro, solo el dibujo con
+    un pequeño margen.
+    """
     import fitz
 
-    from spare_parts.gcs_service import download_bytes
-
-    data = download_bytes(entry.bucket, entry.blob_name)
     with fitz.open(stream=data, filetype="pdf") as document:
-        pixmap = document[page_index].get_pixmap(dpi=RENDER_DPI)
-        return pixmap.tobytes("jpeg", jpg_quality=82)
+        page = document[page_index]
+        clip = None
+        if box:
+            ymin, xmin, ymax, xmax = box
+            rect = page.rect
+            clip = fitz.Rect(
+                rect.x0 + rect.width * max(xmin / 1000 - CROP_MARGIN, 0),
+                rect.y0 + rect.height * max(ymin / 1000 - CROP_MARGIN, 0),
+                rect.x0 + rect.width * min(xmax / 1000 + CROP_MARGIN, 1),
+                rect.y0 + rect.height * min(ymax / 1000 + CROP_MARGIN, 1))
+        pixmap = page.get_pixmap(dpi=RENDER_DPI, clip=clip)
+        return pixmap.tobytes("jpeg", jpg_quality=JPEG_QUALITY)
 
 
 def extract_for_model(model, log=print):
@@ -350,7 +395,9 @@ def extract_for_model(model, log=print):
     Devuelve cuántas se han guardado.
     """
     from fleet.models import ManualCounterImage
-    from spare_parts.gcs_service import TASK_PHOTOS_BUCKET, upload_bytes
+    from spare_parts.gcs_service import (
+        TASK_PHOTOS_BUCKET, download_bytes, upload_bytes,
+    )
 
     if model.manual is None:
         raise ManualCountersError("El modelo no tiene manual elegido.")
@@ -358,13 +405,13 @@ def extract_for_model(model, log=print):
     found, page_counts = [], {}
     for position, entry in enumerate(manuals, 1):
         log("[%s/%s] %s" % (position, len(manuals), entry.name))
-        for page, kind, caption, is_photo, confidence in \
+        for page, kind, caption, is_photo, confidence, box in \
                 find_counter_pages(model.name, entry, log, page_counts):
             found.append((kind, not is_photo, -confidence, entry, page,
-                          caption, is_photo))
+                          caption, is_photo, box))
     found.sort(key=lambda x: x[:3])
-    saved, per_kind, seen = 0, {}, set()
-    for kind, _p, _c, entry, page, caption, is_photo in found:
+    saved, per_kind, seen, pdf_cache = 0, {}, set(), {}
+    for kind, _p, _c, entry, page, caption, is_photo, box in found:
         if per_kind.get(kind, 0) >= MAX_PER_KIND:
             continue
         # S154 (28/11): manuales que son copia uno de otro (mismas
@@ -380,8 +427,12 @@ def extract_for_model(model, log=print):
             continue
         blob_name = "fichas_qr/modelos/%s/%s_p%s_%s.jpg" % (
             model.pk, entry.pk, page + 1, kind.lower())
+        if entry.pk not in pdf_cache:
+            pdf_cache[entry.pk] = download_bytes(entry.bucket,
+                                                 entry.blob_name)
         upload_bytes(TASK_PHOTOS_BUCKET, blob_name,
-                     _render_page(entry, page), content_type="image/jpeg")
+                     _render_page(pdf_cache[entry.pk], page, box),
+                     content_type="image/jpeg")
         ManualCounterImage.objects.create(
             machine_model=model, kind=kind, caption=caption, manual=entry,
             page=page + 1, is_photo=is_photo, bucket=TASK_PHOTOS_BUCKET,
