@@ -19,7 +19,7 @@ from datetime import datetime
 
 from django.core.management.base import BaseCommand, CommandError
 
-from fleet.models import MachineAsset
+from fleet.models import MachineAsset, MachineModel
 
 
 class Command(BaseCommand):
@@ -35,8 +35,9 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--name", required=True)
-        parser.add_argument("--machines", required=True,
-                            help="Códigos separados por comas.")
+        parser.add_argument("--machines", default="",
+                            help="Códigos separados por comas; vacío: "
+                                 "las del modelo que ya existe.")
         parser.add_argument("--manual", type=int, default=0)
         parser.add_argument("--discard", default="",
                             help="Ids de las copias que se descartan.")
@@ -65,6 +66,13 @@ class Command(BaseCommand):
 
         codes = [c.strip() for c in options["machines"].split(",")
                  if c.strip()]
+        if not codes:
+            found = list(MachineModel.objects.filter(
+                name=options["name"]).prefetch_related("machines"))
+            if len(found) != 1:
+                self._fail("Modelo «%s»: hay %s con ese nombre."
+                           % (options["name"], len(found)))
+            codes = sorted(m.code for m in found[0].machines.all())
         machines = list(MachineAsset.objects.filter(code__in=codes))
         missing = set(codes) - {m.code for m in machines}
         if missing:
