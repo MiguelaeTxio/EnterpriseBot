@@ -2,7 +2,11 @@
 """
 S154 (invasora, 28/11) -- elige el manual de los modelos que tienen
 varias copias: se queda la que tiene más páginas (la completa) y, si
-empatan, la que menos pesa (mejor para el móvil). Las demás quedan
+empatan, la que menos pesa (mejor para el móvil), solo entre manuales
+de uso (el despiece es otro documento). Solo se aplica si las demás son
+copias (mismas páginas) o trozos (como mucho un 30 % de sus páginas);
+si no, puede ser otro manual (p. ej. el del camión y el de la
+plataforma) y se deja para decidir a mano. Las demás quedan
 descartadas en la BD; no se borra nada del cubo ni de Microsoft 365
 (fleet.manual_counters_service.set_model_manual).
 
@@ -20,6 +24,10 @@ from datetime import datetime, timedelta
 from django.core.management.base import BaseCommand
 
 from fleet.models import MachineModel
+
+# Una copia con hasta este porcentaje de las páginas de la elegida es un
+# trozo; con más (y distinto número), puede ser otro manual.
+FRAGMENT = 0.3
 
 
 class Command(BaseCommand):
@@ -68,6 +76,17 @@ class Command(BaseCommand):
     def _run(self, options):
         from fleet import manual_counters_service as service
 
+        # Modelos a los que se fijó un manual que no es de uso (el
+        # despiece contaba como manual antes del 28/11): se les quita.
+        wrong = MachineModel.objects.filter(manual__isnull=False).exclude(
+            manual__document_type__code=service.USE_MANUAL_CODE)
+        for model in wrong:
+            self._log("%s: su manual %s no es de uso; %s." % (
+                model.name, model.manual.name,
+                "se quita" if options["apply"] else "se quitaría"))
+            if options["apply"]:
+                model.manual = None
+                model.save(update_fields=["manual"])
         todo = []
         for model in MachineModel.objects.filter(
                 manual__isnull=True).prefetch_related("machines"):
@@ -79,6 +98,7 @@ class Command(BaseCommand):
                   % total)
         start = datetime.now()
         kept = discarded = 0
+        review = []
         for position, (model, manuals) in enumerate(todo, 1):
             eta = ""
             if position > 1:
@@ -96,11 +116,19 @@ class Command(BaseCommand):
                 self._log("   Ningún PDF se puede abrir; se deja sin "
                           "elegir.")
                 continue
+            doubtful = [e for count, e in rows[1:]
+                         if count != pages and count > pages * FRAGMENT]
             for count, entry in rows:
                 self._log("   %s id %s: %s -- %s páginas, %.1f MB" % (
-                    "SE QUEDA " if entry.pk == chosen.pk else "descarta",
+                    "SE QUEDA " if entry.pk == chosen.pk else (
+                        "¿OTRO?  " if entry in doubtful else "descarta"),
                     entry.pk, entry.name, count,
                     (entry.size_bytes or 0) / 1048576), stamp=False)
+            if doubtful:
+                review.append(model.name)
+                self._log("   Puede ser otro manual: se deja para decidir "
+                          "a mano.", stamp=False)
+                continue
             kept += 1
             discarded += len(rows) - 1
             if options["apply"]:
@@ -113,5 +141,9 @@ class Command(BaseCommand):
         self._log("Copias %s en la BD (siguen en el cubo): %s" % (
             "descartadas" if options["apply"] else "a descartar",
             discarded), stamp=False)
+        self._log("Para decidir a mano (puede haber otro manual): %s" %
+                  len(review), stamp=False)
+        for name in review:
+            self._log("   %s" % name, stamp=False)
         if not options["apply"]:
             self._log("Sin --apply: no se ha cambiado nada.", stamp=False)

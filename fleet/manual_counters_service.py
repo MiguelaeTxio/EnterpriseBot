@@ -43,6 +43,7 @@ DISPLAY_WORDS = (
     "instrument cluster", "tablero", "salpicadero", "dashboard",
     "visualizador", "indicador", "menu",
 )
+USE_MANUAL_CODE = "MANUAL_USO"
 MAX_CANDIDATE_PAGES = 24
 SCANNED_CHUNK_PAGES = 20
 # S154 (28/11): el manual entero (los de la A29 tienen hasta 568).
@@ -137,7 +138,9 @@ def machine_manuals(machines):
     rows = DocumentIndexEntry.objects.filter(
         domain_content_type=_machine_content_type(),
         domain_object_id__in=[m.pk for m in machines],
-        document_type__label__icontains="manual",
+        # S154 (28/11): solo el manual de uso; el de despiece (catálogo
+        # de piezas) es otro documento y no compite con él.
+        document_type__code=USE_MANUAL_CODE,
         deleted_at__isnull=True,
         manual_discard__isnull=True,
     ).order_by("name")
