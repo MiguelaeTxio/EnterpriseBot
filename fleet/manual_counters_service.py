@@ -130,6 +130,7 @@ def machine_manuals(machines):
         domain_object_id__in=[m.pk for m in machines],
         document_type__label__icontains="manual",
         deleted_at__isnull=True,
+        manual_discard__isnull=True,
     ).order_by("name")
     seen, unique = set(), []
     for entry in rows:
@@ -147,8 +148,8 @@ def build_model(company, name):
     ---
 
     Crea (o completa) el modelo con las máquinas cuya Marca / Modelo es
-    exactamente `name` y sus manuales sin repetir. No quita nada de lo
-    que ya tuviera.
+    exactamente `name`. No quita nada de lo que ya tuviera. El manual se
+    elige aparte (set_model_manual).
     """
     from fleet.models import MachineAsset, MachineModel
 
@@ -160,8 +161,35 @@ def build_model(company, name):
     model, _created = MachineModel.objects.get_or_create(
         company=company, name=machines[0].brand_model.strip())
     model.machines.add(*machines)
-    model.manuals.add(*machine_manuals(machines))
     return model
+
+
+def set_model_manual(model, entry, company_user=None):
+    """
+    Make `entry` the model's only manual; discard the other copies.
+
+    ---
+
+    S154 (28/11), Miguel Ángel: un modelo, un manual. `entry` pasa a
+    ser el manual del modelo y las demás copias de las máquinas del
+    modelo quedan descartadas en la BD (siguen en el cubo y en
+    Microsoft 365, no se borra nada). Devuelve cuántas se descartan.
+    """
+    from fleet.models import DiscardedManual
+
+    machines = list(model.machines.all())
+    if entry.domain_object_id not in {m.pk for m in machines}:
+        raise ManualCountersError(
+            "Ese manual no es de ninguna máquina del modelo.")
+    model.manual = entry
+    model.save(update_fields=["manual"])
+    others = [e for e in machine_manuals(machines) if e.pk != entry.pk]
+    for other in others:
+        DiscardedManual.objects.get_or_create(
+            entry=other, defaults={"machine_model": model,
+                                   "kept_manual": entry,
+                                   "discarded_by": company_user})
+    return len(others)
 
 
 def _candidate_pages(document):
@@ -324,7 +352,9 @@ def extract_for_model(model, log=print):
     from fleet.models import ManualCounterImage
     from spare_parts.gcs_service import TASK_PHOTOS_BUCKET, upload_bytes
 
-    manuals = list(model.manuals.all())
+    if model.manual is None:
+        raise ManualCountersError("El modelo no tiene manual elegido.")
+    manuals = [model.manual]
     found, page_counts = [], {}
     for position, entry in enumerate(manuals, 1):
         log("[%s/%s] %s" % (position, len(manuals), entry.name))
@@ -371,19 +401,20 @@ def manual_rows(machine):
     ---
 
     S154 (28/11), Miguel Ángel: «enlazar el propio manual desde el QR
-    para tener acceso para hojearlo». Los de sus modelos y los suyos
-    propios, sin repetir (mismo tamaño = misma copia), con su tamaño
+    para tener acceso para hojearlo». El manual de sus modelos y los
+    suyos propios no descartados (sin repetir copias), con su tamaño
     para que se sepa lo que pesa antes de abrirlo con datos del móvil.
     """
     from spare_parts.gcs_service import generate_signed_url
 
     entries = machine_manuals([machine])
-    sizes = {e.size_bytes for e in entries}
-    for model in machine.machine_models.all():
-        for entry in model.manuals.filter(deleted_at__isnull=True):
-            if entry.size_bytes not in sizes:
-                sizes.add(entry.size_bytes)
-                entries.append(entry)
+    ids = {e.pk for e in entries}
+    for model in machine.machine_models.select_related("manual"):
+        entry = model.manual
+        if entry is not None and entry.deleted_at is None and (
+                entry.pk not in ids):
+            ids.add(entry.pk)
+            entries.append(entry)
     return [{"name": entry.name,
              "mb": round((entry.size_bytes or 0) / 1048576, 1),
              "url": generate_signed_url(entry.bucket, entry.blob_name)}

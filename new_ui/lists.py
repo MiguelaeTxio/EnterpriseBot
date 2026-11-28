@@ -1143,7 +1143,11 @@ def _documents(domain_model, family=None, expiring=False):
             bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
             domain_content_type=ct, deleted_at__isnull=True,
             purged_at__isnull=True,
-        ).select_related("document_type").prefetch_related("domain_object")
+        ).select_related("document_type").prefetch_related(
+            "domain_object").filter(
+            # S154 (28/11): copias de manuales descartadas (siguen en el
+            # cubo y en Microsoft 365, no se enseñan).
+            manual_discard__isnull=True)
         if family:
             qs = qs.filter(document_type__family=family)
         if expiring:

@@ -2003,7 +2003,9 @@ class MachineModel(models.Model):
     S154 (28/11), Miguel Ángel: «los manuales de los vehículos deben
     estar linkados a sus modelos [...] si el B34 es un Pegaso modelo
     Troner y el B35 también, ambos apuntan que su manual es el mismo».
-    Un camión con grúa apunta a dos (chasis y grúa).
+    Un camión con grúa apunta a dos (chasis y grúa). Un modelo, un
+    manual (28/11): «EnterpriseBot debe tener un solo manual por
+    máquina»; las demás copias quedan descartadas (DiscardedManual).
     """
 
     company = models.ForeignKey(
@@ -2015,9 +2017,10 @@ class MachineModel(models.Model):
         MachineAsset, blank=True, related_name="machine_models",
         verbose_name=_("Centros de gasto"),
     )
-    manuals = models.ManyToManyField(
-        "document_explorer.DocumentIndexEntry", blank=True,
-        related_name="machine_models", verbose_name=_("Manuales"),
+    manual = models.ForeignKey(
+        "document_explorer.DocumentIndexEntry", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Manual"),
     )
     created_at = models.DateTimeField(_("Creado el"), auto_now_add=True)
 
@@ -2098,3 +2101,46 @@ class ManualCounterImage(models.Model):
 
     def __str__(self):
         return "%s · %s p. %s" % (self.machine_model, self.kind, self.page)
+
+
+class DiscardedManual(models.Model):
+    """
+    A manual copy left out: kept in the bucket, hidden in EnterpriseBot.
+
+    ---
+
+    Copia de manual descartada (S154, 28/11). Miguel Ángel: «marcar a
+    nivel de BBDD los manuales descartados para no borrarlos del cubo y
+    que no se refleje el borrado en Microsoft 365, de esa forma
+    conseguiremos tener una relación 1:1 modelo:manual». El archivo
+    sigue en el cubo y en Microsoft 365; EnterpriseBot no lo enseña ni
+    lo usa (Documentos, ficha QR, búsqueda de contadores).
+    """
+
+    entry = models.OneToOneField(
+        "document_explorer.DocumentIndexEntry", on_delete=models.CASCADE,
+        related_name="manual_discard", verbose_name=_("Manual descartado"),
+    )
+    machine_model = models.ForeignKey(
+        MachineModel, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="discarded_manuals", verbose_name=_("Modelo"),
+    )
+    kept_manual = models.ForeignKey(
+        "document_explorer.DocumentIndexEntry", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Manual que se queda"),
+    )
+    discarded_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Descartado por"),
+    )
+    discarded_at = models.DateTimeField(_("Descartado el"),
+                                        auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Manual descartado")
+        verbose_name_plural = _("Manuales descartados")
+
+    def __str__(self):
+        return "Descartado: %s" % self.entry_id

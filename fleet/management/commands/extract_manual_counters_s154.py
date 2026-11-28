@@ -8,9 +8,10 @@ pendientes de revisar para la ficha QR (fleet.manual_counters_service).
 --model es la Marca / Modelo exacta de las máquinas (p. ej. «LUNA AT
 35/32»): crea el modelo con ellas y sus manuales sin repetir, y busca.
 Sin --apply solo dice qué máquinas y manuales entran, sin llamar a
-Gemini. --reset borra antes las pendientes de revisar del
-modelo. Escribe en pantalla y en su propio fichero de log a la vez
-(com-standards 0bis), con progreso y hora estimada de fin (0ter).
+Gemini. --manual <id> fija el manual del modelo y descarta en la BD
+las demás copias (no borra nada del cubo). --reset borra antes las
+pendientes de revisar del modelo. Escribe en pantalla y en su propio
+fichero de log a la vez (com-standards 0bis), con progreso y hora estimada de fin (0ter).
 
 ---
 
@@ -40,6 +41,10 @@ class Command(BaseCommand):
                             help="Marca / Modelo exacta (p. ej. "
                                  "«LUNA AT 35/32»).")
         parser.add_argument("--apply", action="store_true")
+        parser.add_argument(
+            "--manual", type=int, default=0,
+            help="Id del manual que se queda como el del modelo (las "
+                 "demás copias se descartan en la BD, sin borrar nada).")
         parser.add_argument(
             "--reset", action="store_true",
             help="Borra antes las imágenes del modelo pendientes de "
@@ -74,18 +79,33 @@ class Command(BaseCommand):
                   % (name, len(machines),
                      ", ".join(m.code for m in machines), len(manuals)))
         for entry in manuals:
-            self._log("   %s (%.1f MB)" % (
-                entry.name, (entry.size_bytes or 0) / 1048576), stamp=False)
+            self._log("   id %s: %s (%.1f MB)" % (
+                entry.pk, entry.name, (entry.size_bytes or 0) / 1048576),
+                stamp=False)
         if not options["apply"]:
             self._log("Sin --apply: no se llama a Gemini.")
             return
         company = machines[0].company
         model = service.build_model(company, name)
+        if options["manual"]:
+            chosen = next((e for e in manuals
+                           if e.pk == options["manual"]), None)
+            if chosen is None and (model.manual_id != options["manual"]):
+                raise CommandError("El manual %s no es de este modelo."
+                                   % options["manual"])
+            if chosen is not None:
+                discarded = service.set_model_manual(model, chosen)
+                self._log("Manual del modelo: %s. Copias descartadas en "
+                          "la BD (siguen en el cubo): %s."
+                          % (chosen.name, discarded))
+        if model.manual is None:
+            raise CommandError("Elige el manual del modelo con --manual "
+                               "<id> (ver la lista de arriba).")
         if options["reset"]:
             self._log("Pendientes de revisar borradas: %s."
                       % service.clear_pending(model))
         start = datetime.now()
-        total = model.manuals.count()
+        total = 1
         done = [0]
 
         def log(text):
