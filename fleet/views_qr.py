@@ -14,7 +14,7 @@ from django.http import Http404
 from django.shortcuts import render
 
 from fleet import qr_sheet_service as qr
-from fleet.manual_counters_service import image_rows
+from fleet.manual_counters_service import image_rows, manual_rows
 from fleet.models import MachineQrSheet
 
 
@@ -39,4 +39,5 @@ def qr_public_view(request, token):
         "media": qr.media_rows(sheet),
         # S154 (28/11): dónde mirar los contadores, de los manuales.
         "counter_images": image_rows(machine),
+        "manuals": manual_rows(machine),
     })

@@ -364,6 +364,32 @@ def extract_for_model(model, log=print):
     return saved
 
 
+def manual_rows(machine):
+    """
+    The manuals to leaf through from the QR page, with a signed URL.
+
+    ---
+
+    S154 (28/11), Miguel Ángel: «enlazar el propio manual desde el QR
+    para tener acceso para hojearlo». Los de sus modelos y los suyos
+    propios, sin repetir (mismo tamaño = misma copia), con su tamaño
+    para que se sepa lo que pesa antes de abrirlo con datos del móvil.
+    """
+    from spare_parts.gcs_service import generate_signed_url
+
+    entries = machine_manuals([machine])
+    sizes = {e.size_bytes for e in entries}
+    for model in machine.machine_models.all():
+        for entry in model.manuals.filter(deleted_at__isnull=True):
+            if entry.size_bytes not in sizes:
+                sizes.add(entry.size_bytes)
+                entries.append(entry)
+    return [{"name": entry.name,
+             "mb": round((entry.size_bytes or 0) / 1048576, 1),
+             "url": generate_signed_url(entry.bucket, entry.blob_name)}
+            for entry in sorted(entries, key=lambda e: e.name)]
+
+
 def clear_pending(model):
     """
     Delete the model's images still pending review (and their files).

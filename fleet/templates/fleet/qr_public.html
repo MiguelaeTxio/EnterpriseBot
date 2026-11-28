@@ -65,6 +65,16 @@ Contexto: fleet.views_qr.qr_public_view.
     </section>
     {% endif %}
 
+    {% if manuals %}
+    {# S154 (28/11): los manuales, para hojearlos. #}
+    <section>
+        <h2>Manuales</h2>
+        {% for manual in manuals %}
+        <p style="margin:6px 0;"><a href="{{ manual.url }}" target="_blank" rel="noopener">📄 {{ manual.name }}</a> <span style="color:#6c757d;">({{ manual.mb }} MB)</span></p>
+        {% endfor %}
+    </section>
+    {% endif %}
+
     {% if media %}
     <section>
         <h2>Fotos y vídeos</h2>
