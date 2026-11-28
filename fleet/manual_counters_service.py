@@ -150,7 +150,7 @@ def machine_manuals(machines):
     return unique
 
 
-def build_model(company, name):
+def build_model(company, name, machines=None):
     """
     Create or refresh the model `name` from the machines' Marca/Modelo.
 
@@ -162,13 +162,14 @@ def build_model(company, name):
     """
     from fleet.models import MachineAsset, MachineModel
 
-    machines = list(MachineAsset.objects.filter(
-        company=company, brand_model__iexact=name.strip()))
+    if machines is None:
+        machines = list(MachineAsset.objects.filter(
+            company=company, brand_model__iexact=name.strip()))
     if not machines:
         raise ManualCountersError(
             "Ninguna máquina tiene «%s» en Marca / Modelo." % name)
     model, _created = MachineModel.objects.get_or_create(
-        company=company, name=machines[0].brand_model.strip())
+        company=company, name=" ".join(name.split()))
     model.machines.add(*machines)
     return model
 
