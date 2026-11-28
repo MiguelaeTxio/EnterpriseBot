@@ -88,9 +88,14 @@ class Command(BaseCommand):
                 model.manual = None
                 model.save(update_fields=["manual"])
         todo = []
+        # El manual de otro modelo (p. ej. el de la plataforma que lleva
+        # la furgoneta) no compite por el modelo del vehículo.
+        used = set(MachineModel.objects.filter(
+            manual__isnull=False).values_list("manual_id", flat=True))
         for model in MachineModel.objects.filter(
                 manual__isnull=True).prefetch_related("machines"):
-            manuals = service.machine_manuals(list(model.machines.all()))
+            manuals = [e for e in service.machine_manuals(
+                list(model.machines.all())) if e.pk not in used]
             if len(manuals) > 1:
                 todo.append((model, manuals))
         total = len(todo)
