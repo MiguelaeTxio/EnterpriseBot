@@ -547,6 +547,21 @@ class MachineQrActionView(SuperuserRequiredMixin, View):
                                      "message": "Descripción guardada."})
             qr.delete_media(media)
             return JsonResponse({"ok": True, "message": "Quitado."})
+        if action == "counter_image":
+            # S154 (28/11): revisar lo que la IA sacó de los manuales.
+            from fleet.manual_counters_service import (
+                ManualCountersError, review_image,
+            )
+
+            try:
+                message = review_image(
+                    machine, request.POST.get("image_id"),
+                    request.POST.get("decision", ""),
+                    request.POST.get("caption"), company_user)
+            except ManualCountersError as exc:
+                return JsonResponse({"ok": False, "message": str(exc)},
+                                    status=400)
+            return JsonResponse({"ok": True, "message": message})
         if action in ("service", "counters"):
             # S154 (27/11): contadores, revisión y lectura real.
             try:

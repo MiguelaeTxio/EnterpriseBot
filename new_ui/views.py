@@ -1433,6 +1433,9 @@ def _machine_qr_context(request, machine):
     la ficha técnica que salen en él, observaciones, fotos y vídeos, y
     la contraseña del editor QR del fichaje.
     """
+    from fleet.manual_counters_service import (
+        image_rows as counter_image_rows,
+    )
     from django.urls import reverse
 
     from fleet import qr_sheet_service as qr
@@ -1448,6 +1451,8 @@ def _machine_qr_context(request, machine):
         "specs": qr.spec_rows(machine),
         "service_lines": qr.service_lines(machine),
         "last_real": qr.last_real_counters(machine),
+        # S154 (28/11): páginas de los manuales con los contadores.
+        "counter_images": counter_image_rows(machine, published_only=False),
         "max_photo_mb": qr.MAX_PHOTO_BYTES // (1024 * 1024),
         "max_video_mb": qr.MAX_VIDEO_BYTES // (1024 * 1024),
         "editor_password_set": qr.editor_password_set(machine.company),

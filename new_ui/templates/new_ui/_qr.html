@@ -78,6 +78,36 @@ Contexto: _machine_qr_context (new_ui/views.py).
             </form>
         </section>
 
+        {# S154 (28/11): lo que la IA sacó de los manuales del modelo; se revisa antes de salir en el QR. #}
+        {% if counter_images %}
+        <section class="nui-ficha-box nui-ficha-wide">
+            <div class="nui-ficha-head">Contadores en los manuales</div>
+            <div class="p-2 small">
+                <p class="text-muted mb-2">Páginas de los manuales de su modelo que enseñan dónde están los contadores. Solo salen en el QR las publicadas, y valen para todas las máquinas del modelo.</p>
+                <div class="row g-2">
+                {% for item in counter_images %}
+                    <div class="col-12 col-xl-6">
+                        <div class="border rounded p-2 h-100">
+                            <a href="{{ item.url }}" target="_blank" rel="noopener"><img src="{{ item.url }}" alt="{{ item.image.get_kind_display }}" class="img-fluid mb-1" loading="lazy"></a>
+                            <div><strong>{{ item.image.get_kind_display }}</strong> · {{ item.image.machine_model.name }} · {{ item.image.manual.name|default:"" }} p. {{ item.image.page }} · {% if item.image.is_photo %}foto{% else %}dibujo{% endif %}
+                                · {% if item.image.status == "PUBLICADA" %}<span class="badge bg-success">Publicada</span>{% else %}<span class="badge bg-warning text-dark">Pendiente</span>{% endif %}</div>
+                            <form class="mt-1" data-nui-pane-form action="{{ action_url }}">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="counter_image">
+                                <input type="hidden" name="image_id" value="{{ item.image.pk }}">
+                                <textarea name="caption" rows="2" class="form-control form-control-sm mb-1">{{ item.image.caption }}</textarea>
+                                <button type="submit" name="decision" value="publish" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Publicar</button>
+                                <button type="submit" name="decision" value="caption" class="btn btn-sm btn-outline-secondary">Guardar explicación</button>
+                                <button type="submit" name="decision" value="remove" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-lg me-1"></i>Quitar</button>
+                            </form>
+                        </div>
+                    </div>
+                {% endfor %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
         <section class="nui-ficha-box nui-ficha-wide">
             <div class="nui-ficha-head">Observaciones</div>
             <form class="p-2" data-nui-pane-form action="{{ action_url }}">

@@ -2401,8 +2401,12 @@
             ev.preventDefault();
             if (f.dataset.nuiConfirm && !window.confirm(f.dataset.nuiConfirm)) return;
             const button = f.querySelector('[type="submit"]');
+            // S154 (28/11): el botón pulsado va con el formulario
+            // (Publicar / Quitar de los contadores de los manuales).
+            const body = new FormData(f);
+            if (ev.submitter && ev.submitter.name) { body.set(ev.submitter.name, ev.submitter.value); }
             if (button) { button.disabled = true; }
-            fetch(f.getAttribute("action"), {method: "POST", credentials: "same-origin", body: new FormData(f), headers: {"X-CSRFToken": csrf()}})
+            fetch(f.getAttribute("action"), {method: "POST", credentials: "same-origin", body: body, headers: {"X-CSRFToken": csrf()}})
                 .then(r => r.json().catch(() => ({ok: false, message: "Error " + r.status})))
                 .then(function (data) {
                     const message = data.message || (data.ok ? "Hecho." : "No se ha podido hacer.");

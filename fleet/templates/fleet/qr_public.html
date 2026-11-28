@@ -52,6 +52,19 @@ Contexto: fleet.views_qr.qr_public_view.
     </section>
     {% endif %}
 
+    {% if counter_images %}
+    {# S154 (28/11): páginas de los manuales que enseñan los contadores, revisadas. #}
+    <section>
+        <h2>Dónde mirar los contadores</h2>
+        {% for item in counter_images %}
+        <figure>
+            <a href="{{ item.url }}"><img src="{{ item.url }}" alt="{{ item.image.get_kind_display }}" loading="lazy"></a>
+            <figcaption><strong>{{ item.image.get_kind_display }}.</strong> {{ item.image.caption }}</figcaption>
+        </figure>
+        {% endfor %}
+    </section>
+    {% endif %}
+
     {% if media %}
     <section>
         <h2>Fotos y vídeos</h2>

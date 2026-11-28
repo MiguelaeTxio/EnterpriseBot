@@ -1991,3 +1991,110 @@ class QrEditorSettings(models.Model):
 
     def __str__(self):
         return "Editor QR %s" % self.company
+
+
+class MachineModel(models.Model):
+    """
+    A make/model of machine with its manuals, shared by its machines.
+
+    ---
+
+    Modelo de máquina (marca y modelo) con sus manuales, una sola vez.
+    S154 (28/11), Miguel Ángel: «los manuales de los vehículos deben
+    estar linkados a sus modelos [...] si el B34 es un Pegaso modelo
+    Troner y el B35 también, ambos apuntan que su manual es el mismo».
+    Un camión con grúa apunta a dos (chasis y grúa).
+    """
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="machine_models",
+        verbose_name=_("Empresa"),
+    )
+    name = models.CharField(_("Marca y modelo"), max_length=200)
+    machines = models.ManyToManyField(
+        MachineAsset, blank=True, related_name="machine_models",
+        verbose_name=_("Centros de gasto"),
+    )
+    manuals = models.ManyToManyField(
+        "document_explorer.DocumentIndexEntry", blank=True,
+        related_name="machine_models", verbose_name=_("Manuales"),
+    )
+    created_at = models.DateTimeField(_("Creado el"), auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        unique_together = [("company", "name")]
+        verbose_name = _("Modelo de máquina")
+        verbose_name_plural = _("Modelos de máquina")
+
+    def __str__(self):
+        return self.name
+
+
+class ManualCounterImage(models.Model):
+    """
+    A manual page showing where a counter is, pending review or shown.
+
+    ---
+
+    Página de un manual que enseña dónde está un contador (km, horas de
+    motor, horas de grúa) o los botones que cambian lo que sale en el
+    display. La encuentra la IA; S154 (28/11), Miguel Ángel: alguien la
+    revisa antes de que salga en el QR de las máquinas del modelo.
+    """
+
+    KIND_KM = "KM"
+    KIND_ENGINE_HOURS = "MOTOR"
+    KIND_CRANE_HOURS = "GRUA"
+    KIND_DISPLAY = "DISPLAY"
+    KIND_CHOICES = (
+        (KIND_KM, _("Cuentakilómetros")),
+        (KIND_ENGINE_HOURS, _("Horas de motor")),
+        (KIND_CRANE_HOURS, _("Horas de grúa")),
+        (KIND_DISPLAY, _("Botones del display")),
+    )
+    STATUS_PENDING = "PENDIENTE"
+    STATUS_PUBLISHED = "PUBLICADA"
+    STATUS_REJECTED = "QUITADA"
+    STATUS_CHOICES = (
+        (STATUS_PENDING, _("Pendiente de revisar")),
+        (STATUS_PUBLISHED, _("Publicada en el QR")),
+        (STATUS_REJECTED, _("Quitada")),
+    )
+
+    machine_model = models.ForeignKey(
+        MachineModel, on_delete=models.CASCADE,
+        related_name="counter_images", verbose_name=_("Modelo"),
+    )
+    kind = models.CharField(_("Qué enseña"), max_length=10,
+                            choices=KIND_CHOICES)
+    caption = models.CharField(_("Explicación"), max_length=300,
+                               blank=True, default="")
+    manual = models.ForeignKey(
+        "document_explorer.DocumentIndexEntry", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Manual"),
+    )
+    page = models.PositiveIntegerField(_("Página"), default=0)
+    is_photo = models.BooleanField(_("Es una foto"), default=False)
+    bucket = models.CharField(_("Cubo"), max_length=100)
+    blob_name = models.CharField(_("Objeto"), max_length=500)
+    status = models.CharField(_("Estado"), max_length=10,
+                              choices=STATUS_CHOICES,
+                              default=STATUS_PENDING)
+    reviewed_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Revisada por"),
+    )
+    reviewed_at = models.DateTimeField(_("Revisada el"), null=True,
+                                       blank=True)
+    created_at = models.DateTimeField(_("Creada el"), auto_now_add=True)
+
+    class Meta:
+        ordering = ["kind", "-is_photo", "id"]
+        verbose_name = _("Contador en el manual")
+        verbose_name_plural = _("Contadores en los manuales")
+
+    def __str__(self):
+        return "%s · %s p. %s" % (self.machine_model, self.kind, self.page)
