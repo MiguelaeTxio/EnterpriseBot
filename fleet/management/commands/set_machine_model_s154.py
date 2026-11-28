@@ -38,6 +38,8 @@ class Command(BaseCommand):
         parser.add_argument("--machines", required=True,
                             help="Códigos separados por comas.")
         parser.add_argument("--manual", type=int, default=0)
+        parser.add_argument("--discard", default="",
+                            help="Ids de las copias que se descartan.")
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
 
@@ -46,6 +48,10 @@ class Command(BaseCommand):
         print(line, flush=True)
         self._log_handle.write(line + "\n")
         self._log_handle.flush()
+
+    def _fail(self, text):
+        self._log("ERROR: " + text)
+        raise CommandError(text)
 
     def handle(self, *args, **options):
         self._log_handle = open(options["log_file"], "a", encoding="utf-8")
@@ -62,18 +68,24 @@ class Command(BaseCommand):
         machines = list(MachineAsset.objects.filter(code__in=codes))
         missing = set(codes) - {m.code for m in machines}
         if missing:
-            raise CommandError("No existen: %s" % ", ".join(sorted(missing)))
+            self._fail("No existen: %s" % ", ".join(sorted(missing)))
         manuals = service.machine_manuals(machines)
         chosen = next((e for e in manuals
                        if e.pk == options["manual"]), None)
         if options["manual"] and chosen is None:
-            raise CommandError("El manual %s no es un manual de uso de "
-                               "esas máquinas." % options["manual"])
+            self._fail("El manual %s no es un manual de uso de esas "
+                       "máquinas." % options["manual"])
+        discard = {int(x) for x in options["discard"].split(",")
+                   if x.strip()}
+        unknown = discard - {e.pk for e in manuals}
+        if unknown:
+            self._fail("No son manuales de uso de esas máquinas: %s"
+                       % ", ".join(str(x) for x in sorted(unknown)))
         self._log("Modelo «%s»: %s" % (options["name"], ", ".join(codes)))
         for entry in manuals:
             self._log("   %s id %s: %s" % (
                 "SE QUEDA" if chosen and entry.pk == chosen.pk
-                else "descarta" if chosen else "        ",
+                else "descarta" if entry.pk in discard else "se deja ",
                 entry.pk, entry.name))
         if not options["apply"]:
             self._log("Sin --apply: no se ha cambiado nada.")
@@ -81,7 +93,8 @@ class Command(BaseCommand):
         model = service.build_model(machines[0].company, options["name"],
                                     machines)
         if chosen is not None:
-            discarded = service.set_model_manual(model, chosen)
+            discarded = service.set_model_manual(model, chosen,
+                                                 only=discard)
             self._log("Manual fijado; copias descartadas en la BD: %s."
                       % discarded)
         self._log("Hecho (modelo id %s)." % model.pk)

@@ -177,7 +177,7 @@ def build_model(company, name, machines=None):
     return model
 
 
-def set_model_manual(model, entry, company_user=None):
+def set_model_manual(model, entry, company_user=None, only=None):
     """
     Make `entry` the model's only manual; discard the other copies.
 
@@ -187,6 +187,8 @@ def set_model_manual(model, entry, company_user=None):
     ser el manual del modelo y las demás copias de las máquinas del
     modelo quedan descartadas en la BD (siguen en el cubo y en
     Microsoft 365, no se borra nada). Devuelve cuántas se descartan.
+    Con `only` (ids) solo se descartan esas: en una furgoneta con
+    plataforma, el manual del vehículo no es copia del de la plataforma.
     """
     from fleet.models import DiscardedManual
 
@@ -196,7 +198,8 @@ def set_model_manual(model, entry, company_user=None):
             "Ese manual no es de ninguna máquina del modelo.")
     model.manual = entry
     model.save(update_fields=["manual"])
-    others = [e for e in machine_manuals(machines) if e.pk != entry.pk]
+    others = [e for e in machine_manuals(machines) if e.pk != entry.pk
+              and (only is None or e.pk in only)]
     for other in others:
         DiscardedManual.objects.get_or_create(
             entry=other, defaults={"machine_model": model,
